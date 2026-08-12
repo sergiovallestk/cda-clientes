@@ -237,12 +237,24 @@ let DATA = JSON.parse(JSON.stringify(DEMO_DATA));
 let ACTIVE_TAB = 'dashboard';
 let refreshTimer = null;
 
+let LOAD_ERROR = null;
+function emptyShell(){
+  return { pacientes:[], tratamientos:[], citas:[], pagos:[], gastos:[], categorias_tratamiento:[], categorias_gasto:[], horario:[], config:[], referidos:[] };
+}
 async function loadData(){
+  LOAD_ERROR = null;
   if(!CONFIG.API_URL){ DATA = JSON.parse(JSON.stringify(DEMO_DATA)); return; }
   try{
     const res = await fetch(CONFIG.API_URL + '?client=' + encodeURIComponent(CONFIG.CLIENT_ID));
-    DATA = await res.json();
-  }catch(err){ console.error('Sin conexion a la API, usando demo.', err); DATA = JSON.parse(JSON.stringify(DEMO_DATA)); }
+    const json = await res.json();
+    if(json && json.error){ LOAD_ERROR = json.error; DATA = emptyShell(); return; }
+    if(!json || !Array.isArray(json.pacientes)){ LOAD_ERROR = 'La API respondió con un formato inesperado. Revisa que Code.gs este actualizado.'; DATA = emptyShell(); return; }
+    DATA = json;
+  }catch(err){
+    console.error('Sin conexion a la API.', err);
+    LOAD_ERROR = 'No se pudo conectar con el servidor. Revisa tu conexion a internet o la URL de la API en Configuracion.';
+    DATA = emptyShell();
+  }
 }
 
 /* Escribe cualquier accion al Sheet real via Apps Script. En modo demo (sin
@@ -290,8 +302,18 @@ document.getElementById('sidebarOverlay').addEventListener('click', ()=>{
 document.getElementById('modalOverlay').addEventListener('click', e=>{ if(e.target.id==='modalOverlay') closeModal(); });
 document.getElementById('pickerOverlay').addEventListener('click', e=>{ if(e.target.id==='pickerOverlay') closePicker(); });
 
+function renderErrorHTML(){
+  return `
+  <div class="card" style="max-width:540px;">
+    <div class="card-title" style="color:var(--red);"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>No se pudo cargar la informacion</div>
+    <p style="font-size:13px;color:var(--text);margin-bottom:10px;">${LOAD_ERROR}</p>
+    <p class="subtle" style="margin-bottom:16px;">Revisa la URL de la API y el ID de cliente en Configuracion — deben coincidir exactamente con lo que escribiste en la hoja "Clientes" de tu Sheet central.</p>
+    <div class="btn primary" onclick="setTab('configuracion')">Ir a Configuracion</div>
+  </div>`;
+}
 function render(){
   const c = document.getElementById('content');
+  if(LOAD_ERROR && ACTIVE_TAB !== 'configuracion'){ c.innerHTML = renderErrorHTML(); return; }
   if(ACTIVE_TAB === 'dashboard') c.innerHTML = renderDashboardHTML();
   else if(ACTIVE_TAB === 'pacientes') c.innerHTML = renderPacientesHTML();
   else if(ACTIVE_TAB === 'finanzas') c.innerHTML = renderFinanzasHTML();

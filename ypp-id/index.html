@@ -54,7 +54,7 @@
   .btn.danger{color:var(--red);border-color:#3a2220;}
   .metric-value{font-size:24px;font-weight:700;margin-bottom:2px;overflow-wrap:break-word;word-break:break-word;}
   .metric-delta{font-size:12px;color:var(--teal);margin-top:8px;}
-  .mini-chart-wrap{position:relative;height:110px;margin-top:6px;pointer-events:none;}
+  .mini-chart-wrap{position:relative;height:110px;margin-top:6px;}
   .stat-row{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;}
   .stat-chip{flex:1;min-width:100px;border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:2px;}
   .stat-chip.act{background:#12291F;}
@@ -67,12 +67,12 @@
   .stat-icon{width:42px;height:42px;border-radius:10px;background:#12291F;display:flex;align-items:center;justify-content:center;color:var(--teal);flex-shrink:0;}
   .stat-num{font-size:24px;font-weight:700;}
   .stat-label{font-size:12px;color:var(--text-dim);}
-  .cash-chart-wrap{position:relative;height:180px;margin-top:6px;pointer-events:none;}
+  .cash-chart-wrap{position:relative;height:180px;margin-top:6px;}
   .pending-value{font-size:24px;font-weight:700;color:var(--amber);overflow-wrap:break-word;}
   .clickable-card{cursor:pointer;}
   .clickable-card:hover{border-color:var(--teal);}
   .donut-wrap{display:flex;align-items:center;gap:18px;flex-wrap:wrap;}
-  .donut-canvas-wrap{position:relative;width:110px;height:110px;flex-shrink:0;}
+  .donut-canvas-wrap{position:relative;width:130px;height:130px;flex-shrink:0;}
   .legend{display:flex;flex-direction:column;gap:8px;font-size:12.5px;min-width:0;}
   .legend-item{display:flex;align-items:center;gap:8px;overflow-wrap:break-word;}
   .dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
@@ -128,6 +128,11 @@
   .picker-list{max-height:280px;overflow-y:auto;display:flex;flex-direction:column;gap:2px;}
   .picker-item{display:flex;align-items:center;gap:10px;padding:9px 8px;border-radius:8px;cursor:pointer;font-size:13px;}
   .picker-item:hover{background:#132135;}
+  .blocking-mask{position:fixed;inset:0;background:rgba(11,20,32,.72);z-index:200;display:none;align-items:center;justify-content:center;flex-direction:column;gap:14px;}
+  .blocking-mask.show{display:flex;}
+  .spinner{width:34px;height:34px;border:3px solid var(--border);border-top-color:var(--teal);border-radius:50%;animation:spin .8s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .blocking-mask span{font-size:13px;color:var(--text-dim);}
   .picker-item input{width:16px;height:16px;accent-color:var(--teal);flex-shrink:0;}
   .subtle{color:var(--text-mute);font-size:11.5px;}
   .divider{border-top:1px solid var(--border);margin:16px 0;}
@@ -217,6 +222,7 @@
 <div class="modal-overlay" id="modalOverlay"><div class="modal" id="modalBody"></div></div>
 <div class="modal-overlay" id="pickerOverlay"><div class="modal" id="pickerBody"></div></div>
 <div class="toast" id="toast"></div>
+<div class="blocking-mask show" id="blockingMask"><div class="spinner"></div><span id="maskText">Cargando información...</span></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script>
@@ -261,10 +267,12 @@ async function loadData(){
    API_URL) no hace nada y el llamador debe generar un ID local como respaldo. */
 async function apiCall(action, payload){
   if(!CONFIG.API_URL) return null;
+  showMask('Guardando...');
   try{
     const res = await fetch(CONFIG.API_URL, { method:'POST', body: JSON.stringify({ client:CONFIG.CLIENT_ID, action, payload }) });
     return await res.json();
   }catch(err){ console.error('Error de API en '+action, err); showToast('Sin conexion — el cambio quedo solo en este dispositivo'); return null; }
+  finally{ hideMask(); }
 }
 
 function anyModalOpen(){
@@ -273,13 +281,27 @@ function anyModalOpen(){
 
 function fmtMoney(n){ const c = CURRENCIES[CONFIG.CURRENCY]||CURRENCIES.MXN; return c.symbol + Math.round(n).toLocaleString('es-MX') + ' ' + CONFIG.CURRENCY; }
 function tratArr(str){ return (str||'').split(',').map(s=>s.trim()).filter(Boolean); }
+function duracionCitaMin(tratamientosStr){
+  const nombres = tratArr(tratamientosStr);
+  let total = 0;
+  nombres.forEach(n=>{ const t = DATA.tratamientos.find(t=>t.Nombre===n); total += t && t.Duracion_Min ? Number(t.Duracion_Min) : 30; });
+  return total>0 ? total : 30;
+}
 function normalize(s){ return (s===undefined||s===null?'':s.toString()).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(); }
 function matches(text, query){ return normalize(text).includes(normalize(query)); }
 function showToast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
+function showMask(text){ document.getElementById('maskText').textContent = text||'Cargando información...'; document.getElementById('blockingMask').classList.add('show'); }
+function hideMask(){ document.getElementById('blockingMask').classList.remove('show'); }
 function closeModal(){ document.getElementById('modalOverlay').classList.remove('open'); }
 function openModal(html, wide){ const m=document.getElementById('modalBody'); m.className = wide?'modal wide':'modal'; m.innerHTML = html; document.getElementById('modalOverlay').classList.add('open'); }
 function closePicker(){ document.getElementById('pickerOverlay').classList.remove('open'); }
 function todayStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+/* Lectura de fechas SIN pasar por conversion UTC/zona horaria — evita el bug
+   clasico de que "2026-08-07" se recorra un dia segun donde este el navegador.
+   Trabajamos siempre con los numeros del texto tal cual, nunca con new Date(str). */
+function ymd(fechaStr){ const p = String(fechaStr||'').split('-').map(Number); return { y:p[0]||0, m:p[1]||0, d:p[2]||0 }; }
+function diaDelMes(fechaStr){ return ymd(fechaStr).d; }
+function esMesActual(fechaStr, ref){ const a=ymd(fechaStr); const r=ref||new Date(); return a.y===r.getFullYear() && a.m===(r.getMonth()+1); }
 function nowHM(){ const d=new Date(); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
 
 /* ---------------- NAV ---------------- */
@@ -325,11 +347,15 @@ function render(){
 /* Refresco automatico: cada 20s, si hay conexion a la API, vuelve a leer el
    Sheet real (para que un cambio hecho en otro dispositivo aparezca aqui) y
    siempre vuelve a pintar (para que "citas de hoy" se actualice con el reloj).
-   Se salta el ciclo si hay una ventana flotante abierta, para no interrumpir
-   al usuario a medio llenar un formulario. */
+   Se salta el ciclo si hay una ventana flotante abierta, o si el usuario
+   escribio algo hace menos de 5s (para no borrarle lo que esta tecleando). */
+let LAST_INTERACTION = 0;
+document.addEventListener('input', ()=>{ LAST_INTERACTION = Date.now(); });
+const SEARCH_STATE = { pacientes:'', tratamientos:'', pagos:'', gastos:'' };
 clearInterval(refreshTimer);
 refreshTimer = setInterval(async ()=>{
   if(anyModalOpen()) return;
+  if(Date.now() - LAST_INTERACTION < 5000) return;
   if(CONFIG.API_URL) await loadData();
   render();
 }, 20000);
@@ -377,6 +403,64 @@ function openTreatmentPickerSingle(onSelect){
   document.getElementById('pickerCancel').addEventListener('click', closePicker);
 }
 
+/* Version "acotada": si el paciente ya tiene tratamientos asignados, los
+   muestra primero (mas rapido, sin buscar) con opcion de "Ver todos". Si no
+   tiene ninguno asignado, cae directo al selector completo. */
+function openTreatmentPickerSingleScoped(paciente, onSelect){
+  const asignados = paciente ? tratArr(paciente.Tratamientos) : [];
+  if(!paciente || asignados.length===0){ openTreatmentPickerSingle(onSelect); return; }
+  function draw(){
+    return asignados.map(nombre=>{
+      const t = DATA.tratamientos.find(t=>t.Nombre===nombre);
+      const precio = t ? t.Precio_MXN : 0;
+      return `<div class="picker-item" data-nombre="${nombre}" data-precio="${precio}">${nombre}${t?` <span class="subtle">· ${t.Categoria} · ${fmtMoney(precio)}</span>`:''}</div>`;
+    }).join('');
+  }
+  document.getElementById('pickerBody').innerHTML = `
+    <h3>Tratamiento de ${paciente.Nombre}</h3>
+    <p class="subtle" style="margin-bottom:10px;">Tratamientos ya asignados a este paciente</p>
+    <div class="picker-list" id="pickerList">${draw()}</div>
+    <div class="modal-actions">
+      <div class="btn block" id="pickerCancel">Cancelar</div>
+      <div class="btn block" id="pickerVerTodos">Ver todos los tratamientos</div>
+    </div>`;
+  document.getElementById('pickerOverlay').classList.add('open');
+  document.getElementById('pickerList').addEventListener('click', e=>{
+    const item = e.target.closest('.picker-item'); if(!item || !item.dataset.nombre) return;
+    closePicker(); onSelect({ nombre:item.dataset.nombre, precio:Number(item.dataset.precio) });
+  });
+  document.getElementById('pickerVerTodos').addEventListener('click', ()=>{ openTreatmentPickerSingle(onSelect); });
+  document.getElementById('pickerCancel').addEventListener('click', closePicker);
+}
+
+/* Version "acotada" del selector multiple, mismo criterio que la de arriba. */
+function openTreatmentPickerScoped(paciente, preselected, onConfirm){
+  const asignados = paciente ? tratArr(paciente.Tratamientos) : [];
+  if(!paciente || asignados.length===0){ openTreatmentPicker(preselected, onConfirm); return; }
+  const selected = new Set(preselected||[]);
+  function draw(){
+    return asignados.map(nombre=>{
+      const t = DATA.tratamientos.find(t=>t.Nombre===nombre);
+      return `<label class="picker-item"><input type="checkbox" value="${nombre}" ${selected.has(nombre)?'checked':''}><span>${nombre}${t?` <span class="subtle">· ${t.Categoria} · ${fmtMoney(t.Precio_MXN)}</span>`:''}</span></label>`;
+    }).join('');
+  }
+  document.getElementById('pickerBody').innerHTML = `
+    <h3>Tratamientos de ${paciente.Nombre}</h3>
+    <p class="subtle" style="margin-bottom:10px;">Tratamientos ya asignados a este paciente</p>
+    <div class="picker-list" id="pickerList">${draw()}</div>
+    <div class="modal-actions">
+      <div class="btn block" id="pickerCancel">Cancelar</div>
+      <div class="btn block" id="pickerVerTodos">Ver todos</div>
+      <div class="btn primary block" id="pickerConfirm">Listo</div>
+    </div>`;
+  document.getElementById('pickerOverlay').classList.add('open');
+  const list = document.getElementById('pickerList');
+  list.addEventListener('change', e=>{ if(e.target.matches('input[type=checkbox]')){ if(e.target.checked) selected.add(e.target.value); else selected.delete(e.target.value); } });
+  document.getElementById('pickerVerTodos').addEventListener('click', ()=>{ openTreatmentPicker(Array.from(selected), onConfirm); });
+  document.getElementById('pickerConfirm').addEventListener('click', ()=>{ closePicker(); onConfirm(Array.from(selected)); });
+  document.getElementById('pickerCancel').addEventListener('click', closePicker);
+}
+
 /* ============ SELECTOR UNICO DE PACIENTE ============ */
 function openPatientPicker(onSelect, activeOnly){
   if(activeOnly === undefined) activeOnly = true;
@@ -420,6 +504,35 @@ function openCategoryPicker(current, onSelect){
     if(item.dataset.newcat){
       DATA.categorias_tratamiento.push({Categoria:item.dataset.newcat});
       if(CONFIG.API_URL) apiCall('add_categoria', { categoria: item.dataset.newcat });
+      closePicker(); onSelect(item.dataset.newcat); showToast('Categoria agregada al catalogo');
+    }
+    else if(item.dataset.cat){ closePicker(); onSelect(item.dataset.cat); }
+  });
+  document.getElementById('pickerSearch').addEventListener('input', e=>{ document.getElementById('pickerList').innerHTML = draw(e.target.value); });
+  document.getElementById('pickerCancel').addEventListener('click', closePicker);
+}
+
+function openGastoCategoryPicker(current, onSelect){
+  function draw(filter){
+    const items = DATA.categorias_gasto.filter(c=>matches(c.Categoria, filter||''));
+    let html = items.map(c=>`<div class="picker-item" data-cat="${c.Categoria}">${c.Categoria}</div>`).join('');
+    if(filter && !DATA.categorias_gasto.some(c=>normalize(c.Categoria)===normalize(filter))){
+      html += `<div class="picker-item" style="color:var(--teal);" data-newcat="${filter}">+ Agregar "${filter}" como nueva categoria</div>`;
+    }
+    return html || '<div class="empty">Sin resultados</div>';
+  }
+  document.getElementById('pickerBody').innerHTML = `
+    <h3>Categoria de gasto</h3>
+    <input class="search picker-search" style="max-width:100%;" id="pickerSearch" placeholder="Buscar o crear categoria...">
+    <div class="picker-list" id="pickerList">${draw('')}</div>
+    <div class="modal-actions"><div class="btn block" id="pickerCancel">Cancelar</div></div>`;
+  document.getElementById('pickerOverlay').classList.add('open');
+  const list = document.getElementById('pickerList');
+  list.addEventListener('click', e=>{
+    const item = e.target.closest('.picker-item'); if(!item) return;
+    if(item.dataset.newcat){
+      DATA.categorias_gasto.push({Categoria:item.dataset.newcat});
+      if(CONFIG.API_URL) apiCall('add_categoria_gasto', { categoria: item.dataset.newcat });
       closePicker(); onSelect(item.dataset.newcat); showToast('Categoria agregada al catalogo');
     }
     else if(item.dataset.cat){ closePicker(); onSelect(item.dataset.cat); }
@@ -488,24 +601,24 @@ function renderDashboardHTML(){
 }
 function drawDashboardCharts(){
   const byWeek = {};
-  DATA.pagos.forEach(p=>{ const d=new Date(p.Fecha); const w='S'+Math.ceil(d.getDate()/7); byWeek[w]=(byWeek[w]||0)+Number(p.Monto_Pagado); });
+  DATA.pagos.forEach(p=>{ const w='S'+Math.ceil(diaDelMes(p.Fecha)/7); byWeek[w]=(byWeek[w]||0)+Number(p.Monto_Pagado); });
   const weeks=['S1','S2','S3','S4','S5'];
   const incomeEl = document.getElementById('incomeChart');
-  if(incomeEl) new Chart(incomeEl,{type:'bar',data:{labels:weeks,datasets:[{data:weeks.map(w=>byWeek[w]||0),backgroundColor:'#2FD8B0',borderRadius:4,barThickness:16}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{enabled:false}},scales:{x:{grid:{display:false},ticks:{display:false}},y:{display:false,beginAtZero:true}}}});
+  if(incomeEl) new Chart(incomeEl,{type:'bar',data:{labels:weeks,datasets:[{data:weeks.map(w=>byWeek[w]||0),backgroundColor:'#2FD8B0',borderRadius:4,barThickness:16}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false,callbacks:{label:c=>fmtMoney(c.raw)}}},interaction:{mode:'index',intersect:false},scales:{x:{grid:{display:false},ticks:{display:false}},y:{display:false,beginAtZero:true}}}});
   const cashEl = document.getElementById('cashChart');
   if(cashEl){ let running=0; const cum=weeks.map(w=>{running+=byWeek[w]||0;return running;});
-    new Chart(cashEl,{type:'line',data:{labels:weeks,datasets:[{data:cum,borderColor:'#2FD8B0',borderWidth:2,tension:.35,pointRadius:4,pointBackgroundColor:'#2FD8B0',fill:true,backgroundColor:'rgba(47,216,176,0.10)'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{enabled:false}},scales:{x:{grid:{display:false},ticks:{color:'#5B6D7A',font:{size:11}}},y:{grid:{color:'#1E2E42'},ticks:{color:'#5B6D7A',font:{size:11},callback:v=>'$'+v}}}}}); }
+    new Chart(cashEl,{type:'line',data:{labels:weeks,datasets:[{data:cum,borderColor:'#2FD8B0',borderWidth:2,tension:.35,pointRadius:4,pointBackgroundColor:'#2FD8B0',fill:true,backgroundColor:'rgba(47,216,176,0.10)'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false,callbacks:{label:c=>fmtMoney(c.raw)}}},interaction:{mode:'index',intersect:false},scales:{x:{grid:{display:false},ticks:{color:'#5B6D7A',font:{size:11}}},y:{grid:{color:'#1E2E42'},ticks:{color:'#5B6D7A',font:{size:11},callback:v=>'$'+v}}}}}); }
   const donutEl = document.getElementById('donutChart');
   if(donutEl){ const porCategoria={}; DATA.pagos.forEach(p=>{const t=DATA.tratamientos.find(t=>t.Nombre===p.Tratamiento);const cat=t?t.Categoria:'Otros';porCategoria[cat]=(porCategoria[cat]||0)+Number(p.Monto_Pagado);});
     const entries=Object.entries(porCategoria).sort((a,b)=>b[1]-a[1]).slice(0,3);
-    new Chart(donutEl,{type:'doughnut',data:{labels:entries.map(e=>e[0]),datasets:[{data:entries.map(e=>e[1]),backgroundColor:['#2FD8B0','#1B6E5C','#3A4E60'],borderColor:'#101C2C',borderWidth:3}]},options:{responsive:true,maintainAspectRatio:false,cutout:'68%',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.label+': '+fmtMoney(c.raw)}}}}}); }
+    new Chart(donutEl,{type:'doughnut',data:{labels:entries.map(e=>e[0]),datasets:[{data:entries.map(e=>e[1]),backgroundColor:['#2FD8B0','#1B6E5C','#3A4E60'],borderColor:'#101C2C',borderWidth:3}]},options:{responsive:true,maintainAspectRatio:false,cutout:'62%',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>{const corto=c.label.length>12?c.label.slice(0,11)+'…':c.label; return corto+': '+fmtMoney(c.raw);}}}}}}); }
 }
 
 /* ==================== PACIENTES ==================== */
 function renderPacientesHTML(){
   return `
   <div class="toolbar">
-    <input class="search" id="pacSearch" placeholder="Buscar por nombre o tratamiento...">
+    <input class="search" id="pacSearch" placeholder="Buscar por nombre o tratamiento..." value="${SEARCH_STATE.pacientes}">
     <div class="btn primary" id="btnAddPaciente">+ Nuevo paciente</div>
   </div>
   <div class="table-wrap">
@@ -554,8 +667,8 @@ function showPacienteDetalle(pacId){
 /* ==================== FINANZAS ==================== */
 function renderFinanzasHTML(){
   const now = new Date(); const mesActual = now.getMonth(); const anioActual = now.getFullYear();
-  const pagosMes = DATA.pagos.filter(p=>{ const d=new Date(p.Fecha); return d.getMonth()===mesActual && d.getFullYear()===anioActual; });
-  const gastosMes = DATA.gastos.filter(g=>{ const d=new Date(g.Fecha); return d.getMonth()===mesActual && d.getFullYear()===anioActual; });
+  const pagosMes = DATA.pagos.filter(p=> esMesActual(p.Fecha, now));
+  const gastosMes = DATA.gastos.filter(g=> esMesActual(g.Fecha, now));
   const ingresosMes = pagosMes.reduce((s,p)=>s+Number(p.Monto_Pagado),0);
   const pendiente = DATA.pagos.reduce((s,p)=>s+Number(p.Saldo),0);
   const gastosTotal = gastosMes.reduce((s,g)=>s+Number(g.Monto),0);
@@ -578,7 +691,7 @@ function renderFinanzasHTML(){
     <div class="coll-header" onclick="toggleCollapse(this)"><svg class="coll-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg><b>Pagos</b></div>
     <div class="coll-body">
       <div class="toolbar">
-        <input class="search" id="pagoSearch" placeholder="Buscar por fecha, paciente, tratamiento, monto...">
+        <input class="search" id="pagoSearch" placeholder="Buscar por fecha, paciente, tratamiento, monto..." value="${SEARCH_STATE.pagos}">
         <div class="btn primary sm" id="btnAddPago">+ Registrar pago</div>
       </div>
       <div class="table-wrap" style="margin-bottom:20px;">
@@ -591,7 +704,7 @@ function renderFinanzasHTML(){
     <div class="coll-header" onclick="toggleCollapse(this)"><svg class="coll-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg><b>Gastos fijos</b></div>
     <div class="coll-body">
       <div class="toolbar">
-        <input class="search" id="gastoSearch" placeholder="Buscar por fecha, concepto, categoria, monto...">
+        <input class="search" id="gastoSearch" placeholder="Buscar por fecha, concepto, categoria, monto..." value="${SEARCH_STATE.gastos}">
         <div class="btn primary sm" id="btnAddGasto">+ Registrar gasto</div>
       </div>
       <div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Concepto</th><th>Categoria</th><th>Monto</th></tr></thead><tbody id="gastosTbody"></tbody></table></div>
@@ -614,6 +727,16 @@ function fillGastosTable(filter){
   const rows = [...DATA.gastos].sort((a,b)=>b.Fecha.localeCompare(a.Fecha)).filter(g=>{ const blob = [g.Fecha,g.Concepto,g.Categoria,g.Monto].join(' '); return matches(blob, f); });
   tbody.innerHTML = rows.map(g=>`<tr><td>${g.Fecha}</td><td>${g.Concepto}</td><td>${g.Categoria}</td><td>${fmtMoney(g.Monto)}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">Sin resultados</td></tr>';
 }
+async function guardarPagoNuevo(selPac, selTrat, total, pagado){
+  let id = 'F' + String(DATA.pagos.length+1).padStart(3,'0');
+  if(CONFIG.API_URL){
+    const res = await apiCall('add_pago', { fecha:todayStr(), pacienteId:selPac.ID, paciente:selPac.Nombre, tratamiento:selTrat.nombre, montoTotal:total, montoPagado:pagado });
+    if(res && res.id) id = res.id;
+  }
+  DATA.pagos.push({ID:id, Fecha:todayStr(), Paciente_ID:selPac.ID, Paciente:selPac.Nombre, Tratamiento:selTrat.nombre, Monto_Total:total, Monto_Pagado:pagado, Saldo:total-pagado});
+  showToast('Pago registrado'); render();
+}
+
 function openAbonoModal(pagoId, onDone){
   const pago = DATA.pagos.find(p=>p.ID===pagoId); if(!pago) return;
   openModal(`
@@ -636,7 +759,7 @@ function drawFinanzasChart(){
   const el = document.getElementById('finCashChart'); if(!el) return;
   const now = new Date();
   const byWeek = {};
-  DATA.pagos.forEach(p=>{ const d=new Date(p.Fecha); if(d.getMonth()!==now.getMonth()||d.getFullYear()!==now.getFullYear()) return; const w='S'+Math.ceil(d.getDate()/7); byWeek[w]=(byWeek[w]||0)+Number(p.Monto_Pagado); });
+  DATA.pagos.forEach(p=>{ if(!esMesActual(p.Fecha, now)) return; const w='S'+Math.ceil(diaDelMes(p.Fecha)/7); byWeek[w]=(byWeek[w]||0)+Number(p.Monto_Pagado); });
   const weeks=['S1','S2','S3','S4','S5'];
   new Chart(el,{type:'bar',data:{labels:weeks,datasets:[{data:weeks.map(w=>byWeek[w]||0),backgroundColor:'#2FD8B0',borderRadius:4,barThickness:28}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false,callbacks:{label:c=>fmtMoney(c.raw)}}},interaction:{mode:'index',intersect:false},scales:{x:{grid:{display:false},ticks:{color:'#5B6D7A'}},y:{grid:{color:'#1E2E42'},ticks:{color:'#5B6D7A',callback:v=>'$'+v}}}}});
 }
@@ -645,16 +768,16 @@ function drawFinanzasChart(){
 function renderTratamientosHTML(){
   return `
   <div class="toolbar">
-    <input class="search" id="tratSearch" placeholder="Buscar por tratamiento, categoria o precio...">
+    <input class="search" id="tratSearch" placeholder="Buscar por tratamiento, categoria o precio..." value="${SEARCH_STATE.tratamientos}">
     <div class="btn primary" id="btnAddTratamiento">+ Nuevo tratamiento</div>
   </div>
-  <div class="table-wrap"><table><thead><tr><th>Tratamiento</th><th>Categoria</th><th>Precio</th></tr></thead><tbody id="tratTbody"></tbody></table></div>`;
+  <div class="table-wrap"><table><thead><tr><th>Tratamiento</th><th>Categoria</th><th>Precio</th><th>Duración</th></tr></thead><tbody id="tratTbody"></tbody></table></div>`;
 }
 function fillTratamientosTable(filter){
   const tbody = document.getElementById('tratTbody'); if(!tbody) return;
   const f = filter||'';
   const rows = DATA.tratamientos.filter(t=>{ const blob = [t.Nombre,t.Categoria,t.Precio_MXN].join(' '); return matches(blob, f); });
-  tbody.innerHTML = rows.map(t=>`<tr><td>${t.Nombre}</td><td>${t.Categoria}</td><td>${fmtMoney(t.Precio_MXN)}</td></tr>`).join('') || '<tr><td colspan="3" class="empty">Sin resultados</td></tr>';
+  tbody.innerHTML = rows.map(t=>`<tr><td>${t.Nombre}</td><td>${t.Categoria}</td><td>${fmtMoney(t.Precio_MXN)}</td><td>${t.Duracion_Min||30} min</td></tr>`).join('') || '<tr><td colspan="4" class="empty">Sin resultados</td></tr>';
 }
 
 /* ==================== AGENDA ==================== */
@@ -699,7 +822,9 @@ Maria Ramirez Cruz,Corona dental,2026-08-11,11:00</div>
         ${citasOrdenadas.map(c=>{
           const esHoy = c.Fecha===hoy; const esPasada = c.Fecha < hoy;
           const color = esPasada ? 'var(--text-mute)' : (esHoy ? 'var(--amber)' : 'var(--teal)');
-          return `<div class="appt"><div class="appt-time">${c.Fecha.slice(5)}<br>${c.Hora}</div><div class="appt-info" style="border-left-color:${color}"><b>${c.Paciente}</b><span>${tratArr(c.Tratamientos||c.Tratamiento).join(' + ')}</span></div></div>`;
+          const dur = duracionCitaMin(c.Tratamientos||c.Tratamiento);
+          const acciones = esPasada ? '' : `<div style="display:flex;gap:6px;margin-top:6px;"><div class="btn sm" data-reagendar="${c.ID}">Reagendar</div><div class="btn sm danger" data-cancelar="${c.ID}">Cancelar</div></div>`;
+          return `<div class="appt"><div class="appt-time">${c.Fecha.slice(5)}<br>${c.Hora}</div><div class="appt-info" style="border-left-color:${color}"><b>${c.Paciente}</b><span>${tratArr(c.Tratamientos||c.Tratamiento).join(' + ')} · ${dur} min</span>${acciones}</div></div>`;
         }).join('') || '<div class="empty">Sin citas</div>'}
       </div>
       <p class="subtle" style="margin-top:10px;">● gris = pasada &nbsp; ● ambar = hoy &nbsp; ● verde = futura</p>
@@ -719,8 +844,7 @@ function renderConfiguracionHTML(){
     <div class="field" style="margin-bottom:12px;"><label>Nombre de la clinica</label><input id="cfgNombre" value="Dental Control Global"></div>
     <div class="field" style="margin-bottom:12px;"><label>Moneda</label>
       <select id="cfgMoneda">${Object.entries(CURRENCIES).map(([code,c])=>`<option value="${code}" ${CONFIG.CURRENCY===code?'selected':''}>${code} — ${c.nombre}</option>`).join('')}</select></div>
-    <div class="field" style="margin-bottom:12px;"><label>URL de la API (Apps Script)</label><input id="cfgApiUrl" placeholder="https://script.google.com/macros/s/.../exec" value="${CONFIG.API_URL}"></div>
-    <div class="field" style="margin-bottom:16px;"><label>ID de cliente</label><input id="cfgClientId" placeholder="ej. imagendental" value="${CONFIG.CLIENT_ID}"></div>
+    <div class="field" style="margin-bottom:16px;"><label>ID de cliente</label><input value="${CONFIG.CLIENT_ID}" readonly></div>
     <div class="btn primary" id="btnGuardarConfig">Guardar cambios</div>
     <p style="color:var(--text-mute);font-size:12px;margin-top:14px;">Modo actual: <b style="color:${CONFIG.API_URL?'var(--teal)':'var(--amber)'}">${CONFIG.API_URL ? 'Conectado a datos reales' : 'Demo (datos de ejemplo)'}</b>.</p>
   </div>
@@ -766,8 +890,8 @@ function afterRenderHooks(){
   }
 
   if(ACTIVE_TAB === 'pacientes'){
-    fillPacientesTable('');
-    document.getElementById('pacSearch').addEventListener('input', e=>fillPacientesTable(e.target.value));
+    fillPacientesTable(SEARCH_STATE.pacientes);
+    document.getElementById('pacSearch').addEventListener('input', e=>{ SEARCH_STATE.pacientes = e.target.value; fillPacientesTable(e.target.value); });
     document.getElementById('btnAddPaciente').addEventListener('click', ()=>{
       let selectedTrats = [];
       openModal(`
@@ -799,9 +923,9 @@ function afterRenderHooks(){
 
   if(ACTIVE_TAB === 'finanzas'){
     drawFinanzasChart();
-    fillPagosTable(''); fillGastosTable('');
-    document.getElementById('pagoSearch').addEventListener('input', e=>fillPagosTable(e.target.value));
-    document.getElementById('gastoSearch').addEventListener('input', e=>fillGastosTable(e.target.value));
+    fillPagosTable(SEARCH_STATE.pagos); fillGastosTable(SEARCH_STATE.gastos);
+    document.getElementById('pagoSearch').addEventListener('input', e=>{ SEARCH_STATE.pagos = e.target.value; fillPagosTable(e.target.value); });
+    document.getElementById('gastoSearch').addEventListener('input', e=>{ SEARCH_STATE.gastos = e.target.value; fillGastosTable(e.target.value); });
     document.getElementById('btnAddPago').addEventListener('click', ()=>{
       let selPac = null; let selTrat = null;
       openModal(`
@@ -817,33 +941,50 @@ function afterRenderHooks(){
         openPatientPicker((pac)=>{ selPac = pac; document.getElementById('pgPacBtn').textContent = pac.Nombre; }, false);
       });
       document.getElementById('pgTratBtn').addEventListener('click', ()=>{
-        openTreatmentPickerSingle((t)=>{ selTrat = t; document.getElementById('pgTratBtn').textContent = t.nombre; document.getElementById('pgTotal').value = fmtMoney(t.precio); document.getElementById('pgTotal').dataset.raw = t.precio; });
+        openTreatmentPickerSingleScoped(selPac, (t)=>{ selTrat = t; document.getElementById('pgTratBtn').textContent = t.nombre; document.getElementById('pgTotal').value = fmtMoney(t.precio); document.getElementById('pgTotal').dataset.raw = t.precio; });
       });
       document.getElementById('mGuardarPago').addEventListener('click', async ()=>{
         if(!selPac) return showToast('Selecciona un paciente');
         if(!selTrat) return showToast('Selecciona un tratamiento');
         const total = Number(document.getElementById('pgTotal').dataset.raw)||0;
         const pagado = Number(document.getElementById('pgPagado').value)||0;
-        let id = 'F' + String(DATA.pagos.length+1).padStart(3,'0');
-        if(CONFIG.API_URL){
-          const res = await apiCall('add_pago', { fecha:todayStr(), pacienteId:selPac.ID, paciente:selPac.Nombre, tratamiento:selTrat.nombre, montoTotal:total, montoPagado:pagado });
-          if(res && res.id) id = res.id;
+        const existente = DATA.pagos.find(p=>p.Paciente_ID===selPac.ID && p.Tratamiento===selTrat.nombre && Number(p.Saldo)>0);
+        if(existente){
+          closeModal();
+          openModal(`
+            <h3>Ya existe un pago pendiente</h3>
+            <p style="font-size:13px;margin-bottom:14px;">${selPac.Nombre} ya tiene un registro de <b>${selTrat.nombre}</b> con saldo de ${fmtMoney(existente.Saldo)}. ¿Quieres abonar a ese registro en vez de crear uno nuevo?</p>
+            <div class="modal-actions">
+              <div class="btn block" id="btnCrearNuevo">Crear registro nuevo de todas formas</div>
+              <div class="btn primary block" id="btnAbonarExistente">Abonar al existente</div>
+            </div>`);
+          document.getElementById('btnAbonarExistente').addEventListener('click', ()=>{
+            closeModal();
+            openAbonoModal(existente.ID, ()=>{ fillPagosTable(SEARCH_STATE.pagos); });
+          });
+          document.getElementById('btnCrearNuevo').addEventListener('click', async ()=>{
+            closeModal(); await guardarPagoNuevo(selPac, selTrat, total, pagado);
+          });
+          return;
         }
-        DATA.pagos.push({ID:id, Fecha:todayStr(), Paciente_ID:selPac.ID, Paciente:selPac.Nombre, Tratamiento:selTrat.nombre, Monto_Total:total, Monto_Pagado:pagado, Saldo:total-pagado});
-        closeModal(); showToast('Pago registrado'); render();
+        await guardarPagoNuevo(selPac, selTrat, total, pagado);
       });
     });
     document.getElementById('btnAddGasto').addEventListener('click', ()=>{
+      let categoriaSelGasto = DATA.categorias_gasto[0] ? DATA.categorias_gasto[0].Categoria : '';
       openModal(`
         <h3>Registrar gasto</h3>
         <div class="field" style="margin-bottom:12px;"><label>Concepto</label><input id="gConcepto"></div>
         <div class="field" style="margin-bottom:12px;"><label>Categoria</label>
-          <select id="gCategoria">${DATA.categorias_gasto.map(c=>`<option value="${c.Categoria}">${c.Categoria}</option>`).join('')}</select></div>
+          <div class="picker-btn" id="gCatBtn">${categoriaSelGasto}</div></div>
         <div class="field" style="margin-bottom:16px;"><label>Monto</label><input id="gMonto" type="number"></div>
         <div class="modal-actions"><div class="btn block" onclick="closeModal()">Cancelar</div><div class="btn primary block" id="mGuardarGasto">Guardar</div></div>`);
+      document.getElementById('gCatBtn').addEventListener('click', ()=>{
+        openGastoCategoryPicker(categoriaSelGasto, (cat)=>{ categoriaSelGasto = cat; document.getElementById('gCatBtn').textContent = cat; });
+      });
       document.getElementById('mGuardarGasto').addEventListener('click', async ()=>{
         const concepto = document.getElementById('gConcepto').value.trim();
-        const categoria = document.getElementById('gCategoria').value;
+        const categoria = categoriaSelGasto;
         const monto = Number(document.getElementById('gMonto').value)||0;
         if(!concepto || monto<=0) return showToast('Completa concepto y monto');
         let id = 'G' + String(DATA.gastos.length+1).padStart(3,'0');
@@ -858,8 +999,8 @@ function afterRenderHooks(){
   }
 
   if(ACTIVE_TAB === 'tratamientos'){
-    fillTratamientosTable('');
-    document.getElementById('tratSearch').addEventListener('input', e=>fillTratamientosTable(e.target.value));
+    fillTratamientosTable(SEARCH_STATE.tratamientos);
+    document.getElementById('tratSearch').addEventListener('input', e=>{ SEARCH_STATE.tratamientos = e.target.value; fillTratamientosTable(e.target.value); });
     document.getElementById('btnAddTratamiento').addEventListener('click', ()=>{
       let categoriaSel = DATA.categorias_tratamiento[0] ? DATA.categorias_tratamiento[0].Categoria : '';
       openModal(`
@@ -867,6 +1008,7 @@ function afterRenderHooks(){
         <div class="field" style="margin-bottom:12px;"><label>Nombre</label><input id="mtNombre"></div>
         <div class="field" style="margin-bottom:12px;"><label>Categoria</label><div class="picker-btn" id="mtCatBtn">${categoriaSel}</div></div>
         <div class="field" style="margin-bottom:12px;"><label>Precio</label><input id="mtPrecio" type="number"></div>
+        <div class="field" style="margin-bottom:12px;"><label>Duración aproximada (minutos)</label><input id="mtDuracion" type="number" value="30" min="5" step="5"></div>
         <div class="modal-actions"><div class="btn block" onclick="closeModal()">Cancelar</div><div class="btn primary block" id="mGuardarTratamiento">Guardar</div></div>`);
       document.getElementById('mtCatBtn').addEventListener('click', ()=>{
         openCategoryPicker(categoriaSel, (cat)=>{ categoriaSel = cat; document.getElementById('mtCatBtn').textContent = cat; });
@@ -874,13 +1016,14 @@ function afterRenderHooks(){
       document.getElementById('mGuardarTratamiento').addEventListener('click', async ()=>{
         const nombre = document.getElementById('mtNombre').value.trim();
         const precio = Number(document.getElementById('mtPrecio').value)||0;
+        const duracionMin = Number(document.getElementById('mtDuracion').value)||30;
         if(!nombre) return showToast('Falta el nombre');
         let id = 'T' + String(DATA.tratamientos.length+1).padStart(2,'0');
         if(CONFIG.API_URL){
-          const res = await apiCall('add_tratamiento', { nombre, categoria:categoriaSel, precio });
+          const res = await apiCall('add_tratamiento', { nombre, categoria:categoriaSel, precio, duracionMin });
           if(res && res.id) id = res.id;
         }
-        DATA.tratamientos.push({ID:id, Nombre:nombre, Categoria:categoriaSel, Precio_MXN:precio});
+        DATA.tratamientos.push({ID:id, Nombre:nombre, Categoria:categoriaSel, Precio_MXN:precio, Duracion_Min:duracionMin});
         closeModal(); showToast('Tratamiento agregado'); render();
       });
     });
@@ -889,7 +1032,7 @@ function afterRenderHooks(){
   if(ACTIVE_TAB === 'agendar'){
     let selectedTrats = []; let selectedPac = null;
     document.getElementById('citaTratBtn').addEventListener('click', ()=>{
-      openTreatmentPicker(selectedTrats, (sel)=>{ selectedTrats = sel; document.getElementById('citaTratChips').innerHTML = selectedTrats.map(t=>`<span class="chip">${t}</span>`).join(''); });
+      openTreatmentPickerScoped(selectedPac, selectedTrats, (sel)=>{ selectedTrats = sel; document.getElementById('citaTratChips').innerHTML = selectedTrats.map(t=>`<span class="chip">${t}</span>`).join(''); });
     });
     document.getElementById('citaPacBtn').addEventListener('click', ()=>{
       openPatientPicker((pac)=>{ selectedPac = pac; document.getElementById('citaPacBtn').textContent = pac.Nombre; document.getElementById('citaPacienteId').value = pac.ID; }, true);
@@ -905,16 +1048,9 @@ function afterRenderHooks(){
         <div class="summary-row"><span>Fecha</span><span>${fecha}</span></div>
         <div class="summary-row"><span>Hora</span><span>${hora}</span></div>
         <div class="modal-actions"><div class="btn block" onclick="closeModal()">Corregir</div><div class="btn primary block" id="confirmCita">Confirmar y agendar</div></div>`);
-      document.getElementById('confirmCita').addEventListener('click', async ()=>{
+      document.getElementById('confirmCita').addEventListener('click', ()=>{
         closeModal();
-        let id = 'C' + String(DATA.citas.length+1).padStart(3,'0');
-        if(CONFIG.API_URL){
-          const res = await apiCall('add_cita', { pacienteId:selectedPac.ID, paciente:selectedPac.Nombre, tratamientos:selectedTrats.join(', '), fecha, hora });
-          if(res && res.id) id = res.id;
-          showToast(res ? 'Cita creada y agregada a Google Calendar' : 'Cita guardada localmente (sin conexion)');
-        } else { showToast('Cita agendada (modo demo)'); }
-        DATA.citas.push({ID:id, Fecha:fecha, Hora:hora, Paciente_ID:selectedPac.ID, Paciente:selectedPac.Nombre, Tratamientos:selectedTrats.join(', '), Estado:'Confirmada'});
-        render();
+        guardarCitaNueva(selectedPac, selectedTrats, fecha, hora, false);
       });
     });
 
@@ -963,12 +1099,39 @@ function afterRenderHooks(){
       };
       reader.readAsText(file);
     });
+
+    document.querySelectorAll('[data-reagendar]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const citaId = btn.dataset.reagendar;
+        const cita = DATA.citas.find(c=>c.ID===citaId); if(!cita) return;
+        const hoy = todayStr();
+        openModal(`
+          <h3>Reagendar cita</h3>
+          <p class="subtle" style="margin-bottom:14px;">${cita.Paciente} · ${tratArr(cita.Tratamientos||cita.Tratamiento).join(' + ')}</p>
+          <div class="form-grid" style="margin-bottom:16px;">
+            <div class="field"><label>Nueva fecha</label><input type="date" id="reagFecha" value="${cita.Fecha < hoy ? hoy : cita.Fecha}" min="${hoy}"></div>
+            <div class="field"><label>Nueva hora</label><input type="time" id="reagHora" value="${cita.Hora}"></div>
+          </div>
+          <div class="modal-actions"><div class="btn block" onclick="closeModal()">Cancelar</div><div class="btn primary block" id="btnConfirmarReagendar">Reagendar</div></div>`);
+        document.getElementById('btnConfirmarReagendar').addEventListener('click', async ()=>{
+          await intentarReagendar(citaId, document.getElementById('reagFecha').value, document.getElementById('reagHora').value, false);
+        });
+      });
+    });
+    document.querySelectorAll('[data-cancelar]').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        const citaId = btn.dataset.cancelar;
+        const cita = DATA.citas.find(c=>c.ID===citaId); if(!cita) return;
+        if(!confirm(`¿Cancelar la cita de ${cita.Paciente} el ${cita.Fecha} a las ${cita.Hora}?`)) return;
+        if(CONFIG.API_URL) await apiCall('cancelar_cita', { citaId });
+        cita.Estado = 'Cancelada';
+        showToast('Cita cancelada'); render();
+      });
+    });
   }
 
   if(ACTIVE_TAB === 'configuracion'){
     document.getElementById('btnGuardarConfig').addEventListener('click', async ()=>{
-      CONFIG.API_URL = document.getElementById('cfgApiUrl').value.trim();
-      CONFIG.CLIENT_ID = document.getElementById('cfgClientId').value.trim();
       CONFIG.CURRENCY = document.getElementById('cfgMoneda').value;
       document.getElementById('clinicName').innerHTML = document.getElementById('cfgNombre').value + ' <span class="accent"></span>';
       if(CONFIG.API_URL) await apiCall('set_config', { clave:'Moneda', valor: CONFIG.CURRENCY });
@@ -1033,6 +1196,54 @@ function showReferidosModal(){
     <div class="modal-actions"><div class="btn primary block" onclick="closeModal()">Cerrar</div></div>`);
 }
 
+async function guardarCitaNueva(pac, trats, fecha, hora, forzar){
+  let id = 'C' + String(DATA.citas.length+1).padStart(3,'0');
+  if(CONFIG.API_URL){
+    const res = await apiCall('add_cita', { pacienteId:pac.ID, paciente:pac.Nombre, tratamientos:trats.join(', '), fecha, hora, forzar: !!forzar });
+    if(res && res.conflict){
+      openModal(`
+        <h3>Horario ocupado</h3>
+        <p style="font-size:13px;margin-bottom:16px;">${res.mensaje} ¿Deseas agendar de todos modos?</p>
+        <div class="modal-actions"><div class="btn block" onclick="closeModal()">Cancelar</div><div class="btn primary block" id="btnForzarCita">Agendar de todos modos</div></div>`);
+      document.getElementById('btnForzarCita').addEventListener('click', ()=>{ closeModal(); guardarCitaNueva(pac, trats, fecha, hora, true); });
+      return;
+    }
+    if(res && res.id) id = res.id;
+    showToast(res ? 'Cita creada y agregada a Google Calendar' : 'Cita guardada localmente (sin conexion)');
+  } else { showToast('Cita agendada (modo demo)'); }
+  DATA.citas.push({ID:id, Fecha:fecha, Hora:hora, Paciente_ID:pac.ID, Paciente:pac.Nombre, Tratamientos:trats.join(', '), Estado:'Confirmada'});
+  render();
+}
+
+async function intentarReagendar(citaId, nuevaFecha, nuevaHora, forzar){
+  if(!nuevaFecha || !nuevaHora) return showToast('Completa fecha y hora');
+  if(!CONFIG.API_URL){
+    // modo demo: sin backend, aplica local directo
+    const cita = DATA.citas.find(c=>c.ID===citaId);
+    cita.Fecha = nuevaFecha; cita.Hora = nuevaHora;
+    closeModal(); showToast('Cita reagendada (modo demo)'); render();
+    return;
+  }
+  const res = await apiCall('reagendar_cita', { citaId, nuevaFecha, nuevaHora, forzar: !!forzar });
+  if(res && res.conflict){
+    openModal(`
+      <h3>Horario ocupado</h3>
+      <p style="font-size:13px;margin-bottom:16px;">${res.mensaje} ¿Deseas reagendar de todos modos?</p>
+      <div class="modal-actions"><div class="btn block" onclick="closeModal()">Cancelar</div><div class="btn primary block" id="btnForzarReagendar">Reagendar de todos modos</div></div>`);
+    document.getElementById('btnForzarReagendar').addEventListener('click', async ()=>{
+      await intentarReagendar(citaId, nuevaFecha, nuevaHora, true);
+    });
+    return;
+  }
+  if(res && res.ok){
+    const cita = DATA.citas.find(c=>c.ID===citaId);
+    cita.Fecha = nuevaFecha; cita.Hora = nuevaHora;
+    closeModal(); showToast('Cita reagendada y actualizada en Google Calendar'); render();
+  } else {
+    showToast('No se pudo reagendar. Intenta de nuevo.');
+  }
+}
+
 function showPendientesModal(){
   function draw(filter){
     const f = filter||'';
@@ -1065,7 +1276,7 @@ function showPendientesModal(){
   document.getElementById('pendSearch').addEventListener('input', e=>{ document.getElementById('pendList').innerHTML = draw(e.target.value); attachHandlers(); });
 }
 
-(async function init(){ await loadData(); render(); })();
+(async function init(){ await loadData(); hideMask(); render(); })();
 </script>
 </body>
 </html>

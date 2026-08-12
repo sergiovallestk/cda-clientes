@@ -1,0 +1,1049 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dental Control Global</title>
+<style>
+  :root{
+    --bg:#0B1420; --panel:#101C2C; --panel-2:#0D1826; --border:#1E2E42;
+    --teal:#2FD8B0; --teal-dim:#1B6E5C; --amber:#F2B84B; --red:#E86A5C;
+    --text:#F1F5F4; --text-dim:#8FA1AE; --text-mute:#5B6D7A;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,-apple-system,Roboto,Arial,sans-serif;display:flex;min-height:100vh;}
+  .hamburger{display:none;position:fixed;top:16px;left:16px;z-index:120;width:38px;height:38px;background:var(--panel);border:1px solid var(--border);border-radius:8px;color:var(--text);align-items:center;justify-content:center;cursor:pointer;}
+  .sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99;}
+  .sidebar-overlay.open{display:block;}
+  .sidebar{width:220px;background:var(--panel-2);border-right:1px solid var(--border);padding:24px 16px;display:flex;flex-direction:column;gap:4px;flex-shrink:0;}
+  .brand{display:flex;align-items:center;gap:10px;padding:0 8px 24px 8px;border-bottom:1px solid var(--border);margin-bottom:20px;}
+  .brand svg{color:var(--teal);}
+  .brand span{font-weight:600;font-size:15px;letter-spacing:0.3px;}
+  .nav-item{display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:8px;color:var(--text-dim);font-size:14px;cursor:pointer;transition:background .15s,color .15s;}
+  .nav-item:hover{background:#152234;color:var(--text);}
+  .nav-item.active{background:var(--teal);color:#04241C;font-weight:600;}
+  .nav-item svg{width:17px;height:17px;flex-shrink:0;}
+  .main{flex:1;padding:28px 32px;max-width:1200px;overflow-x:hidden;min-width:0;}
+  .header{margin-bottom:22px;}
+  .header h1{font-size:22px;font-weight:700;letter-spacing:0.2px;}
+  .header h1 .accent{color:var(--teal);}
+  .header p{color:var(--text-dim);font-size:13px;margin-top:4px;}
+  .grid{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:16px;}
+  .row2{display:grid;grid-template-columns:1.5fr 1fr;gap:16px;margin-top:16px;}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:18px 20px;min-width:0;overflow:hidden;}
+  .card-title{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:14px;min-width:0;overflow-wrap:break-word;}
+  .card-title svg{width:15px;height:15px;color:var(--teal);flex-shrink:0;}
+  .card-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:14px;flex-wrap:wrap;}
+  .card-head .card-title{margin-bottom:0;flex:1;min-width:120px;}
+  .link-btn{font-size:11.5px;color:var(--teal);cursor:pointer;font-weight:600;white-space:nowrap;flex-shrink:0;}
+  .link-btn:hover{text-decoration:underline;}
+  .appt{display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;}
+  .appt:last-of-type{border-bottom:none;}
+  .appt-time{width:50px;color:var(--text-mute);font-size:12px;flex-shrink:0;}
+  .appt-info{flex:1;background:#132135;border-left:3px solid var(--teal);border-radius:6px;padding:8px 10px;min-width:0;overflow-wrap:break-word;}
+  .appt-info b{display:block;font-size:13px;overflow-wrap:break-word;}
+  .appt-info span{color:var(--text-dim);font-size:12px;}
+  .appt-list{max-height:280px;overflow-y:auto;}
+  .appt-actions{display:flex;gap:8px;margin-top:14px;}
+  .btn{padding:9px 14px;border-radius:8px;font-size:12.5px;font-weight:600;text-align:center;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text-dim);white-space:nowrap;}
+  .btn:hover{border-color:var(--text-dim);}
+  .btn.primary{background:var(--teal);color:#04241C;border:none;}
+  .btn.primary:hover{background:#3EE8C0;}
+  .btn.sm{padding:5px 10px;font-size:11.5px;}
+  .btn.block{flex:1;}
+  .btn.danger{color:var(--red);border-color:#3a2220;}
+  .metric-value{font-size:24px;font-weight:700;margin-bottom:2px;overflow-wrap:break-word;word-break:break-word;}
+  .metric-delta{font-size:12px;color:var(--teal);margin-top:8px;}
+  .mini-chart-wrap{position:relative;height:110px;margin-top:6px;pointer-events:none;}
+  .stat-row{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;}
+  .stat-chip{flex:1;min-width:100px;border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:2px;}
+  .stat-chip.act{background:#12291F;}
+  .stat-chip.inact{background:#241a1a;}
+  .stat-chip .num{font-size:20px;font-weight:700;}
+  .stat-chip.act .num{color:var(--teal);}
+  .stat-chip.inact .num{color:var(--text-mute);}
+  .stat-chip .lbl{font-size:11px;color:var(--text-dim);}
+  .stat-big{display:flex;align-items:center;gap:12px;}
+  .stat-icon{width:42px;height:42px;border-radius:10px;background:#12291F;display:flex;align-items:center;justify-content:center;color:var(--teal);flex-shrink:0;}
+  .stat-num{font-size:24px;font-weight:700;}
+  .stat-label{font-size:12px;color:var(--text-dim);}
+  .cash-chart-wrap{position:relative;height:180px;margin-top:6px;pointer-events:none;}
+  .pending-value{font-size:24px;font-weight:700;color:var(--amber);overflow-wrap:break-word;}
+  .clickable-card{cursor:pointer;}
+  .clickable-card:hover{border-color:var(--teal);}
+  .donut-wrap{display:flex;align-items:center;gap:18px;flex-wrap:wrap;}
+  .donut-canvas-wrap{position:relative;width:110px;height:110px;flex-shrink:0;}
+  .legend{display:flex;flex-direction:column;gap:8px;font-size:12.5px;min-width:0;}
+  .legend-item{display:flex;align-items:center;gap:8px;overflow-wrap:break-word;}
+  .dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
+
+  .kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px;}
+  .kpi{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:14px 16px;min-width:0;}
+  .kpi-label{font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;}
+  .kpi-value{font-size:18px;font-weight:700;word-break:break-word;overflow-wrap:break-word;}
+
+  .toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:10px;flex-wrap:wrap;}
+  .search{flex:1;min-width:160px;max-width:320px;background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-size:13px;}
+  .search::placeholder{color:var(--text-mute);}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  thead th{text-align:left;color:var(--text-dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:0.4px;padding:10px 12px;border-bottom:1px solid var(--border);white-space:nowrap;}
+  tbody td{padding:11px 12px;border-bottom:1px solid var(--border);}
+  tbody tr.clickable{cursor:pointer;}
+  tbody tr:hover{background:#132135;}
+  .badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap;}
+  .badge.ok{background:#12291F;color:var(--teal);}
+  .badge.pend{background:#2A2412;color:var(--amber);}
+  .badge.cancel{background:#2A1614;color:var(--red);}
+  .badge.inactive{background:#241a1a;color:var(--text-mute);}
+  .table-wrap{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:6px 8px;overflow-x:auto;}
+
+  .collapsible .coll-header{display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px 2px;margin-bottom:10px;}
+  .collapsible .coll-header b{font-size:13px;}
+  .coll-chevron{transition:transform .15s;color:var(--teal);flex-shrink:0;}
+  .collapsible.collapsed .coll-chevron{transform:rotate(-90deg);}
+  .collapsible.collapsed .coll-body{display:none;}
+
+  .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  .field{display:flex;flex-direction:column;gap:6px;}
+  .field label{font-size:12px;color:var(--text-dim);}
+  .field input,.field select{background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:9px 11px;color:var(--text);font-size:13px;width:100%;}
+  .field input:focus,.field select:focus{outline:none;border-color:var(--teal);}
+  .field input[readonly]{color:var(--text-dim);background:#0a1420;cursor:not-allowed;}
+  .picker-btn{background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:9px 11px;color:var(--text-dim);font-size:13px;cursor:pointer;text-align:left;}
+  .picker-btn:hover{border-color:var(--teal);}
+  .chip-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
+  .chip{background:#12291F;color:var(--teal);font-size:11.5px;padding:4px 9px;border-radius:20px;}
+
+  .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:150;padding:16px;}
+  .modal-overlay.open{display:flex;}
+  .modal{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:22px;width:460px;max-width:100%;max-height:88vh;overflow-y:auto;}
+  .modal.wide{width:640px;}
+  .modal h3{font-size:16px;margin-bottom:16px;}
+  .modal-actions{display:flex;gap:10px;margin-top:18px;}
+  .toast{position:fixed;bottom:24px;right:24px;left:24px;background:var(--teal);color:#04241C;padding:12px 18px;border-radius:10px;font-size:13px;font-weight:600;display:none;z-index:160;text-align:center;}
+  .toast.show{display:block;}
+  .empty{color:var(--text-mute);font-size:13px;padding:24px;text-align:center;}
+  .config-card{max-width:560px;}
+  .picker-search{margin-bottom:10px;}
+  .picker-list{max-height:280px;overflow-y:auto;display:flex;flex-direction:column;gap:2px;}
+  .picker-item{display:flex;align-items:center;gap:10px;padding:9px 8px;border-radius:8px;cursor:pointer;font-size:13px;}
+  .picker-item:hover{background:#132135;}
+  .picker-item input{width:16px;height:16px;accent-color:var(--teal);flex-shrink:0;}
+  .subtle{color:var(--text-mute);font-size:11.5px;}
+  .divider{border-top:1px solid var(--border);margin:16px 0;}
+  .summary-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;gap:10px;}
+  .summary-row span:first-child{color:var(--text-dim);}
+  .pend-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);font-size:13px;gap:10px;}
+  .pend-row .btn{flex-shrink:0;}
+
+  .day-block{border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px;}
+  .day-block-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+  .day-block-head b{font-size:13px;}
+  .turno-row{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:center;margin-bottom:6px;}
+  .turno-row input{padding:7px 9px;font-size:12.5px;}
+  .icon-btn{width:28px;height:28px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-dim);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .icon-btn:hover{border-color:var(--red);color:var(--red);}
+  .add-turno{font-size:12px;color:var(--teal);cursor:pointer;font-weight:600;}
+
+  .referral-teaser{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text-dim);cursor:pointer;padding:10px 12px;border:1px dashed var(--border);border-radius:10px;margin-top:16px;}
+  .referral-teaser:hover{border-color:var(--teal);color:var(--text);}
+  .referral-teaser svg{color:var(--teal);flex-shrink:0;}
+  .referral-code-box{background:var(--panel-2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;margin:12px 0;}
+  .referral-code-box b{font-size:16px;letter-spacing:0.5px;color:var(--teal);}
+  .referral-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0;}
+  .referral-stat{background:var(--panel-2);border-radius:10px;padding:10px;text-align:center;}
+  .referral-stat .num{font-size:18px;font-weight:700;}
+  .referral-stat .lbl{font-size:10.5px;color:var(--text-dim);margin-top:2px;}
+  .referral-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);font-size:13px;gap:8px;}
+  .referral-row:last-child{border-bottom:none;}
+
+  /* scrollbars visibles */
+  .modal, .picker-list, .appt-list, .table-wrap, #horarioRows{ scrollbar-width:thin; scrollbar-color:var(--border) transparent; }
+  .modal::-webkit-scrollbar, .picker-list::-webkit-scrollbar, .appt-list::-webkit-scrollbar, .table-wrap::-webkit-scrollbar{ width:7px; height:7px; }
+  .modal::-webkit-scrollbar-thumb, .picker-list::-webkit-scrollbar-thumb, .appt-list::-webkit-scrollbar-thumb, .table-wrap::-webkit-scrollbar-thumb{ background:var(--border); border-radius:4px; }
+  .modal::-webkit-scrollbar-track, .picker-list::-webkit-scrollbar-track, .appt-list::-webkit-scrollbar-track, .table-wrap::-webkit-scrollbar-track{ background:transparent; }
+
+  @media (max-width:900px){
+    .hamburger{display:flex;}
+    .sidebar{position:fixed;top:0;left:0;height:100vh;transform:translateX(-100%);transition:transform .2s ease;z-index:100;}
+    .sidebar.open{transform:translateX(0);}
+    .main{padding:64px 14px 28px;max-width:100%;}
+    .grid{grid-template-columns:1fr;}
+    .row2{grid-template-columns:1fr;}
+    .kpi-row{grid-template-columns:1fr 1fr;}
+    .form-grid{grid-template-columns:1fr;}
+    .donut-wrap{flex-direction:column;align-items:flex-start;}
+    .turno-row{grid-template-columns:1fr 1fr;}
+  }
+  @media (max-width:380px){
+    .metric-value{font-size:20px;}
+    .stat-num{font-size:20px;}
+    .pending-value{font-size:20px;}
+  }
+  @media (min-width:901px) and (max-width:1180px){
+    .grid{grid-template-columns:1fr 1fr;}
+    .row2{grid-template-columns:1fr;}
+  }
+</style>
+</head>
+<body>
+
+<div class="hamburger" id="hamburgerBtn">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+</div>
+<div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+<div class="sidebar" id="sidebar">
+  <div class="brand">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3c-3 0-5 2-5 5 0 4 1.5 6 1.5 9 0 1.5 1 2 1.5 2s1.2-.7 1.3-2c.2-1.8.5-3 1.7-3s1.5 1.2 1.7 3c.1 1.3.8 2 1.3 2s1.5-.5 1.5-2c0-3 1.5-5 1.5-9 0-3-2-5-5-5z"/></svg>
+    <span>Control</span>
+  </div>
+  <div class="nav-item active" data-tab="dashboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Dashboard</div>
+  <div class="nav-item" data-tab="pacientes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/></svg>Pacientes</div>
+  <div class="nav-item" data-tab="finanzas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>Finanzas</div>
+  <div class="nav-item" data-tab="tratamientos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 21V9m8 12V3m8 18v-6"/></svg>Tratamientos</div>
+  <div class="nav-item" data-tab="agendar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>Agenda</div>
+  <div class="nav-item" data-tab="configuracion"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9c.2.7.7 1.2 1.5 1.3H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Configuración</div>
+</div>
+
+<div class="main">
+  <div class="header">
+    <h1 id="clinicName">Dental Control <span class="accent">Global</span></h1>
+    <p id="clinicSub">Dashboard gerencial · Odontología moderna · México</p>
+  </div>
+  <div id="content"></div>
+</div>
+
+<div class="modal-overlay" id="modalOverlay"><div class="modal" id="modalBody"></div></div>
+<div class="modal-overlay" id="pickerOverlay"><div class="modal" id="pickerBody"></div></div>
+<div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+Chart.defaults.color = '#8FA1AE';
+Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
+
+const CONFIG = { API_URL: "https://script.google.com/macros/s/AKfycby2vc5fO1g4A08vLKsWTAhMBwO5HvVKqh1KkaigexC8JkGVgdTf-bl6rmMpPhSvNYRO/exec", CLIENT_ID: "YPPID", CURRENCY: "MXN", WHATSAPP_REFERIDOS: "5214431660960" };
+const REFERRAL_COMMISSION = 300;
+const CURRENCIES = {
+  MXN:{symbol:'$',nombre:'Peso mexicano'}, USD:{symbol:'$',nombre:'Dólar estadounidense'},
+  COP:{symbol:'$',nombre:'Peso colombiano'}, EUR:{symbol:'€',nombre:'Euro'},
+  ARS:{symbol:'$',nombre:'Peso argentino'}, PEN:{symbol:'S/',nombre:'Sol peruano'},
+  GTQ:{symbol:'Q',nombre:'Quetzal guatemalteco'},
+};
+const DIAS_ORDEN = ["Lunes","Martes","Miercoles","Jueves","Viernes","Sabado","Domingo"];
+const DEMO_DATA = {"pacientes": [{"ID": "P001", "Nombre": "Guillermo Martínez García", "Telefono": 4435614226, "Ultima_Visita": "2026-07-09", "Tratamientos": "Profilaxis infantil", "Estado": "Activo"}, {"ID": "P002", "Nombre": "Cecilia Chávez López", "Telefono": 4438078673, "Ultima_Visita": "2026-06-12", "Tratamientos": "Extracción simple", "Estado": "Activo"}, {"ID": "P003", "Nombre": "Emilio García Chávez", "Telefono": 4434335942, "Ultima_Visita": "2026-07-31", "Tratamientos": "Consulta / revisión", "Estado": "Activo"}, {"ID": "P004", "Nombre": "María Pérez Reyes", "Telefono": 4436708456, "Ultima_Visita": "2026-07-13", "Tratamientos": "Resina dental", "Estado": "Activo"}, {"ID": "P005", "Nombre": "Manuel Martínez Gómez", "Telefono": 4436770619, "Ultima_Visita": "2026-07-11", "Tratamientos": "Profilaxis infantil, Implante dental", "Estado": "Activo"}, {"ID": "P006", "Nombre": "Manuel López Chávez", "Telefono": 4435918715, "Ultima_Visita": "2026-07-24", "Tratamientos": "Profilaxis infantil, Blanqueamiento", "Estado": "Activo"}, {"ID": "P007", "Nombre": "Ricardo Cruz López", "Telefono": 4434905582, "Ultima_Visita": "2026-06-20", "Tratamientos": "Implante dental", "Estado": "Activo"}, {"ID": "P008", "Nombre": "Daniela Pérez Gómez", "Telefono": 4436960453, "Ultima_Visita": "2026-07-04", "Tratamientos": "Profilaxis infantil, Placa dental (guarda oclusal)", "Estado": "Activo"}, {"ID": "P009", "Nombre": "Emilio Pérez Chávez", "Telefono": 4435107245, "Ultima_Visita": "2026-06-28", "Tratamientos": "Extracción de muela del juicio", "Estado": "Inactivo"}, {"ID": "P010", "Nombre": "Guillermo Chávez Sánchez", "Telefono": 4436440561, "Ultima_Visita": "2026-06-15", "Tratamientos": "Limpieza dental", "Estado": "Inactivo"}, {"ID": "P011", "Nombre": "Isabel Ramírez López", "Telefono": 4434539704, "Ultima_Visita": "2026-07-18", "Tratamientos": "Implante dental", "Estado": "Activo"}, {"ID": "P012", "Nombre": "Lucía Morales González", "Telefono": 4435443951, "Ultima_Visita": "2026-06-25", "Tratamientos": "Endodoncia", "Estado": "Activo"}, {"ID": "P013", "Nombre": "Cecilia Ramos Reyes", "Telefono": 4437700828, "Ultima_Visita": "2026-07-24", "Tratamientos": "Ortodoncia (mensualidad)", "Estado": "Activo"}, {"ID": "P014", "Nombre": "Carmen Hernández Martínez", "Telefono": 4433564251, "Ultima_Visita": "2026-06-28", "Tratamientos": "Corona dental, Consulta / revisión", "Estado": "Activo"}, {"ID": "P015", "Nombre": "Manuel Vargas Morales", "Telefono": 4439877065, "Ultima_Visita": "2026-07-10", "Tratamientos": "Limpieza dental, Placa dental (guarda oclusal), Blanqueamiento", "Estado": "Activo"}, {"ID": "P016", "Nombre": "Sergio Ramírez Flores", "Telefono": 4432871534, "Ultima_Visita": "2026-07-15", "Tratamientos": "Implante dental", "Estado": "Activo"}, {"ID": "P017", "Nombre": "Adrián Ramírez Gutiérrez", "Telefono": 4433997281, "Ultima_Visita": "2026-08-11", "Tratamientos": "Placa dental (guarda oclusal), Extracción de muela del juicio, Endodoncia", "Estado": "Activo"}, {"ID": "P018", "Nombre": "Laura Gómez Pérez", "Telefono": 4439897858, "Ultima_Visita": "2026-06-08", "Tratamientos": "Implante dental, Limpieza dental", "Estado": "Activo"}, {"ID": "P019", "Nombre": "Daniela Cruz Sánchez", "Telefono": 4431971823, "Ultima_Visita": "2026-07-08", "Tratamientos": "Blanqueamiento, Profilaxis infantil, Implante dental", "Estado": "Inactivo"}, {"ID": "P020", "Nombre": "Mario Chávez González", "Telefono": 4433154051, "Ultima_Visita": "2026-08-07", "Tratamientos": "Ortodoncia (mensualidad), Extracción de muela del juicio, Endodoncia", "Estado": "Inactivo"}, {"ID": "P021", "Nombre": "Paola Rodríguez Chávez", "Telefono": 4434374754, "Ultima_Visita": "2026-07-17", "Tratamientos": "Placa dental (guarda oclusal)", "Estado": "Activo"}, {"ID": "P022", "Nombre": "Roberto Gutiérrez Morales", "Telefono": 4433030113, "Ultima_Visita": "2026-07-09", "Tratamientos": "Resina dental", "Estado": "Activo"}, {"ID": "P023", "Nombre": "Elena Sánchez Ramos", "Telefono": 4434694634, "Ultima_Visita": "2026-06-08", "Tratamientos": "Placa dental (guarda oclusal)", "Estado": "Activo"}, {"ID": "P024", "Nombre": "Luis Hernández Flores", "Telefono": 4432188789, "Ultima_Visita": "2026-07-08", "Tratamientos": "Implante dental", "Estado": "Activo"}, {"ID": "P025", "Nombre": "Miguel Ramos Ramos", "Telefono": 4438930103, "Ultima_Visita": "2026-07-09", "Tratamientos": "Corona dental, Extracción simple", "Estado": "Activo"}, {"ID": "P026", "Nombre": "Iván Reyes Gómez", "Telefono": 4438106470, "Ultima_Visita": "2026-07-30", "Tratamientos": "Profilaxis infantil", "Estado": "Activo"}, {"ID": "P027", "Nombre": "Lucía Martínez Hernández", "Telefono": 4437754864, "Ultima_Visita": "2026-07-21", "Tratamientos": "Blanqueamiento, Extracción simple", "Estado": "Activo"}, {"ID": "P028", "Nombre": "Sergio Morales González", "Telefono": 4438077999, "Ultima_Visita": "2026-07-01", "Tratamientos": "Extracción simple", "Estado": "Inactivo"}, {"ID": "P029", "Nombre": "Luis Morales Chávez", "Telefono": 4432642635, "Ultima_Visita": "2026-06-14", "Tratamientos": "Endodoncia, Limpieza dental", "Estado": "Inactivo"}, {"ID": "P030", "Nombre": "Mario Sánchez Pérez", "Telefono": 4437818496, "Ultima_Visita": "2026-08-09", "Tratamientos": "Corona dental", "Estado": "Inactivo"}, {"ID": "P031", "Nombre": "Carlos Díaz García", "Telefono": 4437550190, "Ultima_Visita": "2026-07-11", "Tratamientos": "Implante dental, Extracción de muela del juicio, Corona dental", "Estado": "Activo"}, {"ID": "P032", "Nombre": "Adrián Chávez Ortiz", "Telefono": 4433597059, "Ultima_Visita": "2026-07-02", "Tratamientos": "Limpieza dental", "Estado": "Activo"}, {"ID": "P033", "Nombre": "Sergio Hernández Flores", "Telefono": 4431959074, "Ultima_Visita": "2026-06-14", "Tratamientos": "Endodoncia, Profilaxis infantil", "Estado": "Activo"}, {"ID": "P034", "Nombre": "Arturo López Pérez", "Telefono": 4432149597, "Ultima_Visita": "2026-06-16", "Tratamientos": "Extracción simple, Corona dental", "Estado": "Activo"}, {"ID": "P035", "Nombre": "Rodrigo Sánchez Ramos", "Telefono": 4431666754, "Ultima_Visita": "2026-06-18", "Tratamientos": "Consulta / revisión", "Estado": "Activo"}, {"ID": "P036", "Nombre": "Alberto Ramírez Rodríguez", "Telefono": 4436271130, "Ultima_Visita": "2026-07-08", "Tratamientos": "Ortodoncia (mensualidad)", "Estado": "Activo"}, {"ID": "P037", "Nombre": "Valeria Morales Flores", "Telefono": 4432217071, "Ultima_Visita": "2026-06-09", "Tratamientos": "Consulta / revisión", "Estado": "Inactivo"}, {"ID": "P038", "Nombre": "Luis Chávez Rodríguez", "Telefono": 4439487336, "Ultima_Visita": "2026-07-11", "Tratamientos": "Resina dental", "Estado": "Inactivo"}, {"ID": "P039", "Nombre": "Patricia Gómez Cruz", "Telefono": 4433646552, "Ultima_Visita": "2026-08-03", "Tratamientos": "Profilaxis infantil, Extracción de muela del juicio", "Estado": "Activo"}, {"ID": "P040", "Nombre": "Lucía Gutiérrez García", "Telefono": 4436022741, "Ultima_Visita": "2026-06-21", "Tratamientos": "Ortodoncia (mensualidad), Extracción de muela del juicio, Blanqueamiento", "Estado": "Inactivo"}, {"ID": "P041", "Nombre": "Cecilia Chávez González", "Telefono": 4435569244, "Ultima_Visita": "2026-07-14", "Tratamientos": "Profilaxis infantil, Resina dental", "Estado": "Activo"}, {"ID": "P042", "Nombre": "Guillermo Ramírez Gutiérrez", "Telefono": 4439196204, "Ultima_Visita": "2026-07-10", "Tratamientos": "Limpieza dental, Blanqueamiento, Corona dental", "Estado": "Inactivo"}, {"ID": "P043", "Nombre": "Juan García Flores", "Telefono": 4433194789, "Ultima_Visita": "2026-07-11", "Tratamientos": "Implante dental", "Estado": "Activo"}, {"ID": "P044", "Nombre": "Paola Chávez García", "Telefono": 4432876932, "Ultima_Visita": "2026-06-17", "Tratamientos": "Profilaxis infantil, Ortodoncia (mensualidad), Endodoncia", "Estado": "Activo"}, {"ID": "P045", "Nombre": "Daniela Ramos Chávez", "Telefono": 4433484601, "Ultima_Visita": "2026-08-02", "Tratamientos": "Extracción de muela del juicio", "Estado": "Activo"}, {"ID": "P046", "Nombre": "Juan Gómez Rodríguez", "Telefono": 4435186414, "Ultima_Visita": "2026-06-21", "Tratamientos": "Endodoncia", "Estado": "Inactivo"}, {"ID": "P047", "Nombre": "Francisco Vargas González", "Telefono": 4434971793, "Ultima_Visita": "2026-06-28", "Tratamientos": "Ortodoncia (mensualidad), Corona dental, Limpieza dental", "Estado": "Activo"}, {"ID": "P048", "Nombre": "Gabriela Reyes Sánchez", "Telefono": 4435476257, "Ultima_Visita": "2026-06-28", "Tratamientos": "Blanqueamiento, Corona dental", "Estado": "Inactivo"}, {"ID": "P049", "Nombre": "Héctor Sánchez Rodríguez", "Telefono": 4438722606, "Ultima_Visita": "2026-07-22", "Tratamientos": "Extracción simple", "Estado": "Activo"}, {"ID": "P050", "Nombre": "Iván Rodríguez Díaz", "Telefono": 4436507321, "Ultima_Visita": "2026-07-13", "Tratamientos": "Extracción de muela del juicio, Resina dental", "Estado": "Activo"}], "tratamientos": [{"ID": "T01", "Nombre": "Limpieza dental", "Categoria": "Preventivo", "Precio_MXN": 650}, {"ID": "T02", "Nombre": "Blanqueamiento", "Categoria": "Estético", "Precio_MXN": 2800}, {"ID": "T03", "Nombre": "Ortodoncia (mensualidad)", "Categoria": "Ortodoncia", "Precio_MXN": 1200}, {"ID": "T04", "Nombre": "Extracción simple", "Categoria": "Cirugía", "Precio_MXN": 900}, {"ID": "T05", "Nombre": "Extracción de muela del juicio", "Categoria": "Cirugía", "Precio_MXN": 2200}, {"ID": "T06", "Nombre": "Resina dental", "Categoria": "Restaurativo", "Precio_MXN": 850}, {"ID": "T07", "Nombre": "Corona dental", "Categoria": "Restaurativo", "Precio_MXN": 4500}, {"ID": "T08", "Nombre": "Implante dental", "Categoria": "Implantes", "Precio_MXN": 15000}, {"ID": "T09", "Nombre": "Endodoncia", "Categoria": "Restaurativo", "Precio_MXN": 3200}, {"ID": "T10", "Nombre": "Consulta / revisión", "Categoria": "Preventivo", "Precio_MXN": 300}, {"ID": "T11", "Nombre": "Placa dental (guarda oclusal)", "Categoria": "Restaurativo", "Precio_MXN": 1800}, {"ID": "T12", "Nombre": "Profilaxis infantil", "Categoria": "Preventivo", "Precio_MXN": 450}], "citas": [{"ID": "C001", "Fecha": "2026-08-07", "Hora": "09:00", "Paciente_ID": "P033", "Paciente": "Sergio Hernández Flores", "Tratamientos": "Endodoncia", "Estado": "Confirmada"}, {"ID": "C002", "Fecha": "2026-07-29", "Hora": "10:30", "Paciente_ID": "P021", "Paciente": "Paola Rodríguez Chávez", "Tratamientos": "Extracción de muela del juicio", "Estado": "Cancelada"}, {"ID": "C003", "Fecha": "2026-08-10", "Hora": "10:30", "Paciente_ID": "P035", "Paciente": "Rodrigo Sánchez Ramos", "Tratamientos": "Resina dental", "Estado": "Pendiente"}, {"ID": "C004", "Fecha": "2026-08-19", "Hora": "18:00", "Paciente_ID": "P050", "Paciente": "Iván Rodríguez Díaz", "Tratamientos": "Limpieza dental", "Estado": "Confirmada"}, {"ID": "C005", "Fecha": "2026-08-20", "Hora": "12:00", "Paciente_ID": "P045", "Paciente": "Daniela Ramos Chávez", "Tratamientos": "Endodoncia, Placa dental (guarda oclusal)", "Estado": "Confirmada"}, {"ID": "C006", "Fecha": "2026-08-26", "Hora": "16:30", "Paciente_ID": "P035", "Paciente": "Rodrigo Sánchez Ramos", "Tratamientos": "Placa dental (guarda oclusal)", "Estado": "Cancelada"}, {"ID": "C007", "Fecha": "2026-08-20", "Hora": "16:00", "Paciente_ID": "P025", "Paciente": "Miguel Ramos Ramos", "Tratamientos": "Blanqueamiento", "Estado": "Cancelada"}, {"ID": "C008", "Fecha": "2026-08-09", "Hora": "16:00", "Paciente_ID": "P024", "Paciente": "Luis Hernández Flores", "Tratamientos": "Resina dental", "Estado": "Cancelada"}, {"ID": "C009", "Fecha": "2026-08-27", "Hora": "17:30", "Paciente_ID": "P011", "Paciente": "Isabel Ramírez López", "Tratamientos": "Placa dental (guarda oclusal)", "Estado": "Confirmada"}, {"ID": "C010", "Fecha": "2026-08-23", "Hora": "09:00", "Paciente_ID": "P050", "Paciente": "Iván Rodríguez Díaz", "Tratamientos": "Endodoncia", "Estado": "Confirmada"}, {"ID": "C011", "Fecha": "2026-08-16", "Hora": "16:30", "Paciente_ID": "P023", "Paciente": "Elena Sánchez Ramos", "Tratamientos": "Consulta / revisión", "Estado": "Pendiente"}, {"ID": "C012", "Fecha": "2026-08-13", "Hora": "19:00", "Paciente_ID": "P036", "Paciente": "Alberto Ramírez Rodríguez", "Tratamientos": "Extracción simple", "Estado": "Confirmada"}, {"ID": "C013", "Fecha": "2026-08-17", "Hora": "16:30", "Paciente_ID": "P006", "Paciente": "Manuel López Chávez", "Tratamientos": "Placa dental (guarda oclusal)", "Estado": "Confirmada"}, {"ID": "C014", "Fecha": "2026-08-22", "Hora": "12:00", "Paciente_ID": "P018", "Paciente": "Laura Gómez Pérez", "Tratamientos": "Extracción simple", "Estado": "Confirmada"}, {"ID": "C015", "Fecha": "2026-08-16", "Hora": "10:00", "Paciente_ID": "P002", "Paciente": "Cecilia Chávez López", "Tratamientos": "Implante dental", "Estado": "Pendiente"}, {"ID": "C016", "Fecha": "2026-08-19", "Hora": "17:30", "Paciente_ID": "P034", "Paciente": "Arturo López Pérez", "Tratamientos": "Consulta / revisión, Extracción simple", "Estado": "Pendiente"}, {"ID": "C017", "Fecha": "2026-08-19", "Hora": "09:00", "Paciente_ID": "P033", "Paciente": "Sergio Hernández Flores", "Tratamientos": "Placa dental (guarda oclusal)", "Estado": "Confirmada"}, {"ID": "C018", "Fecha": "2026-08-13", "Hora": "18:30", "Paciente_ID": "P035", "Paciente": "Rodrigo Sánchez Ramos", "Tratamientos": "Profilaxis infantil", "Estado": "Confirmada"}, {"ID": "C019", "Fecha": "2026-08-11", "Hora": "11:00", "Paciente_ID": "P049", "Paciente": "Héctor Sánchez Rodríguez", "Tratamientos": "Blanqueamiento", "Estado": "Pendiente"}, {"ID": "C020", "Fecha": "2026-08-27", "Hora": "18:30", "Paciente_ID": "P045", "Paciente": "Daniela Ramos Chávez", "Tratamientos": "Consulta / revisión, Resina dental", "Estado": "Cancelada"}, {"ID": "C021", "Fecha": "2026-08-11", "Hora": "11:30", "Paciente_ID": "P044", "Paciente": "Paola Chávez García", "Tratamientos": "Endodoncia", "Estado": "Pendiente"}, {"ID": "C022", "Fecha": "2026-08-23", "Hora": "13:00", "Paciente_ID": "P036", "Paciente": "Alberto Ramírez Rodríguez", "Tratamientos": "Extracción simple", "Estado": "Cancelada"}, {"ID": "C023", "Fecha": "2026-08-11", "Hora": "10:00", "Paciente_ID": "P043", "Paciente": "Juan García Flores", "Tratamientos": "Extracción de muela del juicio", "Estado": "Confirmada"}, {"ID": "C024", "Fecha": "2026-08-25", "Hora": "10:00", "Paciente_ID": "P018", "Paciente": "Laura Gómez Pérez", "Tratamientos": "Resina dental", "Estado": "Confirmada"}, {"ID": "C025", "Fecha": "2026-08-01", "Hora": "12:00", "Paciente_ID": "P012", "Paciente": "Lucía Morales González", "Tratamientos": "Profilaxis infantil", "Estado": "Confirmada"}, {"ID": "C026", "Fecha": "2026-08-11", "Hora": "18:00", "Paciente_ID": "P034", "Paciente": "Arturo López Pérez", "Tratamientos": "Endodoncia", "Estado": "Confirmada"}, {"ID": "C027", "Fecha": "2026-08-27", "Hora": "09:00", "Paciente_ID": "P016", "Paciente": "Sergio Ramírez Flores", "Tratamientos": "Corona dental, Consulta / revisión", "Estado": "Cancelada"}, {"ID": "C028", "Fecha": "2026-08-06", "Hora": "17:30", "Paciente_ID": "P032", "Paciente": "Adrián Chávez Ortiz", "Tratamientos": "Resina dental", "Estado": "Pendiente"}, {"ID": "C029", "Fecha": "2026-08-22", "Hora": "12:30", "Paciente_ID": "P047", "Paciente": "Francisco Vargas González", "Tratamientos": "Endodoncia", "Estado": "Pendiente"}, {"ID": "C030", "Fecha": "2026-07-28", "Hora": "17:30", "Paciente_ID": "P017", "Paciente": "Adrián Ramírez Gutiérrez", "Tratamientos": "Implante dental", "Estado": "Confirmada"}, {"ID": "C031", "Fecha": "2026-08-26", "Hora": "11:00", "Paciente_ID": "P033", "Paciente": "Sergio Hernández Flores", "Tratamientos": "Implante dental", "Estado": "Cancelada"}, {"ID": "C032", "Fecha": "2026-08-15", "Hora": "09:00", "Paciente_ID": "P047", "Paciente": "Francisco Vargas González", "Tratamientos": "Corona dental", "Estado": "Confirmada"}, {"ID": "C033", "Fecha": "2026-08-02", "Hora": "09:30", "Paciente_ID": "P035", "Paciente": "Rodrigo Sánchez Ramos", "Tratamientos": "Implante dental", "Estado": "Confirmada"}, {"ID": "C034", "Fecha": "2026-08-07", "Hora": "16:30", "Paciente_ID": "P032", "Paciente": "Adrián Chávez Ortiz", "Tratamientos": "Implante dental", "Estado": "Pendiente"}, {"ID": "C035", "Fecha": "2026-08-23", "Hora": "10:00", "Paciente_ID": "P022", "Paciente": "Roberto Gutiérrez Morales", "Tratamientos": "Corona dental, Extracción de muela del juicio", "Estado": "Pendiente"}, {"ID": "C036", "Fecha": "2026-08-27", "Hora": "17:00", "Paciente_ID": "P002", "Paciente": "Cecilia Chávez López", "Tratamientos": "Limpieza dental", "Estado": "Confirmada"}, {"ID": "C037", "Fecha": "2026-08-21", "Hora": "09:00", "Paciente_ID": "P005", "Paciente": "Manuel Martínez Gómez", "Tratamientos": "Placa dental (guarda oclusal), Limpieza dental", "Estado": "Confirmada"}, {"ID": "C038", "Fecha": "2026-08-04", "Hora": "11:00", "Paciente_ID": "P015", "Paciente": "Manuel Vargas Morales", "Tratamientos": "Consulta / revisión, Ortodoncia (mensualidad)", "Estado": "Pendiente"}, {"ID": "C039", "Fecha": "2026-08-11", "Hora": "13:00", "Paciente_ID": "P008", "Paciente": "Daniela Pérez Gómez", "Tratamientos": "Extracción simple", "Estado": "Confirmada"}, {"ID": "C040", "Fecha": "2026-08-19", "Hora": "10:30", "Paciente_ID": "P013", "Paciente": "Cecilia Ramos Reyes", "Tratamientos": "Profilaxis infantil", "Estado": "Confirmada"}, {"ID": "C041", "Fecha": "2026-08-26", "Hora": "16:00", "Paciente_ID": "P024", "Paciente": "Luis Hernández Flores", "Tratamientos": "Limpieza dental", "Estado": "Cancelada"}, {"ID": "C042", "Fecha": "2026-08-03", "Hora": "10:00", "Paciente_ID": "P032", "Paciente": "Adrián Chávez Ortiz", "Tratamientos": "Profilaxis infantil", "Estado": "Cancelada"}, {"ID": "C043", "Fecha": "2026-08-24", "Hora": "10:30", "Paciente_ID": "P018", "Paciente": "Laura Gómez Pérez", "Tratamientos": "Extracción de muela del juicio", "Estado": "Cancelada"}, {"ID": "C044", "Fecha": "2026-08-18", "Hora": "17:00", "Paciente_ID": "P003", "Paciente": "Emilio García Chávez", "Tratamientos": "Corona dental", "Estado": "Confirmada"}, {"ID": "C045", "Fecha": "2026-08-24", "Hora": "18:00", "Paciente_ID": "P044", "Paciente": "Paola Chávez García", "Tratamientos": "Limpieza dental", "Estado": "Pendiente"}, {"ID": "C046", "Fecha": "2026-08-17", "Hora": "18:30", "Paciente_ID": "P007", "Paciente": "Ricardo Cruz López", "Tratamientos": "Resina dental", "Estado": "Confirmada"}, {"ID": "C047", "Fecha": "2026-08-27", "Hora": "13:00", "Paciente_ID": "P035", "Paciente": "Rodrigo Sánchez Ramos", "Tratamientos": "Endodoncia", "Estado": "Cancelada"}, {"ID": "C048", "Fecha": "2026-08-23", "Hora": "13:00", "Paciente_ID": "P047", "Paciente": "Francisco Vargas González", "Tratamientos": "Implante dental, Corona dental", "Estado": "Confirmada"}, {"ID": "C049", "Fecha": "2026-08-25", "Hora": "18:30", "Paciente_ID": "P018", "Paciente": "Laura Gómez Pérez", "Tratamientos": "Blanqueamiento, Extracción de muela del juicio", "Estado": "Confirmada"}, {"ID": "C050", "Fecha": "2026-08-09", "Hora": "16:30", "Paciente_ID": "P039", "Paciente": "Patricia Gómez Cruz", "Tratamientos": "Placa dental (guarda oclusal)", "Estado": "Confirmada"}, {"ID": "C051", "Fecha": "2026-08-07", "Hora": "08:00", "Paciente_ID": "P043", "Paciente": "Juan García Flores", "Tratamientos": "Resina dental", "Estado": "Confirmada"}, {"ID": "C052", "Fecha": "2026-08-07", "Hora": "09:00", "Paciente_ID": "P014", "Paciente": "Carmen Hernández Martínez", "Tratamientos": "Implante dental", "Estado": "Confirmada"}, {"ID": "C053", "Fecha": "2026-08-07", "Hora": "13:35", "Paciente_ID": "P016", "Paciente": "Sergio Ramírez Flores", "Tratamientos": "Resina dental", "Estado": "Confirmada"}, {"ID": "C054", "Fecha": "2026-08-07", "Hora": "17:00", "Paciente_ID": "P021", "Paciente": "Paola Rodríguez Chávez", "Tratamientos": "Resina dental", "Estado": "Confirmada"}, {"ID": "C055", "Fecha": "2026-08-07", "Hora": "18:30", "Paciente_ID": "P022", "Paciente": "Roberto Gutiérrez Morales", "Tratamientos": "Consulta / revisión", "Estado": "Confirmada"}], "pagos": [{"ID": "F001", "Fecha": "2026-08-18", "Paciente_ID": "P045", "Paciente": "Daniela Ramos Chávez", "Tratamiento": "Extracción de muela del juicio", "Monto_Total": 2200, "Monto_Pagado": 2200, "Saldo": 0}, {"ID": "F002", "Fecha": "2026-08-03", "Paciente_ID": "P034", "Paciente": "Arturo López Pérez", "Tratamiento": "Extracción simple", "Monto_Total": 900, "Monto_Pagado": 900, "Saldo": 0}, {"ID": "F003", "Fecha": "2026-08-16", "Paciente_ID": "P047", "Paciente": "Francisco Vargas González", "Tratamiento": "Corona dental", "Monto_Total": 4500, "Monto_Pagado": 0, "Saldo": 4500}, {"ID": "F004", "Fecha": "2026-08-23", "Paciente_ID": "P049", "Paciente": "Héctor Sánchez Rodríguez", "Tratamiento": "Extracción simple", "Monto_Total": 900, "Monto_Pagado": 450, "Saldo": 450}, {"ID": "F005", "Fecha": "2026-08-16", "Paciente_ID": "P042", "Paciente": "Guillermo Ramírez Gutiérrez", "Tratamiento": "Profilaxis infantil", "Monto_Total": 450, "Monto_Pagado": 225, "Saldo": 225}, {"ID": "F006", "Fecha": "2026-08-10", "Paciente_ID": "P002", "Paciente": "Cecilia Chávez López", "Tratamiento": "Blanqueamiento", "Monto_Total": 2800, "Monto_Pagado": 2800, "Saldo": 0}, {"ID": "F007", "Fecha": "2026-08-08", "Paciente_ID": "P026", "Paciente": "Iván Reyes Gómez", "Tratamiento": "Profilaxis infantil", "Monto_Total": 450, "Monto_Pagado": 450, "Saldo": 0}, {"ID": "F008", "Fecha": "2026-08-12", "Paciente_ID": "P043", "Paciente": "Juan García Flores", "Tratamiento": "Consulta / revisión", "Monto_Total": 300, "Monto_Pagado": 150, "Saldo": 150}, {"ID": "F009", "Fecha": "2026-08-12", "Paciente_ID": "P036", "Paciente": "Alberto Ramírez Rodríguez", "Tratamiento": "Endodoncia", "Monto_Total": 3200, "Monto_Pagado": 1600, "Saldo": 1600}, {"ID": "F010", "Fecha": "2026-08-11", "Paciente_ID": "P048", "Paciente": "Gabriela Reyes Sánchez", "Tratamiento": "Endodoncia", "Monto_Total": 3200, "Monto_Pagado": 3200, "Saldo": 0}, {"ID": "F011", "Fecha": "2026-08-09", "Paciente_ID": "P045", "Paciente": "Daniela Ramos Chávez", "Tratamiento": "Implante dental", "Monto_Total": 15000, "Monto_Pagado": 15000, "Saldo": 0}, {"ID": "F012", "Fecha": "2026-08-04", "Paciente_ID": "P017", "Paciente": "Adrián Ramírez Gutiérrez", "Tratamiento": "Extracción simple", "Monto_Total": 900, "Monto_Pagado": 900, "Saldo": 0}, {"ID": "F013", "Fecha": "2026-08-24", "Paciente_ID": "P021", "Paciente": "Paola Rodríguez Chávez", "Tratamiento": "Blanqueamiento", "Monto_Total": 2800, "Monto_Pagado": 0, "Saldo": 2800}, {"ID": "F014", "Fecha": "2026-08-06", "Paciente_ID": "P049", "Paciente": "Héctor Sánchez Rodríguez", "Tratamiento": "Profilaxis infantil", "Monto_Total": 450, "Monto_Pagado": 450, "Saldo": 0}, {"ID": "F015", "Fecha": "2026-08-16", "Paciente_ID": "P014", "Paciente": "Carmen Hernández Martínez", "Tratamiento": "Profilaxis infantil", "Monto_Total": 450, "Monto_Pagado": 450, "Saldo": 0}, {"ID": "F016", "Fecha": "2026-08-25", "Paciente_ID": "P047", "Paciente": "Francisco Vargas González", "Tratamiento": "Consulta / revisión", "Monto_Total": 300, "Monto_Pagado": 0, "Saldo": 300}, {"ID": "F017", "Fecha": "2026-08-04", "Paciente_ID": "P039", "Paciente": "Patricia Gómez Cruz", "Tratamiento": "Extracción de muela del juicio", "Monto_Total": 2200, "Monto_Pagado": 2200, "Saldo": 0}, {"ID": "F018", "Fecha": "2026-08-12", "Paciente_ID": "P019", "Paciente": "Daniela Cruz Sánchez", "Tratamiento": "Extracción simple", "Monto_Total": 900, "Monto_Pagado": 900, "Saldo": 0}, {"ID": "F019", "Fecha": "2026-08-23", "Paciente_ID": "P020", "Paciente": "Mario Chávez González", "Tratamiento": "Limpieza dental", "Monto_Total": 650, "Monto_Pagado": 0, "Saldo": 650}, {"ID": "F020", "Fecha": "2026-08-02", "Paciente_ID": "P009", "Paciente": "Emilio Pérez Chávez", "Tratamiento": "Extracción de muela del juicio", "Monto_Total": 2200, "Monto_Pagado": 2200, "Saldo": 0}, {"ID": "F021", "Fecha": "2026-08-23", "Paciente_ID": "P036", "Paciente": "Alberto Ramírez Rodríguez", "Tratamiento": "Extracción de muela del juicio", "Monto_Total": 2200, "Monto_Pagado": 2200, "Saldo": 0}, {"ID": "F022", "Fecha": "2026-08-04", "Paciente_ID": "P041", "Paciente": "Cecilia Chávez González", "Tratamiento": "Implante dental", "Monto_Total": 15000, "Monto_Pagado": 15000, "Saldo": 0}, {"ID": "F023", "Fecha": "2026-08-16", "Paciente_ID": "P037", "Paciente": "Valeria Morales Flores", "Tratamiento": "Extracción de muela del juicio", "Monto_Total": 2200, "Monto_Pagado": 1100, "Saldo": 1100}, {"ID": "F024", "Fecha": "2026-08-06", "Paciente_ID": "P029", "Paciente": "Luis Morales Chávez", "Tratamiento": "Resina dental", "Monto_Total": 850, "Monto_Pagado": 850, "Saldo": 0}, {"ID": "F025", "Fecha": "2026-08-04", "Paciente_ID": "P017", "Paciente": "Adrián Ramírez Gutiérrez", "Tratamiento": "Implante dental", "Monto_Total": 15000, "Monto_Pagado": 15000, "Saldo": 0}, {"ID": "F026", "Fecha": "2026-08-03", "Paciente_ID": "P026", "Paciente": "Iván Reyes Gómez", "Tratamiento": "Implante dental", "Monto_Total": 15000, "Monto_Pagado": 0, "Saldo": 15000}, {"ID": "F027", "Fecha": "2026-08-02", "Paciente_ID": "P041", "Paciente": "Cecilia Chávez González", "Tratamiento": "Placa dental (guarda oclusal)", "Monto_Total": 1800, "Monto_Pagado": 1800, "Saldo": 0}, {"ID": "F028", "Fecha": "2026-08-10", "Paciente_ID": "P010", "Paciente": "Guillermo Chávez Sánchez", "Tratamiento": "Consulta / revisión", "Monto_Total": 300, "Monto_Pagado": 300, "Saldo": 0}, {"ID": "F029", "Fecha": "2026-08-18", "Paciente_ID": "P016", "Paciente": "Sergio Ramírez Flores", "Tratamiento": "Blanqueamiento", "Monto_Total": 2800, "Monto_Pagado": 1400, "Saldo": 1400}, {"ID": "F030", "Fecha": "2026-08-26", "Paciente_ID": "P039", "Paciente": "Patricia Gómez Cruz", "Tratamiento": "Consulta / revisión", "Monto_Total": 300, "Monto_Pagado": 0, "Saldo": 300}, {"ID": "F031", "Fecha": "2026-08-13", "Paciente_ID": "P015", "Paciente": "Manuel Vargas Morales", "Tratamiento": "Endodoncia", "Monto_Total": 3200, "Monto_Pagado": 1600, "Saldo": 1600}, {"ID": "F032", "Fecha": "2026-08-28", "Paciente_ID": "P029", "Paciente": "Luis Morales Chávez", "Tratamiento": "Extracción de muela del juicio", "Monto_Total": 2200, "Monto_Pagado": 0, "Saldo": 2200}, {"ID": "F033", "Fecha": "2026-08-19", "Paciente_ID": "P028", "Paciente": "Sergio Morales González", "Tratamiento": "Extracción de muela del juicio", "Monto_Total": 2200, "Monto_Pagado": 0, "Saldo": 2200}, {"ID": "F034", "Fecha": "2026-08-24", "Paciente_ID": "P004", "Paciente": "María Pérez Reyes", "Tratamiento": "Consulta / revisión", "Monto_Total": 300, "Monto_Pagado": 300, "Saldo": 0}, {"ID": "F035", "Fecha": "2026-08-21", "Paciente_ID": "P049", "Paciente": "Héctor Sánchez Rodríguez", "Tratamiento": "Extracción simple", "Monto_Total": 900, "Monto_Pagado": 900, "Saldo": 0}, {"ID": "F036", "Fecha": "2026-08-03", "Paciente_ID": "P017", "Paciente": "Adrián Ramírez Gutiérrez", "Tratamiento": "Placa dental (guarda oclusal)", "Monto_Total": 1800, "Monto_Pagado": 1800, "Saldo": 0}, {"ID": "F037", "Fecha": "2026-08-18", "Paciente_ID": "P016", "Paciente": "Sergio Ramírez Flores", "Tratamiento": "Ortodoncia (mensualidad)", "Monto_Total": 1200, "Monto_Pagado": 1200, "Saldo": 0}, {"ID": "F038", "Fecha": "2026-08-14", "Paciente_ID": "P011", "Paciente": "Isabel Ramírez López", "Tratamiento": "Limpieza dental", "Monto_Total": 650, "Monto_Pagado": 325, "Saldo": 325}, {"ID": "F039", "Fecha": "2026-08-16", "Paciente_ID": "P045", "Paciente": "Daniela Ramos Chávez", "Tratamiento": "Consulta / revisión", "Monto_Total": 300, "Monto_Pagado": 300, "Saldo": 0}, {"ID": "F040", "Fecha": "2026-08-10", "Paciente_ID": "P003", "Paciente": "Emilio García Chávez", "Tratamiento": "Extracción simple", "Monto_Total": 900, "Monto_Pagado": 900, "Saldo": 0}, {"ID": "F041", "Fecha": "2026-08-03", "Paciente_ID": "P045", "Paciente": "Daniela Ramos Chávez", "Tratamiento": "Implante dental", "Monto_Total": 15000, "Monto_Pagado": 15000, "Saldo": 0}, {"ID": "F042", "Fecha": "2026-08-19", "Paciente_ID": "P017", "Paciente": "Adrián Ramírez Gutiérrez", "Tratamiento": "Placa dental (guarda oclusal)", "Monto_Total": 1800, "Monto_Pagado": 1800, "Saldo": 0}, {"ID": "F043", "Fecha": "2026-08-18", "Paciente_ID": "P028", "Paciente": "Sergio Morales González", "Tratamiento": "Blanqueamiento", "Monto_Total": 2800, "Monto_Pagado": 2800, "Saldo": 0}, {"ID": "F044", "Fecha": "2026-08-09", "Paciente_ID": "P042", "Paciente": "Guillermo Ramírez Gutiérrez", "Tratamiento": "Ortodoncia (mensualidad)", "Monto_Total": 1200, "Monto_Pagado": 1200, "Saldo": 0}, {"ID": "F045", "Fecha": "2026-08-06", "Paciente_ID": "P005", "Paciente": "Manuel Martínez Gómez", "Tratamiento": "Limpieza dental", "Monto_Total": 650, "Monto_Pagado": 650, "Saldo": 0}, {"ID": "F046", "Fecha": "2026-08-27", "Paciente_ID": "P039", "Paciente": "Patricia Gómez Cruz", "Tratamiento": "Profilaxis infantil", "Monto_Total": 450, "Monto_Pagado": 0, "Saldo": 450}, {"ID": "F047", "Fecha": "2026-08-04", "Paciente_ID": "P019", "Paciente": "Daniela Cruz Sánchez", "Tratamiento": "Implante dental", "Monto_Total": 15000, "Monto_Pagado": 7500, "Saldo": 7500}, {"ID": "F048", "Fecha": "2026-08-23", "Paciente_ID": "P045", "Paciente": "Daniela Ramos Chávez", "Tratamiento": "Extracción de muela del juicio", "Monto_Total": 2200, "Monto_Pagado": 1100, "Saldo": 1100}, {"ID": "F049", "Fecha": "2026-08-18", "Paciente_ID": "P018", "Paciente": "Laura Gómez Pérez", "Tratamiento": "Endodoncia", "Monto_Total": 3200, "Monto_Pagado": 1600, "Saldo": 1600}, {"ID": "F050", "Fecha": "2026-08-20", "Paciente_ID": "P029", "Paciente": "Luis Morales Chávez", "Tratamiento": "Blanqueamiento", "Monto_Total": 2800, "Monto_Pagado": 2800, "Saldo": 0}], "gastos": [{"ID": "G001", "Fecha": "2026-08-14", "Concepto": "Renta del consultorio", "Categoria": "Renta", "Monto": 12000}, {"ID": "G002", "Fecha": "2026-08-24", "Concepto": "Insumos dentales (mes)", "Categoria": "Insumos", "Monto": 6500}, {"ID": "G003", "Fecha": "2026-08-11", "Concepto": "Sueldo asistente", "Categoria": "Nómina", "Monto": 8000}, {"ID": "G004", "Fecha": "2026-08-20", "Concepto": "Luz y agua", "Categoria": "Servicios", "Monto": 1800}, {"ID": "G005", "Fecha": "2026-08-09", "Concepto": "Internet y telefonia", "Categoria": "Servicios", "Monto": 900}, {"ID": "G006", "Fecha": "2026-08-01", "Concepto": "Mantenimiento de equipo", "Categoria": "Mantenimiento", "Monto": 2200}, {"ID": "G007", "Fecha": "2026-08-03", "Concepto": "Publicidad local", "Categoria": "Otros", "Monto": 1500}], "categorias_tratamiento": [{"Categoria": "Preventivo"}, {"Categoria": "Restaurativo"}, {"Categoria": "Estético"}, {"Categoria": "Cirugía"}, {"Categoria": "Ortodoncia"}, {"Categoria": "Implantes"}], "categorias_gasto": [{"Categoria": "Renta"}, {"Categoria": "Insumos"}, {"Categoria": "Nómina"}, {"Categoria": "Servicios"}, {"Categoria": "Mantenimiento"}, {"Categoria": "Otros"}], "horario": [{"Dia": "Lunes", "Activo": true, "HoraInicio": "09:00", "HoraFin": "14:00"}, {"Dia": "Lunes", "Activo": true, "HoraInicio": "16:00", "HoraFin": "20:00"}, {"Dia": "Martes", "Activo": true, "HoraInicio": "09:00", "HoraFin": "19:00"}, {"Dia": "Miercoles", "Activo": true, "HoraInicio": "09:00", "HoraFin": "19:00"}, {"Dia": "Jueves", "Activo": true, "HoraInicio": "09:00", "HoraFin": "19:00"}, {"Dia": "Viernes", "Activo": true, "HoraInicio": "09:00", "HoraFin": "19:00"}, {"Dia": "Sabado", "Activo": true, "HoraInicio": "09:00", "HoraFin": "14:00"}, {"Dia": "Domingo", "Activo": false, "HoraInicio": null, "HoraFin": null}], "config": [{"Clave": "Moneda", "Valor": "MXN"}], "referidos": [{"NombreReferido": "Dra. Fernanda López", "Fecha": "2026-08-02", "Estado": "Convertido"}, {"NombreReferido": "Dr. Iván Reyes", "Fecha": "2026-08-05", "Estado": "Pendiente de pago"}, {"NombreReferido": "Dr. Marco Ruiz", "Fecha": "2026-07-20", "Estado": "Comisión pagada"}]};
+let DATA = JSON.parse(JSON.stringify(DEMO_DATA));
+let ACTIVE_TAB = 'dashboard';
+let refreshTimer = null;
+
+async function loadData(){
+  if(!CONFIG.API_URL){ DATA = JSON.parse(JSON.stringify(DEMO_DATA)); return; }
+  try{
+    const res = await fetch(CONFIG.API_URL + '?client=' + encodeURIComponent(CONFIG.CLIENT_ID));
+    DATA = await res.json();
+  }catch(err){ console.error('Sin conexion a la API, usando demo.', err); DATA = JSON.parse(JSON.stringify(DEMO_DATA)); }
+}
+
+/* Escribe cualquier accion al Sheet real via Apps Script. En modo demo (sin
+   API_URL) no hace nada y el llamador debe generar un ID local como respaldo. */
+async function apiCall(action, payload){
+  if(!CONFIG.API_URL) return null;
+  try{
+    const res = await fetch(CONFIG.API_URL, { method:'POST', body: JSON.stringify({ client:CONFIG.CLIENT_ID, action, payload }) });
+    return await res.json();
+  }catch(err){ console.error('Error de API en '+action, err); showToast('Sin conexion — el cambio quedo solo en este dispositivo'); return null; }
+}
+
+function anyModalOpen(){
+  return document.getElementById('modalOverlay').classList.contains('open') || document.getElementById('pickerOverlay').classList.contains('open');
+}
+
+function fmtMoney(n){ const c = CURRENCIES[CONFIG.CURRENCY]||CURRENCIES.MXN; return c.symbol + Math.round(n).toLocaleString('es-MX') + ' ' + CONFIG.CURRENCY; }
+function tratArr(str){ return (str||'').split(',').map(s=>s.trim()).filter(Boolean); }
+function normalize(s){ return (s===undefined||s===null?'':s.toString()).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(); }
+function matches(text, query){ return normalize(text).includes(normalize(query)); }
+function showToast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
+function closeModal(){ document.getElementById('modalOverlay').classList.remove('open'); }
+function openModal(html, wide){ const m=document.getElementById('modalBody'); m.className = wide?'modal wide':'modal'; m.innerHTML = html; document.getElementById('modalOverlay').classList.add('open'); }
+function closePicker(){ document.getElementById('pickerOverlay').classList.remove('open'); }
+function todayStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function nowHM(){ const d=new Date(); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
+
+/* ---------------- NAV ---------------- */
+function setTab(tab){
+  document.querySelectorAll('.nav-item').forEach(i=>i.classList.remove('active'));
+  document.querySelector(`.nav-item[data-tab="${tab}"]`).classList.add('active');
+  ACTIVE_TAB = tab; render();
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebarOverlay').classList.remove('open');
+}
+document.querySelectorAll('.nav-item').forEach(item=>{ item.addEventListener('click', ()=> setTab(item.dataset.tab)); });
+document.getElementById('hamburgerBtn').addEventListener('click', ()=>{
+  const sb = document.getElementById('sidebar'); const ov = document.getElementById('sidebarOverlay');
+  sb.classList.toggle('open'); ov.classList.toggle('open');
+});
+document.getElementById('sidebarOverlay').addEventListener('click', ()=>{
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebarOverlay').classList.remove('open');
+});
+document.getElementById('modalOverlay').addEventListener('click', e=>{ if(e.target.id==='modalOverlay') closeModal(); });
+document.getElementById('pickerOverlay').addEventListener('click', e=>{ if(e.target.id==='pickerOverlay') closePicker(); });
+
+function render(){
+  const c = document.getElementById('content');
+  if(ACTIVE_TAB === 'dashboard') c.innerHTML = renderDashboardHTML();
+  else if(ACTIVE_TAB === 'pacientes') c.innerHTML = renderPacientesHTML();
+  else if(ACTIVE_TAB === 'finanzas') c.innerHTML = renderFinanzasHTML();
+  else if(ACTIVE_TAB === 'tratamientos') c.innerHTML = renderTratamientosHTML();
+  else if(ACTIVE_TAB === 'agendar') c.innerHTML = renderAgendarHTML();
+  else if(ACTIVE_TAB === 'configuracion') c.innerHTML = renderConfiguracionHTML();
+  afterRenderHooks();
+}
+/* Refresco automatico: cada 20s, si hay conexion a la API, vuelve a leer el
+   Sheet real (para que un cambio hecho en otro dispositivo aparezca aqui) y
+   siempre vuelve a pintar (para que "citas de hoy" se actualice con el reloj).
+   Se salta el ciclo si hay una ventana flotante abierta, para no interrumpir
+   al usuario a medio llenar un formulario. */
+clearInterval(refreshTimer);
+refreshTimer = setInterval(async ()=>{
+  if(anyModalOpen()) return;
+  if(CONFIG.API_URL) await loadData();
+  render();
+}, 20000);
+
+function toggleCollapse(el){ el.closest('.collapsible').classList.toggle('collapsed'); }
+
+/* ============ SELECTOR MULTIPLE DE TRATAMIENTOS ============ */
+function openTreatmentPicker(preselected, onConfirm){
+  const selected = new Set(preselected||[]);
+  function draw(filter){
+    const items = DATA.tratamientos.filter(t=>matches(t.Nombre, filter||''));
+    return items.map(t=>`<label class="picker-item"><input type="checkbox" value="${t.Nombre}" ${selected.has(t.Nombre)?'checked':''}><span>${t.Nombre} <span class="subtle">· ${t.Categoria} · ${fmtMoney(t.Precio_MXN)}</span></span></label>`).join('') || '<div class="empty">Sin resultados</div>';
+  }
+  document.getElementById('pickerBody').innerHTML = `
+    <h3>Seleccionar tratamientos</h3>
+    <input class="search picker-search" style="max-width:100%;" id="pickerSearch" placeholder="Buscar tratamiento...">
+    <div class="picker-list" id="pickerList">${draw('')}</div>
+    <div class="modal-actions"><div class="btn block" id="pickerCancel">Cancelar</div><div class="btn primary block" id="pickerConfirm">Listo</div></div>`;
+  document.getElementById('pickerOverlay').classList.add('open');
+  const list = document.getElementById('pickerList');
+  list.addEventListener('change', e=>{ if(e.target.matches('input[type=checkbox]')){ if(e.target.checked) selected.add(e.target.value); else selected.delete(e.target.value); } });
+  document.getElementById('pickerSearch').addEventListener('input', e=>{ document.getElementById('pickerList').innerHTML = draw(e.target.value); });
+  document.getElementById('pickerCancel').addEventListener('click', closePicker);
+  document.getElementById('pickerConfirm').addEventListener('click', ()=>{ closePicker(); onConfirm(Array.from(selected)); });
+}
+
+/* ============ SELECTOR UNICO DE TRATAMIENTO (para Registrar pago) ============ */
+function openTreatmentPickerSingle(onSelect){
+  function draw(filter){
+    const items = DATA.tratamientos.filter(t=>matches(t.Nombre, filter||''));
+    return items.map(t=>`<div class="picker-item" data-nombre="${t.Nombre}" data-precio="${t.Precio_MXN}">${t.Nombre} <span class="subtle">· ${t.Categoria} · ${fmtMoney(t.Precio_MXN)}</span></div>`).join('') || '<div class="empty">Sin resultados</div>';
+  }
+  document.getElementById('pickerBody').innerHTML = `
+    <h3>Seleccionar tratamiento</h3>
+    <input class="search picker-search" style="max-width:100%;" id="pickerSearch" placeholder="Buscar tratamiento...">
+    <div class="picker-list" id="pickerList">${draw('')}</div>
+    <div class="modal-actions"><div class="btn block" id="pickerCancel">Cancelar</div></div>`;
+  document.getElementById('pickerOverlay').classList.add('open');
+  const list = document.getElementById('pickerList');
+  list.addEventListener('click', e=>{
+    const item = e.target.closest('.picker-item'); if(!item || !item.dataset.nombre) return;
+    closePicker(); onSelect({ nombre:item.dataset.nombre, precio:Number(item.dataset.precio) });
+  });
+  document.getElementById('pickerSearch').addEventListener('input', e=>{ document.getElementById('pickerList').innerHTML = draw(e.target.value); });
+  document.getElementById('pickerCancel').addEventListener('click', closePicker);
+}
+
+/* ============ SELECTOR UNICO DE PACIENTE ============ */
+function openPatientPicker(onSelect, activeOnly){
+  if(activeOnly === undefined) activeOnly = true;
+  function draw(filter){
+    const pool = activeOnly ? DATA.pacientes.filter(p=>p.Estado!=='Inactivo') : DATA.pacientes;
+    const items = pool.filter(p=>matches(p.Nombre, filter||''));
+    return items.map(p=>`<div class="picker-item" data-id="${p.ID}">${p.Nombre} <span class="subtle">· ${p.Telefono}${p.Estado==='Inactivo'?' · inactivo':''}</span></div>`).join('') || '<div class="empty">Sin resultados</div>';
+  }
+  document.getElementById('pickerBody').innerHTML = `
+    <h3>Seleccionar paciente</h3>
+    ${activeOnly ? '<p class="subtle" style="margin-bottom:10px;">Mostrando solo pacientes activos</p>' : ''}
+    <input class="search picker-search" style="max-width:100%;" id="pickerSearch" placeholder="Buscar paciente...">
+    <div class="picker-list" id="pickerList">${draw('')}</div>
+    <div class="modal-actions"><div class="btn block" id="pickerCancel">Cancelar</div></div>`;
+  document.getElementById('pickerOverlay').classList.add('open');
+  const list = document.getElementById('pickerList');
+  list.addEventListener('click', e=>{ const item = e.target.closest('.picker-item'); if(!item) return; const pac = DATA.pacientes.find(p=>p.ID===item.dataset.id); closePicker(); onSelect(pac); });
+  document.getElementById('pickerSearch').addEventListener('input', e=>{ document.getElementById('pickerList').innerHTML = draw(e.target.value); });
+  document.getElementById('pickerCancel').addEventListener('click', closePicker);
+}
+
+/* ============ SELECTOR/CATALOGO DE CATEGORIA (agregable) ============ */
+function openCategoryPicker(current, onSelect){
+  function draw(filter){
+    const items = DATA.categorias_tratamiento.filter(c=>matches(c.Categoria, filter||''));
+    let html = items.map(c=>`<div class="picker-item" data-cat="${c.Categoria}">${c.Categoria}</div>`).join('');
+    if(filter && !DATA.categorias_tratamiento.some(c=>normalize(c.Categoria)===normalize(filter))){
+      html += `<div class="picker-item" style="color:var(--teal);" data-newcat="${filter}">+ Agregar "${filter}" como nueva categoria</div>`;
+    }
+    return html || '<div class="empty">Sin resultados</div>';
+  }
+  document.getElementById('pickerBody').innerHTML = `
+    <h3>Categoria de tratamiento</h3>
+    <input class="search picker-search" style="max-width:100%;" id="pickerSearch" placeholder="Buscar o crear categoria...">
+    <div class="picker-list" id="pickerList">${draw('')}</div>
+    <div class="modal-actions"><div class="btn block" id="pickerCancel">Cancelar</div></div>`;
+  document.getElementById('pickerOverlay').classList.add('open');
+  const list = document.getElementById('pickerList');
+  list.addEventListener('click', e=>{
+    const item = e.target.closest('.picker-item'); if(!item) return;
+    if(item.dataset.newcat){
+      DATA.categorias_tratamiento.push({Categoria:item.dataset.newcat});
+      if(CONFIG.API_URL) apiCall('add_categoria', { categoria: item.dataset.newcat });
+      closePicker(); onSelect(item.dataset.newcat); showToast('Categoria agregada al catalogo');
+    }
+    else if(item.dataset.cat){ closePicker(); onSelect(item.dataset.cat); }
+  });
+  document.getElementById('pickerSearch').addEventListener('input', e=>{ document.getElementById('pickerList').innerHTML = draw(e.target.value); });
+  document.getElementById('pickerCancel').addEventListener('click', closePicker);
+}
+
+/* ==================== DASHBOARD ==================== */
+function renderDashboardHTML(){
+  const hoy = todayStr(); const ahora = nowHM();
+  const proximasHoy = [...DATA.citas].filter(c=>c.Estado!=='Cancelada' && c.Fecha===hoy && c.Hora>=ahora).sort((a,b)=> a.Hora.localeCompare(b.Hora));
+  const ingresosMes = DATA.pagos.reduce((s,p)=>s+Number(p.Monto_Pagado),0);
+  const pendiente = DATA.pagos.reduce((s,p)=>s+Number(p.Saldo),0);
+  const activos = DATA.pacientes.filter(p=>p.Estado!=='Inactivo').length;
+  const inactivos = DATA.pacientes.filter(p=>p.Estado==='Inactivo').length;
+  const porCategoria = {};
+  DATA.pagos.forEach(p=>{ const t=DATA.tratamientos.find(t=>t.Nombre===p.Tratamiento); const cat=t?t.Categoria:'Otros'; porCategoria[cat]=(porCategoria[cat]||0)+Number(p.Monto_Pagado); });
+  const catEntries = Object.entries(porCategoria).sort((a,b)=>b[1]-a[1]).slice(0,3);
+  const catTotal = catEntries.reduce((s,e)=>s+e[1],0) || 1;
+  const colors = ['#2FD8B0','#1B6E5C','#3A4E60'];
+
+  return `
+  <p style="color:var(--text-dim);font-size:13px;margin:-14px 0 18px;">Vista general de la clinica</p>
+  <div class="grid">
+    <div class="card">
+      <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>Citas de hoy</div><span class="link-btn" data-goto="agendar">Ver agenda</span></div>
+      <div class="appt-list">
+        ${proximasHoy.map(c=>`<div class="appt"><div class="appt-time">${c.Hora}</div><div class="appt-info"><b>${c.Paciente}</b><span>${tratArr(c.Tratamientos||c.Tratamiento).join(' + ')}</span></div></div>`).join('') || '<div class="empty">No hay mas citas por hoy</div>'}
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>Ingresos del mes</div><span class="link-btn" data-goto="finanzas">Ver finanzas →</span></div>
+      <div class="metric-value">${fmtMoney(ingresosMes)}</div>
+      <div class="mini-chart-wrap"><canvas id="incomeChart"></canvas></div>
+      <div class="metric-delta">${DATA.pagos.length} pagos registrados</div>
+    </div>
+    <div class="card" style="display:flex;flex-direction:column;justify-content:space-between;">
+      <div>
+        <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/></svg>Pacientes</div><span class="link-btn" data-goto="pacientes">Ver pacientes →</span></div>
+        <div class="stat-row">
+          <div class="stat-chip act"><span class="num">${activos}</span><span class="lbl">Activos</span></div>
+          <div class="stat-chip inact"><span class="num">${inactivos}</span><span class="lbl">Inactivos</span></div>
+        </div>
+      </div>
+      <div style="margin-top:16px;">
+        <div class="card-title" style="margin-bottom:8px;">Tratamientos mas rentables (${CONFIG.CURRENCY})</div>
+        <div class="donut-wrap">
+          <div class="donut-canvas-wrap"><canvas id="donutChart"></canvas></div>
+          <div class="legend">${catEntries.map((e,i)=>`<div class="legend-item"><span class="dot" style="background:${colors[i]}"></span>${e[0]}: ${fmtMoney(e[1])} (${Math.round(e[1]/catTotal*100)}%)</div>`).join('')}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="row2">
+    <div class="card">
+      <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3v18h18M7 15l4-4 3 3 5-6"/></svg>Resumen de flujo de caja</div><span class="link-btn" data-goto="finanzas">Ver finanzas →</span></div>
+      <div class="cash-chart-wrap"><canvas id="cashChart"></canvas></div>
+    </div>
+    <div class="card clickable-card" id="pendienteCard" style="display:flex;flex-direction:column;justify-content:center;">
+      <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>Pendiente por cobrar</div>
+      <div class="pending-value">${fmtMoney(pendiente)}</div>
+      <div style="color:var(--text-dim);font-size:12.5px;margin-top:6px;">${DATA.pagos.filter(p=>Number(p.Saldo)>0).length} pagos con saldo · toca para ver detalle</div>
+    </div>
+  </div>`;
+}
+function drawDashboardCharts(){
+  const byWeek = {};
+  DATA.pagos.forEach(p=>{ const d=new Date(p.Fecha); const w='S'+Math.ceil(d.getDate()/7); byWeek[w]=(byWeek[w]||0)+Number(p.Monto_Pagado); });
+  const weeks=['S1','S2','S3','S4','S5'];
+  const incomeEl = document.getElementById('incomeChart');
+  if(incomeEl) new Chart(incomeEl,{type:'bar',data:{labels:weeks,datasets:[{data:weeks.map(w=>byWeek[w]||0),backgroundColor:'#2FD8B0',borderRadius:4,barThickness:16}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{enabled:false}},scales:{x:{grid:{display:false},ticks:{display:false}},y:{display:false,beginAtZero:true}}}});
+  const cashEl = document.getElementById('cashChart');
+  if(cashEl){ let running=0; const cum=weeks.map(w=>{running+=byWeek[w]||0;return running;});
+    new Chart(cashEl,{type:'line',data:{labels:weeks,datasets:[{data:cum,borderColor:'#2FD8B0',borderWidth:2,tension:.35,pointRadius:4,pointBackgroundColor:'#2FD8B0',fill:true,backgroundColor:'rgba(47,216,176,0.10)'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{enabled:false}},scales:{x:{grid:{display:false},ticks:{color:'#5B6D7A',font:{size:11}}},y:{grid:{color:'#1E2E42'},ticks:{color:'#5B6D7A',font:{size:11},callback:v=>'$'+v}}}}}); }
+  const donutEl = document.getElementById('donutChart');
+  if(donutEl){ const porCategoria={}; DATA.pagos.forEach(p=>{const t=DATA.tratamientos.find(t=>t.Nombre===p.Tratamiento);const cat=t?t.Categoria:'Otros';porCategoria[cat]=(porCategoria[cat]||0)+Number(p.Monto_Pagado);});
+    const entries=Object.entries(porCategoria).sort((a,b)=>b[1]-a[1]).slice(0,3);
+    new Chart(donutEl,{type:'doughnut',data:{labels:entries.map(e=>e[0]),datasets:[{data:entries.map(e=>e[1]),backgroundColor:['#2FD8B0','#1B6E5C','#3A4E60'],borderColor:'#101C2C',borderWidth:3}]},options:{responsive:true,maintainAspectRatio:false,cutout:'68%',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.label+': '+fmtMoney(c.raw)}}}}}); }
+}
+
+/* ==================== PACIENTES ==================== */
+function renderPacientesHTML(){
+  return `
+  <div class="toolbar">
+    <input class="search" id="pacSearch" placeholder="Buscar por nombre o tratamiento...">
+    <div class="btn primary" id="btnAddPaciente">+ Nuevo paciente</div>
+  </div>
+  <div class="table-wrap">
+    <table><thead><tr><th>Paciente</th><th>Telefono</th><th>Ultima visita</th><th>Tratamientos</th><th>Estado</th><th>Saldo</th></tr></thead><tbody id="pacTbody"></tbody></table>
+  </div>`;
+}
+function saldoPaciente(pacId){ return DATA.pagos.filter(p=>p.Paciente_ID===pacId).reduce((s,p)=>s+Number(p.Saldo),0); }
+function fillPacientesTable(filter){
+  const tbody = document.getElementById('pacTbody'); if(!tbody) return;
+  const f = filter||'';
+  const rows = DATA.pacientes.filter(p=> matches(p.Nombre,f) || matches(p.Tratamientos,f));
+  tbody.innerHTML = rows.map(p=>{
+    const saldo = saldoPaciente(p.ID);
+    const trats = tratArr(p.Tratamientos);
+    const tratLabel = trats.length===0 ? '—' : (trats.length===1 ? trats[0] : `${trats[0]} <span class="subtle">+${trats.length-1}</span>`);
+    const estadoBadge = p.Estado==='Inactivo' ? `<span class="badge inactive">Inactivo</span>` : `<span class="badge ok">Activo</span>`;
+    return `<tr class="clickable" data-pac="${p.ID}"><td>${p.Nombre}</td><td>${p.Telefono}</td><td>${p.Ultima_Visita}</td><td>${tratLabel}</td><td>${estadoBadge}</td><td>${saldo>0?`<span class="badge pend">${fmtMoney(saldo)}</span>`:`<span class="badge ok">Al corriente</span>`}</td></tr>`;
+  }).join('') || '<tr><td colspan="6" class="empty">Sin resultados</td></tr>';
+  tbody.querySelectorAll('tr[data-pac]').forEach(tr=>{ tr.addEventListener('click', ()=> showPacienteDetalle(tr.dataset.pac)); });
+}
+function showPacienteDetalle(pacId){
+  const p = DATA.pacientes.find(x=>x.ID===pacId); if(!p) return;
+  const trats = tratArr(p.Tratamientos);
+  const saldo = saldoPaciente(pacId);
+  const esActivo = p.Estado!=='Inactivo';
+  openModal(`
+    <h3>${p.Nombre}</h3>
+    <p class="subtle" style="margin-bottom:14px;">${p.Telefono} · Ultima visita: ${p.Ultima_Visita} · ${esActivo?'<span style="color:var(--teal)">Activo</span>':'<span style="color:var(--text-mute)">Inactivo</span>'}</p>
+    <div class="card-title" style="margin-bottom:8px;">Tratamientos asignados</div>
+    <div class="chip-row" style="margin-bottom:16px;">${trats.map(t=>`<span class="chip">${t}</span>`).join('') || '<span class="subtle">Sin tratamientos asignados</span>'}</div>
+    <div class="card-title" style="margin-bottom:8px;">Saldo</div>
+    <div style="font-size:20px;font-weight:700;color:${saldo>0?'var(--amber)':'var(--teal)'}">${fmtMoney(saldo)}</div>
+    <div class="modal-actions">
+      <div class="btn block" id="btnToggleEstado">${esActivo?'Marcar como inactivo':'Reactivar paciente'}</div>
+      <div class="btn primary block" onclick="closeModal()">Cerrar</div>
+    </div>`);
+  document.getElementById('btnToggleEstado').addEventListener('click', async ()=>{
+    if(esActivo && saldo>0){ if(!confirm(`${p.Nombre} tiene un saldo pendiente de ${fmtMoney(saldo)}. ¿Marcarlo como inactivo de todas formas?`)) return; }
+    const nuevoEstado = esActivo ? 'Inactivo' : 'Activo';
+    if(CONFIG.API_URL) await apiCall('set_estado_paciente', { pacienteId: p.ID, estado: nuevoEstado });
+    p.Estado = nuevoEstado;
+    closeModal(); showToast(esActivo?'Paciente marcado como inactivo':'Paciente reactivado'); render();
+  });
+}
+
+/* ==================== FINANZAS ==================== */
+function renderFinanzasHTML(){
+  const now = new Date(); const mesActual = now.getMonth(); const anioActual = now.getFullYear();
+  const pagosMes = DATA.pagos.filter(p=>{ const d=new Date(p.Fecha); return d.getMonth()===mesActual && d.getFullYear()===anioActual; });
+  const gastosMes = DATA.gastos.filter(g=>{ const d=new Date(g.Fecha); return d.getMonth()===mesActual && d.getFullYear()===anioActual; });
+  const ingresosMes = pagosMes.reduce((s,p)=>s+Number(p.Monto_Pagado),0);
+  const pendiente = DATA.pagos.reduce((s,p)=>s+Number(p.Saldo),0);
+  const gastosTotal = gastosMes.reduce((s,g)=>s+Number(g.Monto),0);
+  const utilidad = ingresosMes - gastosTotal;
+  const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  return `
+  <div class="kpi-row">
+    <div class="kpi"><div class="kpi-label">Ingresos del mes</div><div class="kpi-value">${fmtMoney(ingresosMes)}</div></div>
+    <div class="kpi"><div class="kpi-label">Gastos fijos del mes</div><div class="kpi-value" style="color:var(--red)">${fmtMoney(gastosTotal)}</div></div>
+    <div class="kpi"><div class="kpi-label">Utilidad neta</div><div class="kpi-value" style="color:${utilidad>=0?'var(--teal)':'var(--red)'}">${fmtMoney(utilidad)}</div></div>
+    <div class="kpi"><div class="kpi-label">Pendiente por cobrar</div><div class="kpi-value" style="color:var(--amber)">${fmtMoney(pendiente)}</div></div>
+  </div>
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3v18h18M7 15l4-4 3 3 5-6"/></svg>Flujo de caja — ${meses[mesActual]} ${anioActual}</div>
+    <p class="subtle" style="margin:-8px 0 10px;">S1-S5 = semanas del mes en curso (dias 1-7, 8-14, 15-21, 22-28, 29-31)</p>
+    <div style="position:relative;height:200px;"><canvas id="finCashChart"></canvas></div>
+  </div>
+
+  <div class="collapsible" id="collPagos">
+    <div class="coll-header" onclick="toggleCollapse(this)"><svg class="coll-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg><b>Pagos</b></div>
+    <div class="coll-body">
+      <div class="toolbar">
+        <input class="search" id="pagoSearch" placeholder="Buscar por fecha, paciente, tratamiento, monto...">
+        <div class="btn primary sm" id="btnAddPago">+ Registrar pago</div>
+      </div>
+      <div class="table-wrap" style="margin-bottom:20px;">
+        <table><thead><tr><th>Fecha</th><th>Paciente</th><th>Tratamiento</th><th>Total</th><th>Pagado</th><th>Saldo</th><th></th></tr></thead><tbody id="pagosTbody"></tbody></table>
+      </div>
+    </div>
+  </div>
+
+  <div class="collapsible" id="collGastos">
+    <div class="coll-header" onclick="toggleCollapse(this)"><svg class="coll-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg><b>Gastos fijos</b></div>
+    <div class="coll-body">
+      <div class="toolbar">
+        <input class="search" id="gastoSearch" placeholder="Buscar por fecha, concepto, categoria, monto...">
+        <div class="btn primary sm" id="btnAddGasto">+ Registrar gasto</div>
+      </div>
+      <div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Concepto</th><th>Categoria</th><th>Monto</th></tr></thead><tbody id="gastosTbody"></tbody></table></div>
+    </div>
+  </div>`;
+}
+function fillPagosTable(filter){
+  const tbody = document.getElementById('pagosTbody'); if(!tbody) return;
+  const f = filter||'';
+  const rows = [...DATA.pagos].sort((a,b)=>b.Fecha.localeCompare(a.Fecha)).filter(p=>{
+    const blob = [p.Fecha,p.Paciente,p.Tratamiento,p.Monto_Total,p.Monto_Pagado,p.Saldo].join(' ');
+    return matches(blob, f);
+  });
+  tbody.innerHTML = rows.map(p=>`<tr><td>${p.Fecha}</td><td>${p.Paciente}</td><td>${p.Tratamiento}</td><td>${fmtMoney(p.Monto_Total)}</td><td>${fmtMoney(p.Monto_Pagado)}</td><td>${Number(p.Saldo)>0?`<span class="badge pend">${fmtMoney(p.Saldo)}</span>`:`<span class="badge ok">$0</span>`}</td><td>${Number(p.Saldo)>0?`<div class="btn sm" data-abonar="${p.ID}">Abonar</div>`:''}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">Sin resultados</td></tr>';
+  tbody.querySelectorAll('[data-abonar]').forEach(btn=>{ btn.addEventListener('click', ()=> openAbonoModal(btn.dataset.abonar, ()=>{ fillPagosTable(document.getElementById('pagoSearch').value); })); });
+}
+function fillGastosTable(filter){
+  const tbody = document.getElementById('gastosTbody'); if(!tbody) return;
+  const f = filter||'';
+  const rows = [...DATA.gastos].sort((a,b)=>b.Fecha.localeCompare(a.Fecha)).filter(g=>{ const blob = [g.Fecha,g.Concepto,g.Categoria,g.Monto].join(' '); return matches(blob, f); });
+  tbody.innerHTML = rows.map(g=>`<tr><td>${g.Fecha}</td><td>${g.Concepto}</td><td>${g.Categoria}</td><td>${fmtMoney(g.Monto)}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">Sin resultados</td></tr>';
+}
+function openAbonoModal(pagoId, onDone){
+  const pago = DATA.pagos.find(p=>p.ID===pagoId); if(!pago) return;
+  openModal(`
+    <h3>Registrar abono</h3>
+    <p class="subtle" style="margin-bottom:14px;">${pago.Paciente} · Saldo actual: ${fmtMoney(pago.Saldo)}</p>
+    <div class="field" style="margin-bottom:16px;"><label>Monto del abono</label><input id="mAbono" type="number" max="${pago.Saldo}"></div>
+    <div class="modal-actions"><div class="btn block" onclick="closeModal()">Cancelar</div><div class="btn primary block" id="mGuardarAbono">Registrar</div></div>`);
+  document.getElementById('mGuardarAbono').addEventListener('click', async ()=>{
+    const monto = Number(document.getElementById('mAbono').value)||0;
+    if(monto<=0) return showToast('Ingresa un monto valido');
+    if(CONFIG.API_URL) await apiCall('add_abono', { pagoId: pago.ID, monto });
+    pago.Monto_Pagado = Number(pago.Monto_Pagado) + monto;
+    pago.Saldo = Number(pago.Monto_Total) - Number(pago.Monto_Pagado);
+    closeModal(); showToast('Abono registrado');
+    if(ACTIVE_TAB==='dashboard' || ACTIVE_TAB==='finanzas') render();
+    if(onDone) onDone();
+  });
+}
+function drawFinanzasChart(){
+  const el = document.getElementById('finCashChart'); if(!el) return;
+  const now = new Date();
+  const byWeek = {};
+  DATA.pagos.forEach(p=>{ const d=new Date(p.Fecha); if(d.getMonth()!==now.getMonth()||d.getFullYear()!==now.getFullYear()) return; const w='S'+Math.ceil(d.getDate()/7); byWeek[w]=(byWeek[w]||0)+Number(p.Monto_Pagado); });
+  const weeks=['S1','S2','S3','S4','S5'];
+  new Chart(el,{type:'bar',data:{labels:weeks,datasets:[{data:weeks.map(w=>byWeek[w]||0),backgroundColor:'#2FD8B0',borderRadius:4,barThickness:28}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false,callbacks:{label:c=>fmtMoney(c.raw)}}},interaction:{mode:'index',intersect:false},scales:{x:{grid:{display:false},ticks:{color:'#5B6D7A'}},y:{grid:{color:'#1E2E42'},ticks:{color:'#5B6D7A',callback:v=>'$'+v}}}}});
+}
+
+/* ==================== TRATAMIENTOS ==================== */
+function renderTratamientosHTML(){
+  return `
+  <div class="toolbar">
+    <input class="search" id="tratSearch" placeholder="Buscar por tratamiento, categoria o precio...">
+    <div class="btn primary" id="btnAddTratamiento">+ Nuevo tratamiento</div>
+  </div>
+  <div class="table-wrap"><table><thead><tr><th>Tratamiento</th><th>Categoria</th><th>Precio</th></tr></thead><tbody id="tratTbody"></tbody></table></div>`;
+}
+function fillTratamientosTable(filter){
+  const tbody = document.getElementById('tratTbody'); if(!tbody) return;
+  const f = filter||'';
+  const rows = DATA.tratamientos.filter(t=>{ const blob = [t.Nombre,t.Categoria,t.Precio_MXN].join(' '); return matches(blob, f); });
+  tbody.innerHTML = rows.map(t=>`<tr><td>${t.Nombre}</td><td>${t.Categoria}</td><td>${fmtMoney(t.Precio_MXN)}</td></tr>`).join('') || '<tr><td colspan="3" class="empty">Sin resultados</td></tr>';
+}
+
+/* ==================== AGENDA ==================== */
+function renderAgendarHTML(){
+  const hoy = todayStr();
+  const citasOrdenadas = [...DATA.citas].filter(c=>c.Estado!=='Cancelada').sort((a,b)=>(a.Fecha+a.Hora).localeCompare(b.Fecha+b.Hora));
+  return `
+  <div class="row2">
+    <div class="card">
+      <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>Nueva cita</div>
+      <div class="form-grid" style="grid-template-columns:1fr;">
+        <div class="field"><label>Paciente</label>
+          <div class="picker-btn" id="citaPacBtn">Selecciona un paciente (solo activos)</div>
+          <input type="hidden" id="citaPacienteId">
+        </div>
+        <div class="field"><label>Tratamientos</label>
+          <div class="picker-btn" id="citaTratBtn">Selecciona uno o varios tratamientos</div>
+          <div class="chip-row" id="citaTratChips"></div>
+        </div>
+        <div class="form-grid">
+          <div class="field"><label>Fecha</label><input type="date" id="citaFecha" value="${hoy}" min="${hoy}"></div>
+          <div class="field"><label>Hora</label><input type="time" id="citaHora" value="10:00"></div>
+        </div>
+        <div class="btn primary" style="margin-top:6px;" id="btnGuardarCita">Agendar y crear en Google Calendar</div>
+      </div>
+      <div class="divider"></div>
+      <div class="collapsible collapsed" id="collCsv">
+        <div class="coll-header" onclick="toggleCollapse(this)"><svg class="coll-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg><b>Importar citas desde CSV</b></div>
+        <div class="coll-body">
+          <p class="subtle" style="margin-bottom:8px;">Columnas requeridas: <b>Paciente, Tratamientos, Fecha, Hora</b>. El paciente debe existir y estar activo. Fecha AAAA-MM-DD, hora HH:MM. Varios tratamientos: separalos con punto y coma.</p>
+          <div class="csv-example">Paciente,Tratamientos,Fecha,Hora
+Ana Lopez Garcia,Limpieza dental,2026-08-10,09:00
+Juan Perez Diaz,Extraccion simple;Resina dental,2026-08-10,10:30
+Maria Ramirez Cruz,Corona dental,2026-08-11,11:00</div>
+          <input type="file" id="csvFile" accept=".csv" style="color:var(--text-dim);font-size:12.5px;">
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>Citas</div>
+      <div class="appt-list" style="max-height:460px;">
+        ${citasOrdenadas.map(c=>{
+          const esHoy = c.Fecha===hoy; const esPasada = c.Fecha < hoy;
+          const color = esPasada ? 'var(--text-mute)' : (esHoy ? 'var(--amber)' : 'var(--teal)');
+          return `<div class="appt"><div class="appt-time">${c.Fecha.slice(5)}<br>${c.Hora}</div><div class="appt-info" style="border-left-color:${color}"><b>${c.Paciente}</b><span>${tratArr(c.Tratamientos||c.Tratamiento).join(' + ')}</span></div></div>`;
+        }).join('') || '<div class="empty">Sin citas</div>'}
+      </div>
+      <p class="subtle" style="margin-top:10px;">● gris = pasada &nbsp; ● ambar = hoy &nbsp; ● verde = futura</p>
+    </div>
+  </div>`;
+}
+
+/* ==================== CONFIGURACION ==================== */
+function renderConfiguracionHTML(){
+  const dias = DATA.horario || [];
+  const porDia = {};
+  DIAS_ORDEN.forEach(d=>porDia[d]=[]);
+  dias.forEach(d=>{ if(!porDia[d.Dia]) porDia[d.Dia]=[]; porDia[d.Dia].push(d); });
+  return `
+  <div class="card config-card" style="margin-bottom:16px;">
+    <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/></svg>Datos de la clinica</div>
+    <div class="field" style="margin-bottom:12px;"><label>Nombre de la clinica</label><input id="cfgNombre" value="Dental Control Global"></div>
+    <div class="field" style="margin-bottom:12px;"><label>Moneda</label>
+      <select id="cfgMoneda">${Object.entries(CURRENCIES).map(([code,c])=>`<option value="${code}" ${CONFIG.CURRENCY===code?'selected':''}>${code} — ${c.nombre}</option>`).join('')}</select></div>
+    <div class="field" style="margin-bottom:12px;"><label>URL de la API (Apps Script)</label><input id="cfgApiUrl" placeholder="https://script.google.com/macros/s/.../exec" value="${CONFIG.API_URL}"></div>
+    <div class="field" style="margin-bottom:16px;"><label>ID de cliente</label><input id="cfgClientId" placeholder="ej. imagendental" value="${CONFIG.CLIENT_ID}"></div>
+    <div class="btn primary" id="btnGuardarConfig">Guardar cambios</div>
+    <p style="color:var(--text-mute);font-size:12px;margin-top:14px;">Modo actual: <b style="color:${CONFIG.API_URL?'var(--teal)':'var(--amber)'}">${CONFIG.API_URL ? 'Conectado a datos reales' : 'Demo (datos de ejemplo)'}</b>.</p>
+  </div>
+  <div class="card config-card">
+    <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>Horario de atencion</div>
+    <p class="subtle" style="margin-bottom:12px;">Puedes agregar mas de un turno por dia (ej. 09:00-14:00 y 16:00-20:00 para una pausa de comida).</p>
+    <div id="horarioRows" style="max-height:420px;overflow-y:auto;">
+      ${DIAS_ORDEN.map(dia=>{
+        const turnos = porDia[dia];
+        const activo = turnos.some(t=>t.Activo);
+        return `<div class="day-block" data-dia="${dia}">
+          <div class="day-block-head">
+            <label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" class="hDiaActivo" ${activo?'checked':''}><b>${dia}</b></label>
+            <span class="subtle">${activo?'Abierto':'Cerrado'}</span>
+          </div>
+          <div class="turnos-list">
+            ${turnos.filter(t=>t.HoraInicio||t.HoraFin).map((t,i)=>`
+            <div class="turno-row" data-idx="${i}">
+              <input type="time" class="hInicio" value="${t.HoraInicio||''}">
+              <input type="time" class="hFin" value="${t.HoraFin||''}">
+              <div class="icon-btn" data-remove-turno><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></div>
+            </div>`).join('')}
+          </div>
+          <div class="add-turno" data-add-turno>+ Agregar turno</div>
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="btn primary" id="btnGuardarHorario" style="margin-top:12px;">Guardar horario</div>
+  </div>
+  <div class="referral-teaser" id="referralTeaser">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+    ¿Sabías que puedes ganar ${fmtMoney(REFERRAL_COMMISSION)} por cada colega que refieras? Toca para ver más.
+  </div>`;
+}
+
+/* ==================== EVENTOS POST-RENDER ==================== */
+function afterRenderHooks(){
+  document.querySelectorAll('[data-goto]').forEach(el=>{ el.addEventListener('click', ()=> setTab(el.dataset.goto)); });
+
+  if(ACTIVE_TAB === 'dashboard'){
+    drawDashboardCharts();
+    document.getElementById('pendienteCard').addEventListener('click', showPendientesModal);
+  }
+
+  if(ACTIVE_TAB === 'pacientes'){
+    fillPacientesTable('');
+    document.getElementById('pacSearch').addEventListener('input', e=>fillPacientesTable(e.target.value));
+    document.getElementById('btnAddPaciente').addEventListener('click', ()=>{
+      let selectedTrats = [];
+      openModal(`
+        <h3>Nuevo paciente</h3>
+        <div class="field" style="margin-bottom:12px;"><label>Nombre completo</label><input id="mNombre"></div>
+        <div class="field" style="margin-bottom:12px;"><label>Telefono</label><input id="mTelefono"></div>
+        <div class="field" style="margin-bottom:12px;"><label>Tratamientos</label>
+          <div class="picker-btn" id="mTratBtn">Selecciona uno o varios tratamientos</div>
+          <div class="chip-row" id="mTratChips"></div>
+        </div>
+        <div class="modal-actions"><div class="btn block" onclick="closeModal()">Cancelar</div><div class="btn primary block" id="mGuardarPaciente">Guardar</div></div>`);
+      document.getElementById('mTratBtn').addEventListener('click', ()=>{
+        openTreatmentPicker(selectedTrats, (sel)=>{ selectedTrats = sel; document.getElementById('mTratChips').innerHTML = selectedTrats.map(t=>`<span class="chip">${t}</span>`).join(''); });
+      });
+      document.getElementById('mGuardarPaciente').addEventListener('click', async ()=>{
+        const nombre = document.getElementById('mNombre').value.trim();
+        const tel = document.getElementById('mTelefono').value.trim();
+        if(!nombre) return showToast('Falta el nombre');
+        let id = 'P' + String(DATA.pacientes.length+1).padStart(3,'0');
+        if(CONFIG.API_URL){
+          const res = await apiCall('add_paciente', { nombre, telefono:tel, tratamientos: selectedTrats.join(', ') });
+          if(res && res.id) id = res.id;
+        }
+        DATA.pacientes.push({ID:id, Nombre:nombre, Telefono:tel, Ultima_Visita:'—', Tratamientos: selectedTrats.join(', '), Estado:'Activo'});
+        closeModal(); showToast('Paciente agregado'); render();
+      });
+    });
+  }
+
+  if(ACTIVE_TAB === 'finanzas'){
+    drawFinanzasChart();
+    fillPagosTable(''); fillGastosTable('');
+    document.getElementById('pagoSearch').addEventListener('input', e=>fillPagosTable(e.target.value));
+    document.getElementById('gastoSearch').addEventListener('input', e=>fillGastosTable(e.target.value));
+    document.getElementById('btnAddPago').addEventListener('click', ()=>{
+      let selPac = null; let selTrat = null;
+      openModal(`
+        <h3>Registrar pago</h3>
+        <div class="field" style="margin-bottom:12px;"><label>Paciente</label><div class="picker-btn" id="pgPacBtn">Selecciona un paciente</div></div>
+        <div class="field" style="margin-bottom:12px;"><label>Tratamiento</label><div class="picker-btn" id="pgTratBtn">Selecciona un tratamiento</div></div>
+        <div class="form-grid" style="margin-bottom:16px;">
+          <div class="field"><label>Monto total</label><input id="pgTotal" type="text" readonly placeholder="Se llena al elegir tratamiento"></div>
+          <div class="field"><label>Monto pagado</label><input id="pgPagado" type="number" placeholder="0"></div>
+        </div>
+        <div class="modal-actions"><div class="btn block" onclick="closeModal()">Cancelar</div><div class="btn primary block" id="mGuardarPago">Guardar</div></div>`);
+      document.getElementById('pgPacBtn').addEventListener('click', ()=>{
+        openPatientPicker((pac)=>{ selPac = pac; document.getElementById('pgPacBtn').textContent = pac.Nombre; }, false);
+      });
+      document.getElementById('pgTratBtn').addEventListener('click', ()=>{
+        openTreatmentPickerSingle((t)=>{ selTrat = t; document.getElementById('pgTratBtn').textContent = t.nombre; document.getElementById('pgTotal').value = fmtMoney(t.precio); document.getElementById('pgTotal').dataset.raw = t.precio; });
+      });
+      document.getElementById('mGuardarPago').addEventListener('click', async ()=>{
+        if(!selPac) return showToast('Selecciona un paciente');
+        if(!selTrat) return showToast('Selecciona un tratamiento');
+        const total = Number(document.getElementById('pgTotal').dataset.raw)||0;
+        const pagado = Number(document.getElementById('pgPagado').value)||0;
+        let id = 'F' + String(DATA.pagos.length+1).padStart(3,'0');
+        if(CONFIG.API_URL){
+          const res = await apiCall('add_pago', { fecha:todayStr(), pacienteId:selPac.ID, paciente:selPac.Nombre, tratamiento:selTrat.nombre, montoTotal:total, montoPagado:pagado });
+          if(res && res.id) id = res.id;
+        }
+        DATA.pagos.push({ID:id, Fecha:todayStr(), Paciente_ID:selPac.ID, Paciente:selPac.Nombre, Tratamiento:selTrat.nombre, Monto_Total:total, Monto_Pagado:pagado, Saldo:total-pagado});
+        closeModal(); showToast('Pago registrado'); render();
+      });
+    });
+    document.getElementById('btnAddGasto').addEventListener('click', ()=>{
+      openModal(`
+        <h3>Registrar gasto</h3>
+        <div class="field" style="margin-bottom:12px;"><label>Concepto</label><input id="gConcepto"></div>
+        <div class="field" style="margin-bottom:12px;"><label>Categoria</label>
+          <select id="gCategoria">${DATA.categorias_gasto.map(c=>`<option value="${c.Categoria}">${c.Categoria}</option>`).join('')}</select></div>
+        <div class="field" style="margin-bottom:16px;"><label>Monto</label><input id="gMonto" type="number"></div>
+        <div class="modal-actions"><div class="btn block" onclick="closeModal()">Cancelar</div><div class="btn primary block" id="mGuardarGasto">Guardar</div></div>`);
+      document.getElementById('mGuardarGasto').addEventListener('click', async ()=>{
+        const concepto = document.getElementById('gConcepto').value.trim();
+        const categoria = document.getElementById('gCategoria').value;
+        const monto = Number(document.getElementById('gMonto').value)||0;
+        if(!concepto || monto<=0) return showToast('Completa concepto y monto');
+        let id = 'G' + String(DATA.gastos.length+1).padStart(3,'0');
+        if(CONFIG.API_URL){
+          const res = await apiCall('add_gasto', { fecha:todayStr(), concepto, categoria, monto });
+          if(res && res.id) id = res.id;
+        }
+        DATA.gastos.push({ID:id, Fecha:todayStr(), Concepto:concepto, Categoria:categoria, Monto:monto});
+        closeModal(); showToast('Gasto registrado'); render();
+      });
+    });
+  }
+
+  if(ACTIVE_TAB === 'tratamientos'){
+    fillTratamientosTable('');
+    document.getElementById('tratSearch').addEventListener('input', e=>fillTratamientosTable(e.target.value));
+    document.getElementById('btnAddTratamiento').addEventListener('click', ()=>{
+      let categoriaSel = DATA.categorias_tratamiento[0] ? DATA.categorias_tratamiento[0].Categoria : '';
+      openModal(`
+        <h3>Nuevo tratamiento</h3>
+        <div class="field" style="margin-bottom:12px;"><label>Nombre</label><input id="mtNombre"></div>
+        <div class="field" style="margin-bottom:12px;"><label>Categoria</label><div class="picker-btn" id="mtCatBtn">${categoriaSel}</div></div>
+        <div class="field" style="margin-bottom:12px;"><label>Precio</label><input id="mtPrecio" type="number"></div>
+        <div class="modal-actions"><div class="btn block" onclick="closeModal()">Cancelar</div><div class="btn primary block" id="mGuardarTratamiento">Guardar</div></div>`);
+      document.getElementById('mtCatBtn').addEventListener('click', ()=>{
+        openCategoryPicker(categoriaSel, (cat)=>{ categoriaSel = cat; document.getElementById('mtCatBtn').textContent = cat; });
+      });
+      document.getElementById('mGuardarTratamiento').addEventListener('click', async ()=>{
+        const nombre = document.getElementById('mtNombre').value.trim();
+        const precio = Number(document.getElementById('mtPrecio').value)||0;
+        if(!nombre) return showToast('Falta el nombre');
+        let id = 'T' + String(DATA.tratamientos.length+1).padStart(2,'0');
+        if(CONFIG.API_URL){
+          const res = await apiCall('add_tratamiento', { nombre, categoria:categoriaSel, precio });
+          if(res && res.id) id = res.id;
+        }
+        DATA.tratamientos.push({ID:id, Nombre:nombre, Categoria:categoriaSel, Precio_MXN:precio});
+        closeModal(); showToast('Tratamiento agregado'); render();
+      });
+    });
+  }
+
+  if(ACTIVE_TAB === 'agendar'){
+    let selectedTrats = []; let selectedPac = null;
+    document.getElementById('citaTratBtn').addEventListener('click', ()=>{
+      openTreatmentPicker(selectedTrats, (sel)=>{ selectedTrats = sel; document.getElementById('citaTratChips').innerHTML = selectedTrats.map(t=>`<span class="chip">${t}</span>`).join(''); });
+    });
+    document.getElementById('citaPacBtn').addEventListener('click', ()=>{
+      openPatientPicker((pac)=>{ selectedPac = pac; document.getElementById('citaPacBtn').textContent = pac.Nombre; document.getElementById('citaPacienteId').value = pac.ID; }, true);
+    });
+    document.getElementById('btnGuardarCita').addEventListener('click', ()=>{
+      const fecha = document.getElementById('citaFecha').value;
+      const hora = document.getElementById('citaHora').value;
+      if(!selectedPac || selectedTrats.length===0 || !fecha || !hora) return showToast('Completa todos los campos');
+      openModal(`
+        <h3>Confirmar cita</h3>
+        <div class="summary-row"><span>Paciente</span><span>${selectedPac.Nombre}</span></div>
+        <div class="summary-row"><span>Tratamientos</span><span>${selectedTrats.join(', ')}</span></div>
+        <div class="summary-row"><span>Fecha</span><span>${fecha}</span></div>
+        <div class="summary-row"><span>Hora</span><span>${hora}</span></div>
+        <div class="modal-actions"><div class="btn block" onclick="closeModal()">Corregir</div><div class="btn primary block" id="confirmCita">Confirmar y agendar</div></div>`);
+      document.getElementById('confirmCita').addEventListener('click', async ()=>{
+        closeModal();
+        let id = 'C' + String(DATA.citas.length+1).padStart(3,'0');
+        if(CONFIG.API_URL){
+          const res = await apiCall('add_cita', { pacienteId:selectedPac.ID, paciente:selectedPac.Nombre, tratamientos:selectedTrats.join(', '), fecha, hora });
+          if(res && res.id) id = res.id;
+          showToast(res ? 'Cita creada y agregada a Google Calendar' : 'Cita guardada localmente (sin conexion)');
+        } else { showToast('Cita agendada (modo demo)'); }
+        DATA.citas.push({ID:id, Fecha:fecha, Hora:hora, Paciente_ID:selectedPac.ID, Paciente:selectedPac.Nombre, Tratamientos:selectedTrats.join(', '), Estado:'Confirmada'});
+        render();
+      });
+    });
+
+    document.getElementById('csvFile').addEventListener('change', (e)=>{
+      const file = e.target.files[0]; if(!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev)=>{
+        const lines = ev.target.result.split(/\r?\n/).filter(l=>l.trim().length>0);
+        if(lines.length<2) return showToast('El archivo esta vacio');
+        const headers = lines[0].split(',').map(h=>h.trim().toLowerCase());
+        const iPac = headers.indexOf('paciente'), iTrat = headers.indexOf('tratamientos'), iFecha = headers.indexOf('fecha'), iHora = headers.indexOf('hora');
+        if(iPac<0||iTrat<0||iFecha<0||iHora<0) return showToast('El CSV debe tener las columnas: Paciente, Tratamientos, Fecha, Hora');
+        const preview = lines.slice(1).map(line=>{
+          const cols = line.split(',');
+          const nombre = (cols[iPac]||'').trim();
+          const trats = (cols[iTrat]||'').trim().split(';').map(s=>s.trim()).filter(Boolean);
+          const fecha = (cols[iFecha]||'').trim();
+          const hora = (cols[iHora]||'').trim();
+          const pac = DATA.pacientes.find(p=> normalize(p.Nombre)===normalize(nombre) && p.Estado!=='Inactivo');
+          let error = '';
+          if(!pac) error = 'Paciente no encontrado o inactivo';
+          else if(!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) error = 'Fecha invalida (usar AAAA-MM-DD)';
+          else if(!/^\d{2}:\d{2}$/.test(hora)) error = 'Hora invalida (usar HH:MM)';
+          return { nombre, trats, fecha, hora, pac, error };
+        });
+        const validRows = preview.filter(r=>!r.error);
+        openModal(`
+          <h3>Vista previa de importacion (${preview.length} filas)</h3>
+          <div class="table-wrap" style="max-height:320px;overflow-y:auto;margin-bottom:14px;">
+            <table><thead><tr><th>Paciente</th><th>Tratamientos</th><th>Fecha</th><th>Hora</th><th>Estado</th></tr></thead>
+            <tbody>${preview.map(r=>`<tr><td>${r.nombre}</td><td>${r.trats.join(', ')}</td><td>${r.fecha}</td><td>${r.hora}</td><td>${r.error?`<span class="badge cancel">${r.error}</span>`:`<span class="badge ok">OK</span>`}</td></tr>`).join('')}</tbody></table>
+          </div>
+          <p class="subtle" style="margin-bottom:10px;">${validRows.length} de ${preview.length} filas se importaran. Las filas con error se omiten.</p>
+          <div class="modal-actions"><div class="btn block" onclick="closeModal()">Cancelar</div><div class="btn primary block" id="confirmCsv">Importar ${validRows.length} citas</div></div>`, true);
+        document.getElementById('confirmCsv').addEventListener('click', async ()=>{
+          for(const r of validRows){
+            let id = 'C' + String(DATA.citas.length+1).padStart(3,'0');
+            if(CONFIG.API_URL){
+              const res = await apiCall('add_cita', { pacienteId:r.pac.ID, paciente:r.pac.Nombre, tratamientos:r.trats.join(', '), fecha:r.fecha, hora:r.hora });
+              if(res && res.id) id = res.id;
+            }
+            DATA.citas.push({ID:id, Fecha:r.fecha, Hora:r.hora, Paciente_ID:r.pac.ID, Paciente:r.pac.Nombre, Tratamientos:r.trats.join(', '), Estado:'Confirmada'});
+          }
+          closeModal(); showToast(`${validRows.length} citas importadas`); render();
+        });
+      };
+      reader.readAsText(file);
+    });
+  }
+
+  if(ACTIVE_TAB === 'configuracion'){
+    document.getElementById('btnGuardarConfig').addEventListener('click', async ()=>{
+      CONFIG.API_URL = document.getElementById('cfgApiUrl').value.trim();
+      CONFIG.CLIENT_ID = document.getElementById('cfgClientId').value.trim();
+      CONFIG.CURRENCY = document.getElementById('cfgMoneda').value;
+      document.getElementById('clinicName').innerHTML = document.getElementById('cfgNombre').value + ' <span class="accent"></span>';
+      if(CONFIG.API_URL) await apiCall('set_config', { clave:'Moneda', valor: CONFIG.CURRENCY });
+      showToast('Configuracion guardada');
+      await loadData(); render();
+    });
+    document.getElementById('referralTeaser').addEventListener('click', showReferidosModal);
+    document.querySelectorAll('.day-block').forEach(block=>{
+      block.querySelector('[data-add-turno]').addEventListener('click', ()=>{
+        const list = block.querySelector('.turnos-list');
+        const row = document.createElement('div');
+        row.className = 'turno-row';
+        row.innerHTML = `<input type="time" class="hInicio" value=""><input type="time" class="hFin" value=""><div class="icon-btn" data-remove-turno><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></div>`;
+        list.appendChild(row);
+        row.querySelector('[data-remove-turno]').addEventListener('click', ()=> row.remove());
+      });
+      block.querySelectorAll('[data-remove-turno]').forEach(btn=>{ btn.addEventListener('click', (e)=> e.target.closest('.turno-row').remove()); });
+    });
+    document.getElementById('btnGuardarHorario').addEventListener('click', async ()=>{
+      const nuevoHorario = [];
+      document.querySelectorAll('.day-block').forEach(block=>{
+        const dia = block.dataset.dia;
+        const activo = block.querySelector('.hDiaActivo').checked;
+        const turnos = block.querySelectorAll('.turno-row');
+        if(turnos.length===0){ nuevoHorario.push({Dia:dia, Activo:false, HoraInicio:'', HoraFin:''}); }
+        else{ turnos.forEach(row=>{ nuevoHorario.push({Dia:dia, Activo:activo, HoraInicio:row.querySelector('.hInicio').value, HoraFin:row.querySelector('.hFin').value}); }); }
+      });
+      if(CONFIG.API_URL) await apiCall('update_horario', { dias: nuevoHorario });
+      DATA.horario = nuevoHorario;
+      showToast('Horario guardado'); render();
+    });
+  }
+}
+
+function showReferidosModal(){
+  const codigo = CONFIG.CLIENT_ID || 'DEMO';
+  const referidos = DATA.referidos || [];
+  const pendientes = referidos.filter(r=>r.Estado==='Pendiente de pago').length;
+  const convertidos = referidos.filter(r=>r.Estado==='Convertido').length;
+  const pagados = referidos.filter(r=>r.Estado==='Comisión pagada').length;
+  const numero = CONFIG.WHATSAPP_REFERIDOS;
+  const mensaje = encodeURIComponent(`Hola, uso Dental Control Global para gestionar mi consultorio y me ha funcionado muy bien. Si te interesa que te lo instalen, menciona mi código ${codigo} — código: ${codigo}`);
+  const waLink = numero ? `https://wa.me/${numero}?text=${mensaje}` : null;
+
+  const estadoColor = (e)=> e==='Comisión pagada' ? 'var(--teal)' : (e==='Convertido' ? 'var(--amber)' : 'var(--text-mute)');
+
+  openModal(`
+    <h3>Programa de referidos</h3>
+    <p class="subtle" style="margin-bottom:12px;">Comparte el sistema con un colega. Cuando esa persona pague su instalación, ganas ${fmtMoney(REFERRAL_COMMISSION)}.</p>
+    <div class="referral-code-box"><span class="subtle">Tu código</span><b>${codigo}</b></div>
+    ${waLink ? `<a href="${waLink}" target="_blank" class="btn primary block" style="display:block;text-decoration:none;margin-bottom:14px;">Compartir por WhatsApp</a>` : `<p class="subtle" style="margin-bottom:14px;">Comparte tu código directamente con tus colegas.</p>`}
+    <div class="divider"></div>
+    <div class="card-title" style="margin-bottom:4px;">Tu historial</div>
+    <div class="referral-stats">
+      <div class="referral-stat"><div class="num" style="color:var(--text-mute);">${pendientes}</div><div class="lbl">Pendientes</div></div>
+      <div class="referral-stat"><div class="num" style="color:var(--amber);">${convertidos}</div><div class="lbl">Convertidos</div></div>
+      <div class="referral-stat"><div class="num" style="color:var(--teal);">${pagados}</div><div class="lbl">Comisión pagada</div></div>
+    </div>
+    <div style="max-height:220px;overflow-y:auto;">
+      ${referidos.map(r=>`<div class="referral-row"><span>${r.NombreReferido}<br><span class="subtle">${r.Fecha}</span></span><b style="color:${estadoColor(r.Estado)};font-size:12px;">${r.Estado}</b></div>`).join('') || '<div class="empty">Aun no tienes referidos registrados</div>'}
+    </div>
+    <div class="modal-actions"><div class="btn primary block" onclick="closeModal()">Cerrar</div></div>`);
+}
+
+function showPendientesModal(){
+  function draw(filter){
+    const f = filter||'';
+    const porPaciente = {};
+    DATA.pagos.forEach(p=>{ if(Number(p.Saldo)>0){ if(!porPaciente[p.Paciente_ID]) porPaciente[p.Paciente_ID]=0; porPaciente[p.Paciente_ID]+=Number(p.Saldo); } });
+    const rows = Object.entries(porPaciente).map(([pacId,saldo])=>{ const pac = DATA.pacientes.find(p=>p.ID===pacId); return { pacId, nombre: pac?pac.Nombre:pacId, saldo }; })
+      .filter(r=> matches(r.nombre, f) || matches(String(r.saldo), f)).sort((a,b)=>b.saldo-a.saldo);
+    return rows.map(r=>`<div class="pend-row"><span>${r.nombre}</span><span style="display:flex;align-items:center;gap:10px;"><b style="color:var(--amber);">${fmtMoney(r.saldo)}</b><div class="btn sm" data-abonar-pac="${r.pacId}">Abonar</div></span></div>`).join('') || '<div class="empty">Sin resultados</div>';
+  }
+  function attachHandlers(){
+    document.querySelectorAll('[data-abonar-pac]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const pacId = btn.dataset.abonarPac;
+        const pagosAbiertos = DATA.pagos.filter(p=>p.Paciente_ID===pacId && Number(p.Saldo)>0);
+        const refreshPend = ()=>{ document.getElementById('pendList').innerHTML = draw(document.getElementById('pendSearch').value); attachHandlers(); };
+        if(pagosAbiertos.length===1){ openAbonoModal(pagosAbiertos[0].ID, refreshPend); }
+        else{
+          openModal(`<h3>Elige el pago a abonar</h3>${pagosAbiertos.map(p=>`<div class="pend-row"><span>${p.Tratamiento} <span class="subtle">· ${p.Fecha}</span></span><span style="display:flex;align-items:center;gap:10px;"><b style="color:var(--amber);">${fmtMoney(p.Saldo)}</b><div class="btn sm" data-pick-pago="${p.ID}">Abonar</div></span></div>`).join('')}<div class="modal-actions"><div class="btn block" onclick="closeModal()">Cerrar</div></div>`);
+          document.querySelectorAll('[data-pick-pago]').forEach(b2=>{ b2.addEventListener('click', ()=> openAbonoModal(b2.dataset.pickPago, refreshPend)); });
+        }
+      });
+    });
+  }
+  openModal(`
+    <h3>Pacientes con saldo pendiente</h3>
+    <input class="search" style="max-width:100%;margin-bottom:12px;" id="pendSearch" placeholder="Buscar por nombre o monto...">
+    <div id="pendList" style="max-height:340px;overflow-y:auto;">${draw('')}</div>
+    <div class="modal-actions"><div class="btn primary block" onclick="closeModal()">Cerrar</div></div>`);
+  attachHandlers();
+  document.getElementById('pendSearch').addEventListener('input', e=>{ document.getElementById('pendList').innerHTML = draw(e.target.value); attachHandlers(); });
+}
+
+(async function init(){ await loadData(); render(); })();
+</script>
+</body>
+</html>

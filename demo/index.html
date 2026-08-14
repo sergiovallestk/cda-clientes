@@ -165,6 +165,11 @@
   .referral-row:last-child{border-bottom:none;}
 
   /* scrollbars visibles */
+  .chart-tooltip{position:fixed;pointer-events:none;background:#0B1420;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:12.5px;color:var(--text);z-index:9999;opacity:0;transition:opacity .08s;white-space:nowrap;box-shadow:0 4px 14px rgba(0,0,0,.35);}
+  .chart-tooltip b{display:block;margin-bottom:2px;}
+  th.sortable{cursor:pointer;user-select:none;white-space:nowrap;}
+  th.sortable:hover{color:var(--text);}
+  .sort-arrow{margin-left:4px;opacity:.7;font-size:10px;}
   .paginador{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;padding:12px 4px 2px;}
   .paginador-controles{display:flex;align-items:center;gap:8px;}
   .paginador select.pag-size{background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:6px 8px;color:var(--text);font-size:12.5px;}
@@ -219,7 +224,7 @@
 <div class="main">
   <div class="header">
     <h1 id="clinicName">Dental Control <span class="accent">Global</span></h1>
-    <p id="clinicSub">Dashboard gerencial · Odontología moderna · México</p>
+    <p id="clinicSub">Cargando…</p>
   </div>
   <div id="content"><div class="empty" style="padding:60px 0;">Cargando información...</div></div>
 </div>
@@ -378,7 +383,15 @@ function renderErrorHTML(){
     <div class="btn primary" onclick="reintentarConexion()">Reintentar</div>
   </div>`;
 }
+function actualizarBrandingConsultorio(){
+  const sub = document.getElementById('clinicSub');
+  if(!sub) return;
+  sub.textContent = DATA.clienteNombreConsultorio
+    ? (DATA.clienteNombreDoctor ? `${DATA.clienteNombreConsultorio} · ${DATA.clienteNombreDoctor}` : DATA.clienteNombreConsultorio)
+    : 'Dashboard gerencial · Odontología moderna · México';
+}
 function render(){
+  actualizarBrandingConsultorio();
   const c = document.getElementById('content');
   if(LOAD_ERROR && ACTIVE_TAB !== 'configuracion'){ c.innerHTML = renderErrorHTML(); return; }
   if(ACTIVE_TAB === 'dashboard') c.innerHTML = renderDashboardHTML();
@@ -656,6 +669,34 @@ function renderDashboardHTML(){
     </div>
   </div>`;
 }
+/* Tooltip de Chart.js "externo": en vez de dejar que Chart.js lo posicione
+   dentro del canvas (donde queda a merced de cualquier overflow:hidden en
+   los contenedores de arriba), lo dibujamos nosotros en un div propio
+   pegado a <body> con position:fixed, y le calculamos la posicion a mano
+   para que nunca se salga de la pantalla. */
+function chartTooltipHandler(context){
+  let tip = document.getElementById('chartTooltipEl');
+  if(!tip){ tip = document.createElement('div'); tip.id='chartTooltipEl'; tip.className='chart-tooltip'; document.body.appendChild(tip); }
+  const model = context.tooltip;
+  if(!model || model.opacity===0){ tip.style.opacity = 0; return; }
+  const dp = model.dataPoints && model.dataPoints[0];
+  if(dp){
+    const data = context.chart.data.datasets[0].data;
+    const total = data.reduce((s,v)=>s+Number(v),0);
+    const pct = total>0 ? Math.round(Number(dp.raw)/total*100) : 0;
+    tip.innerHTML = `<b>${dp.label}</b><div>${fmtMoney(dp.raw)} (${pct}%)</div>`;
+  }
+  const rect = context.chart.canvas.getBoundingClientRect();
+  tip.style.opacity = 1;
+  const tw = tip.offsetWidth || 160;
+  const th = tip.offsetHeight || 40;
+  let x = rect.left + model.caretX - tw/2;
+  let y = rect.top + model.caretY - th - 12;
+  x = Math.min(Math.max(x, 8), window.innerWidth - tw - 8);
+  y = Math.max(y, 8);
+  tip.style.left = x + 'px';
+  tip.style.top = y + 'px';
+}
 function drawDashboardCharts(){
   const byWeek = {};
   DATA.pagos.forEach(p=>{ const w='S'+Math.ceil(diaDelMes(p.Fecha)/7); byWeek[w]=(byWeek[w]||0)+Number(p.Monto_Pagado); });
@@ -668,7 +709,7 @@ function drawDashboardCharts(){
   const donutEl = document.getElementById('donutChart');
   if(donutEl){ const porCategoria={}; DATA.pagos.forEach(p=>{const t=DATA.tratamientos.find(t=>t.Nombre===p.Tratamiento);const cat=t?t.Categoria:'Otros';porCategoria[cat]=(porCategoria[cat]||0)+Number(p.Monto_Pagado);});
     const entries=Object.entries(porCategoria).sort((a,b)=>b[1]-a[1]).slice(0,3);
-    new Chart(donutEl,{type:'doughnut',data:{labels:entries.map(e=>e[0]),datasets:[{data:entries.map(e=>e[1]),backgroundColor:['#2FD8B0','#1B6E5C','#3A4E60'],borderColor:'#101C2C',borderWidth:3}]},options:{responsive:true,maintainAspectRatio:false,cutout:'62%',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>{const corto=c.label.length>12?c.label.slice(0,11)+'…':c.label; return corto+': '+fmtMoney(c.raw);}}}}}}); }
+    new Chart(donutEl,{type:'doughnut',data:{labels:entries.map(e=>e[0]),datasets:[{data:entries.map(e=>e[1]),backgroundColor:['#2FD8B0','#1B6E5C','#3A4E60'],borderColor:'#101C2C',borderWidth:3}]},options:{responsive:true,maintainAspectRatio:false,cutout:'62%',plugins:{legend:{display:false},tooltip:{enabled:false,external:chartTooltipHandler}}}}); }
 }
 
 /* ==================== PACIENTES ==================== */
@@ -679,9 +720,42 @@ function renderPacientesHTML(){
     <div class="btn primary" id="btnAddPaciente">+ Nuevo paciente</div>
   </div>
   <div class="table-wrap">
-    <table><thead><tr><th>Paciente</th><th>Telefono</th><th>Ultima visita</th><th>Tratamientos</th><th>Estado</th><th>Saldo</th></tr></thead><tbody id="pacTbody"></tbody></table>
+    <table><thead><tr>${thSort('pacientes','Paciente','Nombre')}${thSort('pacientes','Telefono','Telefono')}${thSort('pacientes','Ultima visita','Ultima_Visita')}<th>Tratamientos</th>${thSort('pacientes','Estado','Estado')}${thSort('pacientes','Saldo','Saldo')}</tr></thead><tbody id="pacTbody"></tbody></table>
   </div>
   <div id="pacPaginador"></div>`;
+}
+/* ============ ORDEN GENERICO (clic en encabezado) — Pacientes, Pagos, Gastos, Tratamientos ============ */
+const SORT_STATE = { pacientes:{key:null,dir:1}, pagos:{key:null,dir:1}, gastos:{key:null,dir:1}, tratamientos:{key:null,dir:1} };
+function ordenar(tbl, items, getVal){
+  const st = SORT_STATE[tbl];
+  if(!st.key) return items;
+  return [...items].sort((a,b)=>{
+    const va = getVal(a, st.key), vb = getVal(b, st.key);
+    if(va==null && vb==null) return 0;
+    if(va==null) return 1; if(vb==null) return -1;
+    if(typeof va==='number' && typeof vb==='number') return (va-vb)*st.dir;
+    return String(va).localeCompare(String(vb), 'es', {numeric:true}) * st.dir;
+  });
+}
+function thSort(tbl, label, sortKey){
+  return `<th class="sortable" data-sort-tbl="${tbl}" data-sort-key="${sortKey}">${label}<span class="sort-arrow"></span></th>`;
+}
+function refreshSortArrows(tbl){
+  const st = SORT_STATE[tbl];
+  document.querySelectorAll(`th[data-sort-tbl="${tbl}"]`).forEach(th=>{
+    const arrowEl = th.querySelector('.sort-arrow'); if(!arrowEl) return;
+    arrowEl.textContent = (st.key===th.dataset.sortKey) ? (st.dir===1?'▲':'▼') : '';
+  });
+}
+function attachSortHeaders(tbl, refillFn){
+  document.querySelectorAll(`th[data-sort-tbl="${tbl}"]`).forEach(th=>{
+    th.onclick = ()=>{
+      const sortKey = th.dataset.sortKey;
+      const st = SORT_STATE[tbl];
+      if(st.key===sortKey) st.dir = -st.dir; else { st.key = sortKey; st.dir = 1; }
+      refillFn();
+    };
+  });
 }
 /* ============ PAGINADOR GENERICO (Pacientes, Pagos, Gastos, Tratamientos) ============ */
 const PAGINATION = { pacientes:{page:1,size:15}, pagos:{page:1,size:15}, gastos:{page:1,size:15}, tratamientos:{page:1,size:15} };
@@ -733,7 +807,12 @@ function ultimaVisitaEfectiva(pac){
 function fillPacientesTable(filter){
   const tbody = document.getElementById('pacTbody'); if(!tbody) return;
   const f = filter||'';
-  const filtrados = DATA.pacientes.filter(p=> matches(p.Nombre,f) || matches(p.Tratamientos,f));
+  let filtrados = DATA.pacientes.filter(p=> matches(p.Nombre,f) || matches(p.Tratamientos,f));
+  filtrados = ordenar('pacientes', filtrados, (p,key)=>{
+    if(key==='Ultima_Visita') return ultimaVisitaEfectiva(p);
+    if(key==='Saldo') return saldoPaciente(p.ID);
+    return p[key];
+  });
   const { pageItems: rows, total, totalPaginas } = paginar('pacientes', filtrados);
   tbody.innerHTML = rows.map(p=>{
     const saldo = saldoPaciente(p.ID);
@@ -745,6 +824,7 @@ function fillPacientesTable(filter){
   tbody.querySelectorAll('tr[data-pac]').forEach(tr=>{ tr.addEventListener('click', ()=> showPacienteDetalle(tr.dataset.pac)); });
   const pagBox = document.getElementById('pacPaginador');
   if(pagBox){ pagBox.innerHTML = renderPaginador('pacientes', total, totalPaginas); attachPaginadorEvents('pacientes', ()=>fillPacientesTable(filter)); }
+  refreshSortArrows('pacientes'); attachSortHeaders('pacientes', ()=>fillPacientesTable(filter));
 }
 function showPacienteDetalle(pacId){
   const p = DATA.pacientes.find(x=>x.ID===pacId); if(!p) return;
@@ -802,7 +882,7 @@ function renderFinanzasHTML(){
         <div class="btn primary sm" id="btnAddPago">+ Registrar pago</div>
       </div>
       <div class="table-wrap" style="margin-bottom:6px;">
-        <table><thead><tr><th>Fecha</th><th>Paciente</th><th>Tratamiento</th><th>Total</th><th>Pagado</th><th>Saldo</th><th></th></tr></thead><tbody id="pagosTbody"></tbody></table>
+        <table><thead><tr>${thSort('pagos','Fecha','Fecha')}${thSort('pagos','Paciente','Paciente')}${thSort('pagos','Tratamiento','Tratamiento')}${thSort('pagos','Total','Monto_Total')}${thSort('pagos','Pagado','Monto_Pagado')}${thSort('pagos','Saldo','Saldo')}<th></th></tr></thead><tbody id="pagosTbody"></tbody></table>
       </div>
       <div id="pagPaginador" style="margin-bottom:14px;"></div>
     </div>
@@ -815,7 +895,7 @@ function renderFinanzasHTML(){
         <input class="search" id="gastoSearch" placeholder="Buscar por fecha, concepto, categoria, monto..." value="${SEARCH_STATE.gastos}">
         <div class="btn primary sm" id="btnAddGasto">+ Registrar gasto</div>
       </div>
-      <div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Concepto</th><th>Categoria</th><th>Monto</th></tr></thead><tbody id="gastosTbody"></tbody></table></div>
+      <div class="table-wrap"><table><thead><tr>${thSort('gastos','Fecha','Fecha')}${thSort('gastos','Concepto','Concepto')}${thSort('gastos','Categoria','Categoria')}${thSort('gastos','Monto','Monto')}</tr></thead><tbody id="gastosTbody"></tbody></table></div>
       <div id="gastoPaginador"></div>
     </div>
   </div>`;
@@ -823,24 +903,28 @@ function renderFinanzasHTML(){
 function fillPagosTable(filter){
   const tbody = document.getElementById('pagosTbody'); if(!tbody) return;
   const f = filter||'';
-  const filtrados = [...DATA.pagos].sort((a,b)=>b.Fecha.localeCompare(a.Fecha)).filter(p=>{
+  let filtrados = [...DATA.pagos].sort((a,b)=>b.Fecha.localeCompare(a.Fecha)).filter(p=>{
     const blob = [p.Fecha,p.Paciente,p.Tratamiento,p.Monto_Total,p.Monto_Pagado,p.Saldo].join(' ');
     return matches(blob, f);
   });
+  filtrados = ordenar('pagos', filtrados, (p,key)=> key==='Monto_Total'||key==='Monto_Pagado'||key==='Saldo' ? Number(p[key]) : p[key]);
   const { pageItems: rows, total, totalPaginas } = paginar('pagos', filtrados);
   tbody.innerHTML = rows.map(p=>`<tr><td>${p.Fecha}</td><td>${p.Paciente}</td><td>${p.Tratamiento}</td><td>${fmtMoney(p.Monto_Total)}</td><td>${fmtMoney(p.Monto_Pagado)}</td><td>${Number(p.Saldo)>0?`<span class="badge pend">${fmtMoney(p.Saldo)}</span>`:`<span class="badge ok">$0</span>`}</td><td>${Number(p.Saldo)>0?`<div class="btn sm" data-abonar="${p.ID}">Abonar</div>`:''}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">Sin resultados</td></tr>';
   tbody.querySelectorAll('[data-abonar]').forEach(btn=>{ btn.addEventListener('click', ()=> openAbonoModal(btn.dataset.abonar, ()=>{ fillPagosTable(document.getElementById('pagoSearch').value); })); });
   const pagBox = document.getElementById('pagPaginador');
   if(pagBox){ pagBox.innerHTML = renderPaginador('pagos', total, totalPaginas); attachPaginadorEvents('pagos', ()=>fillPagosTable(filter)); }
+  refreshSortArrows('pagos'); attachSortHeaders('pagos', ()=>fillPagosTable(filter));
 }
 function fillGastosTable(filter){
   const tbody = document.getElementById('gastosTbody'); if(!tbody) return;
   const f = filter||'';
-  const filtrados = [...DATA.gastos].sort((a,b)=>b.Fecha.localeCompare(a.Fecha)).filter(g=>{ const blob = [g.Fecha,g.Concepto,g.Categoria,g.Monto].join(' '); return matches(blob, f); });
+  let filtrados = [...DATA.gastos].sort((a,b)=>b.Fecha.localeCompare(a.Fecha)).filter(g=>{ const blob = [g.Fecha,g.Concepto,g.Categoria,g.Monto].join(' '); return matches(blob, f); });
+  filtrados = ordenar('gastos', filtrados, (g,key)=> key==='Monto' ? Number(g[key]) : g[key]);
   const { pageItems: rows, total, totalPaginas } = paginar('gastos', filtrados);
   tbody.innerHTML = rows.map(g=>`<tr><td>${g.Fecha}</td><td>${g.Concepto}</td><td>${g.Categoria}</td><td>${fmtMoney(g.Monto)}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">Sin resultados</td></tr>';
   const pagBox = document.getElementById('gastoPaginador');
   if(pagBox){ pagBox.innerHTML = renderPaginador('gastos', total, totalPaginas); attachPaginadorEvents('gastos', ()=>fillGastosTable(filter)); }
+  refreshSortArrows('gastos'); attachSortHeaders('gastos', ()=>fillGastosTable(filter));
 }
 async function guardarPagoNuevo(selPac, selTrat, total, pagado){
   let id = 'F' + String(DATA.pagos.length+1).padStart(3,'0');
@@ -849,7 +933,7 @@ async function guardarPagoNuevo(selPac, selTrat, total, pagado){
   } else {
     DATA.pagos.push({ID:id, Fecha:todayStr(), Paciente_ID:selPac.ID, Paciente:selPac.Nombre, Tratamiento:selTrat.nombre, Monto_Total:total, Monto_Pagado:pagado, Saldo:total-pagado});
   }
-  showToast('Pago registrado'); render();
+  closeModal(); showToast('Pago registrado'); render();
 }
 
 function openAbonoModal(pagoId, onDone){
@@ -885,17 +969,19 @@ function renderTratamientosHTML(){
     <input class="search" id="tratSearch" placeholder="Buscar por tratamiento, categoria o precio..." value="${SEARCH_STATE.tratamientos}">
     <div class="btn primary" id="btnAddTratamiento">+ Nuevo tratamiento</div>
   </div>
-  <div class="table-wrap"><table><thead><tr><th>Tratamiento</th><th>Categoria</th><th>Precio</th><th>Duración</th></tr></thead><tbody id="tratTbody"></tbody></table></div>
+  <div class="table-wrap"><table><thead><tr>${thSort('tratamientos','Tratamiento','Nombre')}${thSort('tratamientos','Categoria','Categoria')}${thSort('tratamientos','Precio','Precio_MXN')}${thSort('tratamientos','Duración','Duracion_Min')}</tr></thead><tbody id="tratTbody"></tbody></table></div>
   <div id="tratPaginador"></div>`;
 }
 function fillTratamientosTable(filter){
   const tbody = document.getElementById('tratTbody'); if(!tbody) return;
   const f = filter||'';
-  const filtrados = DATA.tratamientos.filter(t=>{ const blob = [t.Nombre,t.Categoria,t.Precio_MXN].join(' '); return matches(blob, f); });
+  let filtrados = DATA.tratamientos.filter(t=>{ const blob = [t.Nombre,t.Categoria,t.Precio_MXN].join(' '); return matches(blob, f); });
+  filtrados = ordenar('tratamientos', filtrados, (t,key)=> key==='Precio_MXN'||key==='Duracion_Min' ? Number(t[key]||0) : t[key]);
   const { pageItems: rows, total, totalPaginas } = paginar('tratamientos', filtrados);
   tbody.innerHTML = rows.map(t=>`<tr><td>${t.Nombre}</td><td>${t.Categoria}</td><td>${fmtMoney(t.Precio_MXN)}</td><td>${t.Duracion_Min||30} min</td></tr>`).join('') || '<tr><td colspan="4" class="empty">Sin resultados</td></tr>';
   const pagBox = document.getElementById('tratPaginador');
   if(pagBox){ pagBox.innerHTML = renderPaginador('tratamientos', total, totalPaginas); attachPaginadorEvents('tratamientos', ()=>fillTratamientosTable(filter)); }
+  refreshSortArrows('tratamientos'); attachSortHeaders('tratamientos', ()=>fillTratamientosTable(filter));
 }
 
 /* ==================== AGENDA ==================== */
@@ -938,13 +1024,17 @@ Maria Ramirez Cruz,Corona dental,2026-08-11,11:00</div>
       <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>Citas</div>
       <div class="appt-list" style="max-height:460px;">
         ${citasOrdenadas.map(c=>{
-          const esHoy = c.Fecha===hoy; const esPasada = c.Fecha < hoy;
-          const color = esPasada ? 'var(--text-mute)' : (esHoy ? 'var(--amber)' : 'var(--teal)');
           const dur = duracionCitaMin(c.Tratamientos||c.Tratamiento);
+          const finCita = new Date(c.Fecha+'T'+c.Hora+':00').getTime() + dur*60000;
+          const esHoy = c.Fecha===hoy;
+          const yaConcluida = finCita <= Date.now();
+          const esPasada = (c.Fecha < hoy) || (esHoy && yaConcluida);
+          const etiqueta = (esHoy && yaConcluida) ? ' <span class="subtle">· Concluida hoy</span>' : '';
+          const color = esPasada ? 'var(--text-mute)' : (esHoy ? 'var(--amber)' : 'var(--teal)');
           const acciones = esPasada
             ? `<div style="display:flex;gap:6px;margin-top:6px;"><div class="btn sm" data-reagendar="${c.ID}">Reagendar</div></div>`
             : `<div style="display:flex;gap:6px;margin-top:6px;"><div class="btn sm" data-reagendar="${c.ID}">Reagendar</div><div class="btn sm danger" data-cancelar="${c.ID}">Cancelar</div></div>`;
-          return `<div class="appt"><div class="appt-time">${c.Fecha.slice(5)}<br>${c.Hora}</div><div class="appt-info" style="border-left-color:${color}"><b>${c.Paciente}</b><span>${tratArr(c.Tratamientos||c.Tratamiento).join(' + ')} · ${dur} min</span>${acciones}</div></div>`;
+          return `<div class="appt"><div class="appt-time">${c.Fecha.slice(5)}<br>${c.Hora}</div><div class="appt-info" style="border-left-color:${color}"><b>${c.Paciente}</b>${etiqueta}<span>${tratArr(c.Tratamientos||c.Tratamiento).join(' + ')} · ${dur} min</span>${acciones}</div></div>`;
         }).join('') || '<div class="empty">Sin citas</div>'}
       </div>
       <p class="subtle" style="margin-top:10px;">● gris = pasada &nbsp; ● ambar = hoy &nbsp; ● verde = futura</p>
@@ -961,7 +1051,8 @@ function renderConfiguracionHTML(){
   return `
   <div class="card config-card" style="margin-bottom:16px;">
     <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/></svg>Datos de la clinica</div>
-    <div class="field" style="margin-bottom:12px;"><label>Nombre de la clinica</label><input id="cfgNombre" value="Dental Control Global"></div>
+    <div class="field" style="margin-bottom:12px;"><label>Consultorio</label><input value="${DATA.clienteNombreConsultorio || 'Sin definir — contacta a soporte'}" readonly></div>
+    <div class="field" style="margin-bottom:12px;"><label>Doctor(a) a cargo</label><input value="${DATA.clienteNombreDoctor || 'Sin definir — contacta a soporte'}" readonly></div>
     <div class="field" style="margin-bottom:12px;"><label>Moneda</label>
       <select id="cfgMoneda">${Object.entries(CURRENCIES).map(([code,c])=>`<option value="${code}" ${CONFIG.CURRENCY===code?'selected':''}>${code} — ${c.nombre}</option>`).join('')}</select></div>
     <div class="field" style="margin-bottom:16px;"><label>ID de cliente</label><input value="${CONFIG.CLIENT_ID}" readonly></div>
@@ -1018,7 +1109,7 @@ function afterRenderHooks(){
         <h3>Nuevo paciente</h3>
         <div class="field" style="margin-bottom:12px;"><label>Nombre completo</label><input id="mNombre"></div>
         <div class="field" style="margin-bottom:12px;"><label>Telefono</label><input id="mTelefono"></div>
-        <div class="field" style="margin-bottom:4px;"><label>Ultima visita anterior (opcional)</label><input id="mUltimaVisitaAnterior" type="date" max="${todayStr()}"></div>
+        <div class="field" style="margin-bottom:4px;"><label>Ultima visita (opcional)</label><input id="mUltimaVisitaAnterior" type="date" max="${todayStr()}"></div>
         <p class="subtle" style="margin-bottom:12px;">Solo si el paciente ya tenia historial antes de usar el sistema. En cuanto le agendes su primera cita aqui, el sistema calcula su ultima visita solo.</p>
         <div class="field" style="margin-bottom:12px;"><label>Tratamientos</label>
           <div class="picker-btn" id="mTratBtn">Selecciona uno o varios tratamientos</div>
@@ -1032,7 +1123,7 @@ function afterRenderHooks(){
         const nombre = document.getElementById('mNombre').value.trim();
         const tel = document.getElementById('mTelefono').value.trim();
         const ultimaVisitaAnterior = document.getElementById('mUltimaVisitaAnterior').value || '';
-        if(!nombre) return showToast('Falta el nombre');
+        if(!nombre) return showToast('Completa: Nombre completo');
         let id = 'P' + String(DATA.pacientes.length+1).padStart(3,'0');
         if(CONFIG.API_URL){
           await apiCall('add_paciente', { nombre, telefono:tel, tratamientos: selectedTrats.join(', '), ultimaVisitaAnterior }, ['pacientes']);
@@ -1067,8 +1158,8 @@ function afterRenderHooks(){
         openTreatmentPickerSingleScoped(selPac, (t)=>{ selTrat = t; document.getElementById('pgTratBtn').textContent = t.nombre; document.getElementById('pgTotal').value = fmtMoney(t.precio); document.getElementById('pgTotal').dataset.raw = t.precio; });
       });
       document.getElementById('mGuardarPago').addEventListener('click', async ()=>{
-        if(!selPac) return showToast('Selecciona un paciente');
-        if(!selTrat) return showToast('Selecciona un tratamiento');
+        const faltanPago = []; if(!selPac) faltanPago.push('Paciente'); if(!selTrat) faltanPago.push('Tratamiento');
+        if(faltanPago.length) return showToast('Completa: '+faltanPago.join(', '));
         const total = Number(document.getElementById('pgTotal').dataset.raw)||0;
         const pagado = Number(document.getElementById('pgPagado').value)||0;
         const existente = DATA.pagos.find(p=>p.Paciente_ID===selPac.ID && p.Tratamiento===selTrat.nombre && Number(p.Saldo)>0);
@@ -1109,7 +1200,8 @@ function afterRenderHooks(){
         const concepto = document.getElementById('gConcepto').value.trim();
         const categoria = categoriaSelGasto;
         const monto = Number(document.getElementById('gMonto').value)||0;
-        if(!concepto || monto<=0) return showToast('Completa concepto y monto');
+        const faltanGasto = []; if(!concepto) faltanGasto.push('Concepto'); if(monto<=0) faltanGasto.push('Monto');
+        if(faltanGasto.length) return showToast('Completa: '+faltanGasto.join(', '));
         let id = 'G' + String(DATA.gastos.length+1).padStart(3,'0');
         if(CONFIG.API_URL){
           await apiCall('add_gasto', { fecha:todayStr(), concepto, categoria, monto }, ['gastos']);
@@ -1140,7 +1232,8 @@ function afterRenderHooks(){
         const nombre = document.getElementById('mtNombre').value.trim();
         const precio = Number(document.getElementById('mtPrecio').value)||0;
         const duracionMin = Number(document.getElementById('mtDuracion').value)||30;
-        if(!nombre || precio<=0) return showToast('Completa nombre y precio');
+        const faltanTrat = []; if(!nombre) faltanTrat.push('Nombre'); if(precio<=0) faltanTrat.push('Precio');
+        if(faltanTrat.length) return showToast('Completa: '+faltanTrat.join(', '));
         let id = 'T' + String(DATA.tratamientos.length+1).padStart(2,'0');
         if(CONFIG.API_URL){
           await apiCall('add_tratamiento', { nombre, categoria:categoriaSel, precio, duracionMin }, ['tratamientos']);
@@ -1158,12 +1251,21 @@ function afterRenderHooks(){
       openTreatmentPickerScoped(selectedPac, selectedTrats, (sel)=>{ selectedTrats = sel; document.getElementById('citaTratChips').innerHTML = selectedTrats.map(t=>`<span class="chip">${t}</span>`).join(''); });
     });
     document.getElementById('citaPacBtn').addEventListener('click', ()=>{
-      openPatientPicker((pac)=>{ selectedPac = pac; document.getElementById('citaPacBtn').textContent = pac.Nombre; document.getElementById('citaPacienteId').value = pac.ID; }, true);
+      openPatientPicker((pac)=>{
+        selectedPac = pac;
+        document.getElementById('citaPacBtn').textContent = pac.Nombre;
+        document.getElementById('citaPacienteId').value = pac.ID;
+        // Los tratamientos ya elegidos eran (posiblemente) de otro paciente — se limpian al cambiar de paciente.
+        selectedTrats = [];
+        document.getElementById('citaTratChips').innerHTML = '';
+        document.getElementById('citaTratBtn').textContent = 'Selecciona uno o varios tratamientos';
+      }, true);
     });
     document.getElementById('btnGuardarCita').addEventListener('click', ()=>{
       const fecha = document.getElementById('citaFecha').value;
       const hora = document.getElementById('citaHora').value;
-      if(!selectedPac || selectedTrats.length===0 || !fecha || !hora) return showToast('Completa todos los campos');
+      const faltanCita = []; if(!selectedPac) faltanCita.push('Paciente'); if(selectedTrats.length===0) faltanCita.push('Tratamientos'); if(!fecha) faltanCita.push('Fecha'); if(!hora) faltanCita.push('Hora');
+      if(faltanCita.length) return showToast('Completa: '+faltanCita.join(', '));
       openModal(`
         <h3>Confirmar cita</h3>
         <div class="summary-row"><span>Paciente</span><span>${selectedPac.Nombre}</span></div>
@@ -1256,7 +1358,6 @@ function afterRenderHooks(){
   if(ACTIVE_TAB === 'configuracion'){
     document.getElementById('btnGuardarConfig').addEventListener('click', async ()=>{
       CONFIG.CURRENCY = document.getElementById('cfgMoneda').value;
-      document.getElementById('clinicName').innerHTML = document.getElementById('cfgNombre').value + ' <span class="accent"></span>';
       if(CONFIG.API_URL) await apiCall('set_config', { clave:'Moneda', valor: CONFIG.CURRENCY }, ['config']);
       showToast('Configuracion guardada');
       render();

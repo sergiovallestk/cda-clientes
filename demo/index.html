@@ -125,6 +125,8 @@
   .empty{color:var(--text-mute);font-size:13px;padding:24px;text-align:center;}
   .config-card{max-width:560px;}
   .picker-search{margin-bottom:10px;}
+  .picker-list-wrap{position:relative;}
+  .picker-list-wrap.scroll-more::after{content:'';position:absolute;left:0;right:6px;bottom:0;height:26px;background:linear-gradient(to bottom, rgba(16,28,44,0), var(--panel) 80%);pointer-events:none;border-radius:0 0 10px 10px;}
   .picker-list{max-height:280px;overflow-y:auto;display:flex;flex-direction:column;gap:2px;}
   .picker-item{display:flex;align-items:center;gap:10px;padding:9px 8px;border-radius:8px;cursor:pointer;font-size:13px;}
   .picker-item:hover{background:#132135;}
@@ -163,6 +165,9 @@
   .referral-row:last-child{border-bottom:none;}
 
   /* scrollbars visibles */
+  .paginador{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;padding:12px 4px 2px;}
+  .paginador-controles{display:flex;align-items:center;gap:8px;}
+  .paginador select.pag-size{background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:6px 8px;color:var(--text);font-size:12.5px;}
   .modal, .picker-list, .appt-list, .table-wrap, #horarioRows{ scrollbar-width:thin; scrollbar-color:var(--border) transparent; }
   .modal::-webkit-scrollbar, .picker-list::-webkit-scrollbar, .appt-list::-webkit-scrollbar, .table-wrap::-webkit-scrollbar{ width:7px; height:7px; }
   .modal::-webkit-scrollbar-thumb, .picker-list::-webkit-scrollbar-thumb, .appt-list::-webkit-scrollbar-thumb, .table-wrap::-webkit-scrollbar-thumb{ background:var(--border); border-radius:4px; }
@@ -254,23 +259,53 @@ async function loadData(){
     const res = await fetch(CONFIG.API_URL + '?client=' + encodeURIComponent(CONFIG.CLIENT_ID));
     const json = await res.json();
     if(json && json.error){ LOAD_ERROR = json.error; DATA = emptyShell(); return; }
-    if(!json || !Array.isArray(json.pacientes)){ LOAD_ERROR = 'La API respondió con un formato inesperado. Revisa que Code.gs este actualizado.'; DATA = emptyShell(); return; }
+    if(!json || !Array.isArray(json.pacientes)){ LOAD_ERROR = 'La API respondió con un formato inesperado.'; DATA = emptyShell(); return; }
     DATA = json;
   }catch(err){
     console.error('Sin conexion a la API.', err);
-    LOAD_ERROR = 'No se pudo conectar con el servidor. Revisa tu conexion a internet o la URL de la API en Configuracion.';
+    LOAD_ERROR = 'No se pudo conectar con el sistema. Puede ser un problema temporal de conexión a internet — tu información está segura, no se ha perdido nada.';
     DATA = emptyShell();
   }
 }
+async function reintentarConexion(){ showMask('Conectando...'); await loadData(); hideMask(); render(); }
 
-/* Escribe cualquier accion al Sheet real via Apps Script. En modo demo (sin
-   API_URL) no hace nada y el llamador debe generar un ID local como respaldo. */
-async function apiCall(action, payload){
+/* Mapa entre las claves del JSON del backend y los nombres de hoja que
+   entiende doGet para la recarga parcial (?sheets=...). */
+const MAPA_SYNC_KEYS = ['pacientes','tratamientos','citas','pagos','gastos','categorias_tratamiento','categorias_gasto','horario','config'];
+/* Vuelve a consultar SOLO las hojas indicadas (ej. ['pacientes']) y
+   reemplaza esa parte de DATA con lo que el Sheet reporta de verdad — para
+   que, tras guardar, lo que se muestra sea lo que realmente quedo escrito y
+   no una suposicion optimista del navegador. Es una recarga parcial (no las
+   9 hojas completas) para que cada guardado no se sienta el doble de lento. */
+async function syncData(keys){
+  if(!CONFIG.API_URL || !keys || !keys.length) return;
+  try{
+    const res = await fetch(CONFIG.API_URL + '?client=' + encodeURIComponent(CONFIG.CLIENT_ID) + '&sheets=' + encodeURIComponent(keys.join(',')));
+    const json = await res.json();
+    if(json && !json.error){
+      keys.forEach(k=>{ if(json[k]!==undefined) DATA[k] = json[k]; });
+      if(json.referidos!==undefined) DATA.referidos = json.referidos;
+    }
+  }catch(err){ console.error('Error al sincronizar '+keys.join(','), err); }
+}
+
+/* Escribe cualquier accion al Sheet real via Apps Script. Si se pasan
+   syncKeys (ej. ['pacientes']), despues de guardar vuelve a consultar esas
+   hojas y mantiene la mascara puesta hasta terminar — el flujo siempre es:
+   guardar -> consultar lo real -> recien ahi mostrar y quitar mascara. En
+   modo demo (sin API_URL) no hace nada y el llamador debe generar un ID
+   local como respaldo. */
+async function apiCall(action, payload, syncKeys){
   if(!CONFIG.API_URL) return null;
   showMask('Guardando...');
   try{
     const res = await fetch(CONFIG.API_URL, { method:'POST', body: JSON.stringify({ client:CONFIG.CLIENT_ID, action, payload }) });
-    return await res.json();
+    const json = await res.json();
+    if(json && !json.error && !json.conflict && syncKeys && syncKeys.length){
+      showMask('Actualizando...');
+      await syncData(syncKeys);
+    }
+    return json;
   }catch(err){ console.error('Error de API en '+action, err); showToast('Sin conexion — el cambio quedo solo en este dispositivo'); return null; }
   finally{ hideMask(); }
 }
@@ -295,6 +330,16 @@ function hideMask(){ document.getElementById('blockingMask').classList.remove('s
 function closeModal(){ document.getElementById('modalOverlay').classList.remove('open'); }
 function openModal(html, wide){ const m=document.getElementById('modalBody'); m.className = wide?'modal wide':'modal'; m.innerHTML = html; document.getElementById('modalOverlay').classList.add('open'); }
 function closePicker(){ document.getElementById('pickerOverlay').classList.remove('open'); }
+/* Señal visual (degradado) de que una lista dentro de un picker tiene mas
+   contenido abajo del que cabe — el scrollbar delgado solo no siempre se
+   nota, sobre todo cuando el desborde es chico. */
+function refreshScrollHint(el){
+  if(!el || !el.parentElement) return;
+  const wrap = el.parentElement;
+  const check = ()=>{ wrap.classList.toggle('scroll-more', el.scrollHeight - el.scrollTop - el.clientHeight > 4); };
+  check();
+  el.onscroll = check;
+}
 function todayStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 /* Lectura de fechas SIN pasar por conversion UTC/zona horaria — evita el bug
    clasico de que "2026-08-07" se recorra un dia segun donde este el navegador.
@@ -327,10 +372,10 @@ document.getElementById('pickerOverlay').addEventListener('click', e=>{ if(e.tar
 function renderErrorHTML(){
   return `
   <div class="card" style="max-width:540px;">
-    <div class="card-title" style="color:var(--red);"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>No se pudo cargar la informacion</div>
+    <div class="card-title" style="color:var(--red);"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>No se pudo conectar con el sistema</div>
     <p style="font-size:13px;color:var(--text);margin-bottom:10px;">${LOAD_ERROR}</p>
-    <p class="subtle" style="margin-bottom:16px;">Revisa la URL de la API y el ID de cliente en Configuracion — deben coincidir exactamente con lo que escribiste en la hoja "Clientes" de tu Sheet central.</p>
-    <div class="btn primary" onclick="setTab('configuracion')">Ir a Configuracion</div>
+    <p class="subtle" style="margin-bottom:16px;">Si el problema sigue, contacta a soporte.</p>
+    <div class="btn primary" onclick="reintentarConexion()">Reintentar</div>
   </div>`;
 }
 function render(){
@@ -355,6 +400,12 @@ const SEARCH_STATE = { pacientes:'', tratamientos:'', pagos:'', gastos:'' };
 clearInterval(refreshTimer);
 refreshTimer = setInterval(async ()=>{
   if(anyModalOpen()) return;
+  /* No repintar mientras se esta en Agendar: ahi vive el formulario de
+     nueva cita a medio llenar (se perderia con cada repintado) y la lista
+     de Citas con su propio scroll (se iria hasta arriba). Los datos se
+     siguen refrescando en segundo plano; se pintan en cuanto se cambia de
+     pestaña. */
+  if(ACTIVE_TAB === 'agendar') return;
   if(Date.now() - LAST_INTERACTION < 5000) return;
   if(CONFIG.API_URL) await loadData();
   render();
@@ -372,12 +423,13 @@ function openTreatmentPicker(preselected, onConfirm){
   document.getElementById('pickerBody').innerHTML = `
     <h3>Seleccionar tratamientos</h3>
     <input class="search picker-search" style="max-width:100%;" id="pickerSearch" placeholder="Buscar tratamiento...">
-    <div class="picker-list" id="pickerList">${draw('')}</div>
+    <div class="picker-list-wrap"><div class="picker-list" id="pickerList">${draw('')}</div></div>
     <div class="modal-actions"><div class="btn block" id="pickerCancel">Cancelar</div><div class="btn primary block" id="pickerConfirm">Listo</div></div>`;
   document.getElementById('pickerOverlay').classList.add('open');
   const list = document.getElementById('pickerList');
+  refreshScrollHint(list);
   list.addEventListener('change', e=>{ if(e.target.matches('input[type=checkbox]')){ if(e.target.checked) selected.add(e.target.value); else selected.delete(e.target.value); } });
-  document.getElementById('pickerSearch').addEventListener('input', e=>{ document.getElementById('pickerList').innerHTML = draw(e.target.value); });
+  document.getElementById('pickerSearch').addEventListener('input', e=>{ document.getElementById('pickerList').innerHTML = draw(e.target.value); refreshScrollHint(document.getElementById('pickerList')); });
   document.getElementById('pickerCancel').addEventListener('click', closePicker);
   document.getElementById('pickerConfirm').addEventListener('click', ()=>{ closePicker(); onConfirm(Array.from(selected)); });
 }
@@ -391,10 +443,11 @@ function openTreatmentPickerSingle(onSelect){
   document.getElementById('pickerBody').innerHTML = `
     <h3>Seleccionar tratamiento</h3>
     <input class="search picker-search" style="max-width:100%;" id="pickerSearch" placeholder="Buscar tratamiento...">
-    <div class="picker-list" id="pickerList">${draw('')}</div>
+    <div class="picker-list-wrap"><div class="picker-list" id="pickerList">${draw('')}</div></div>
     <div class="modal-actions"><div class="btn block" id="pickerCancel">Cancelar</div></div>`;
   document.getElementById('pickerOverlay').classList.add('open');
   const list = document.getElementById('pickerList');
+  refreshScrollHint(list);
   list.addEventListener('click', e=>{
     const item = e.target.closest('.picker-item'); if(!item || !item.dataset.nombre) return;
     closePicker(); onSelect({ nombre:item.dataset.nombre, precio:Number(item.dataset.precio) });
@@ -495,20 +548,22 @@ function openCategoryPicker(current, onSelect){
   document.getElementById('pickerBody').innerHTML = `
     <h3>Categoria de tratamiento</h3>
     <input class="search picker-search" style="max-width:100%;" id="pickerSearch" placeholder="Buscar o crear categoria...">
-    <div class="picker-list" id="pickerList">${draw('')}</div>
+    <div class="picker-list-wrap"><div class="picker-list" id="pickerList">${draw('')}</div></div>
     <div class="modal-actions"><div class="btn block" id="pickerCancel">Cancelar</div></div>`;
   document.getElementById('pickerOverlay').classList.add('open');
   const list = document.getElementById('pickerList');
-  list.addEventListener('click', e=>{
+  refreshScrollHint(list);
+  list.addEventListener('click', async e=>{
     const item = e.target.closest('.picker-item'); if(!item) return;
     if(item.dataset.newcat){
-      DATA.categorias_tratamiento.push({Categoria:item.dataset.newcat});
-      if(CONFIG.API_URL) apiCall('add_categoria', { categoria: item.dataset.newcat });
-      closePicker(); onSelect(item.dataset.newcat); showToast('Categoria agregada al catalogo');
+      const nuevaCategoria = item.dataset.newcat;
+      if(CONFIG.API_URL){ await apiCall('add_categoria', { categoria: nuevaCategoria }, ['categorias_tratamiento']); }
+      else { DATA.categorias_tratamiento.push({Categoria:nuevaCategoria}); }
+      closePicker(); onSelect(nuevaCategoria); showToast('Categoria agregada al catalogo');
     }
     else if(item.dataset.cat){ closePicker(); onSelect(item.dataset.cat); }
   });
-  document.getElementById('pickerSearch').addEventListener('input', e=>{ document.getElementById('pickerList').innerHTML = draw(e.target.value); });
+  document.getElementById('pickerSearch').addEventListener('input', e=>{ document.getElementById('pickerList').innerHTML = draw(e.target.value); refreshScrollHint(document.getElementById('pickerList')); });
   document.getElementById('pickerCancel').addEventListener('click', closePicker);
 }
 
@@ -524,20 +579,22 @@ function openGastoCategoryPicker(current, onSelect){
   document.getElementById('pickerBody').innerHTML = `
     <h3>Categoria de gasto</h3>
     <input class="search picker-search" style="max-width:100%;" id="pickerSearch" placeholder="Buscar o crear categoria...">
-    <div class="picker-list" id="pickerList">${draw('')}</div>
+    <div class="picker-list-wrap"><div class="picker-list" id="pickerList">${draw('')}</div></div>
     <div class="modal-actions"><div class="btn block" id="pickerCancel">Cancelar</div></div>`;
   document.getElementById('pickerOverlay').classList.add('open');
   const list = document.getElementById('pickerList');
-  list.addEventListener('click', e=>{
+  refreshScrollHint(list);
+  list.addEventListener('click', async e=>{
     const item = e.target.closest('.picker-item'); if(!item) return;
     if(item.dataset.newcat){
-      DATA.categorias_gasto.push({Categoria:item.dataset.newcat});
-      if(CONFIG.API_URL) apiCall('add_categoria_gasto', { categoria: item.dataset.newcat });
-      closePicker(); onSelect(item.dataset.newcat); showToast('Categoria agregada al catalogo');
+      const nuevaCategoria = item.dataset.newcat;
+      if(CONFIG.API_URL){ await apiCall('add_categoria_gasto', { categoria: nuevaCategoria }, ['categorias_gasto']); }
+      else { DATA.categorias_gasto.push({Categoria:nuevaCategoria}); }
+      closePicker(); onSelect(nuevaCategoria); showToast('Categoria agregada al catalogo');
     }
     else if(item.dataset.cat){ closePicker(); onSelect(item.dataset.cat); }
   });
-  document.getElementById('pickerSearch').addEventListener('input', e=>{ document.getElementById('pickerList').innerHTML = draw(e.target.value); });
+  document.getElementById('pickerSearch').addEventListener('input', e=>{ document.getElementById('pickerList').innerHTML = draw(e.target.value); refreshScrollHint(document.getElementById('pickerList')); });
   document.getElementById('pickerCancel').addEventListener('click', closePicker);
 }
 
@@ -570,7 +627,7 @@ function renderDashboardHTML(){
       <div class="mini-chart-wrap"><canvas id="incomeChart"></canvas></div>
       <div class="metric-delta">${DATA.pagos.length} pagos registrados</div>
     </div>
-    <div class="card" style="display:flex;flex-direction:column;justify-content:space-between;">
+    <div class="card" style="display:flex;flex-direction:column;justify-content:space-between;overflow:visible;">
       <div>
         <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/></svg>Pacientes</div><span class="link-btn" data-goto="pacientes">Ver pacientes →</span></div>
         <div class="stat-row">
@@ -623,21 +680,71 @@ function renderPacientesHTML(){
   </div>
   <div class="table-wrap">
     <table><thead><tr><th>Paciente</th><th>Telefono</th><th>Ultima visita</th><th>Tratamientos</th><th>Estado</th><th>Saldo</th></tr></thead><tbody id="pacTbody"></tbody></table>
+  </div>
+  <div id="pacPaginador"></div>`;
+}
+/* ============ PAGINADOR GENERICO (Pacientes, Pagos, Gastos, Tratamientos) ============ */
+const PAGINATION = { pacientes:{page:1,size:15}, pagos:{page:1,size:15}, gastos:{page:1,size:15}, tratamientos:{page:1,size:15} };
+function paginar(key, items){
+  const st = PAGINATION[key];
+  const total = items.length;
+  const totalPaginas = Math.max(1, Math.ceil(total/st.size));
+  if(st.page>totalPaginas) st.page = totalPaginas;
+  const inicio = (st.page-1)*st.size;
+  return { pageItems: items.slice(inicio, inicio+st.size), total, totalPaginas };
+}
+function renderPaginador(key, total, totalPaginas){
+  const st = PAGINATION[key];
+  if(total===0) return '';
+  return `
+  <div class="paginador">
+    <span class="subtle">${total} registro${total===1?'':'s'}</span>
+    <div class="paginador-controles">
+      <select class="pag-size" data-pag-key="${key}">${[15,30,50,100].map(n=>`<option value="${n}" ${st.size===n?'selected':''}>${n} por pagina</option>`).join('')}</select>
+      <div class="icon-btn pag-prev" data-pag-key="${key}" style="${st.page<=1?'opacity:.35;pointer-events:none;':''}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></div>
+      <span class="subtle">Pagina ${st.page} de ${totalPaginas}</span>
+      <div class="icon-btn pag-next" data-pag-key="${key}" style="${st.page>=totalPaginas?'opacity:.35;pointer-events:none;':''}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></div>
+    </div>
   </div>`;
 }
+function attachPaginadorEvents(key, refillFn){
+  document.querySelectorAll(`.pag-size[data-pag-key="${key}"]`).forEach(sel=>{
+    sel.onchange = e=>{ PAGINATION[key].size = Number(e.target.value); PAGINATION[key].page = 1; refillFn(); };
+  });
+  document.querySelectorAll(`.pag-prev[data-pag-key="${key}"]`).forEach(btn=>{
+    btn.onclick = ()=>{ if(PAGINATION[key].page>1){ PAGINATION[key].page--; refillFn(); } };
+  });
+  document.querySelectorAll(`.pag-next[data-pag-key="${key}"]`).forEach(btn=>{
+    btn.onclick = ()=>{ PAGINATION[key].page++; refillFn(); };
+  });
+}
 function saldoPaciente(pacId){ return DATA.pagos.filter(p=>p.Paciente_ID===pacId).reduce((s,p)=>s+Number(p.Saldo),0); }
+/* "Ultima visita" real del paciente: la fecha mas reciente entre sus citas
+   no canceladas con Fecha <= hoy. No se guarda en ningun lado — se calcula
+   al vuelo con los datos ya cargados, para que nunca se desincronice. Si
+   todavia no tiene ninguna cita asi (recien dado de alta, con historial de
+   antes de usar el sistema), cae al respaldo manual capturado en el alta. */
+function ultimaVisitaEfectiva(pac){
+  const hoy = todayStr();
+  const pasadas = DATA.citas.filter(c=>c.Paciente_ID===pac.ID && c.Estado!=='Cancelada' && c.Fecha<=hoy);
+  if(pasadas.length>0) return pasadas.reduce((max,c)=> c.Fecha>max ? c.Fecha : max, pasadas[0].Fecha);
+  return (pac.Ultima_Visita && pac.Ultima_Visita!=='—') ? pac.Ultima_Visita : '—';
+}
 function fillPacientesTable(filter){
   const tbody = document.getElementById('pacTbody'); if(!tbody) return;
   const f = filter||'';
-  const rows = DATA.pacientes.filter(p=> matches(p.Nombre,f) || matches(p.Tratamientos,f));
+  const filtrados = DATA.pacientes.filter(p=> matches(p.Nombre,f) || matches(p.Tratamientos,f));
+  const { pageItems: rows, total, totalPaginas } = paginar('pacientes', filtrados);
   tbody.innerHTML = rows.map(p=>{
     const saldo = saldoPaciente(p.ID);
     const trats = tratArr(p.Tratamientos);
     const tratLabel = trats.length===0 ? '—' : (trats.length===1 ? trats[0] : `${trats[0]} <span class="subtle">+${trats.length-1}</span>`);
     const estadoBadge = p.Estado==='Inactivo' ? `<span class="badge inactive">Inactivo</span>` : `<span class="badge ok">Activo</span>`;
-    return `<tr class="clickable" data-pac="${p.ID}"><td>${p.Nombre}</td><td>${p.Telefono}</td><td>${p.Ultima_Visita}</td><td>${tratLabel}</td><td>${estadoBadge}</td><td>${saldo>0?`<span class="badge pend">${fmtMoney(saldo)}</span>`:`<span class="badge ok">Al corriente</span>`}</td></tr>`;
+    return `<tr class="clickable" data-pac="${p.ID}"><td>${p.Nombre}</td><td>${p.Telefono}</td><td>${ultimaVisitaEfectiva(p)}</td><td>${tratLabel}</td><td>${estadoBadge}</td><td>${saldo>0?`<span class="badge pend">${fmtMoney(saldo)}</span>`:`<span class="badge ok">Al corriente</span>`}</td></tr>`;
   }).join('') || '<tr><td colspan="6" class="empty">Sin resultados</td></tr>';
   tbody.querySelectorAll('tr[data-pac]').forEach(tr=>{ tr.addEventListener('click', ()=> showPacienteDetalle(tr.dataset.pac)); });
+  const pagBox = document.getElementById('pacPaginador');
+  if(pagBox){ pagBox.innerHTML = renderPaginador('pacientes', total, totalPaginas); attachPaginadorEvents('pacientes', ()=>fillPacientesTable(filter)); }
 }
 function showPacienteDetalle(pacId){
   const p = DATA.pacientes.find(x=>x.ID===pacId); if(!p) return;
@@ -646,7 +753,7 @@ function showPacienteDetalle(pacId){
   const esActivo = p.Estado!=='Inactivo';
   openModal(`
     <h3>${p.Nombre}</h3>
-    <p class="subtle" style="margin-bottom:14px;">${p.Telefono} · Ultima visita: ${p.Ultima_Visita} · ${esActivo?'<span style="color:var(--teal)">Activo</span>':'<span style="color:var(--text-mute)">Inactivo</span>'}</p>
+    <p class="subtle" style="margin-bottom:14px;">${p.Telefono} · Ultima visita: ${ultimaVisitaEfectiva(p)} · ${esActivo?'<span style="color:var(--teal)">Activo</span>':'<span style="color:var(--text-mute)">Inactivo</span>'}</p>
     <div class="card-title" style="margin-bottom:8px;">Tratamientos asignados</div>
     <div class="chip-row" style="margin-bottom:16px;">${trats.map(t=>`<span class="chip">${t}</span>`).join('') || '<span class="subtle">Sin tratamientos asignados</span>'}</div>
     <div class="card-title" style="margin-bottom:8px;">Saldo</div>
@@ -658,8 +765,8 @@ function showPacienteDetalle(pacId){
   document.getElementById('btnToggleEstado').addEventListener('click', async ()=>{
     if(esActivo && saldo>0){ if(!confirm(`${p.Nombre} tiene un saldo pendiente de ${fmtMoney(saldo)}. ¿Marcarlo como inactivo de todas formas?`)) return; }
     const nuevoEstado = esActivo ? 'Inactivo' : 'Activo';
-    if(CONFIG.API_URL) await apiCall('set_estado_paciente', { pacienteId: p.ID, estado: nuevoEstado });
-    p.Estado = nuevoEstado;
+    if(CONFIG.API_URL){ await apiCall('set_estado_paciente', { pacienteId: p.ID, estado: nuevoEstado }, ['pacientes']); }
+    else { p.Estado = nuevoEstado; }
     closeModal(); showToast(esActivo?'Paciente marcado como inactivo':'Paciente reactivado'); render();
   });
 }
@@ -694,9 +801,10 @@ function renderFinanzasHTML(){
         <input class="search" id="pagoSearch" placeholder="Buscar por fecha, paciente, tratamiento, monto..." value="${SEARCH_STATE.pagos}">
         <div class="btn primary sm" id="btnAddPago">+ Registrar pago</div>
       </div>
-      <div class="table-wrap" style="margin-bottom:20px;">
+      <div class="table-wrap" style="margin-bottom:6px;">
         <table><thead><tr><th>Fecha</th><th>Paciente</th><th>Tratamiento</th><th>Total</th><th>Pagado</th><th>Saldo</th><th></th></tr></thead><tbody id="pagosTbody"></tbody></table>
       </div>
+      <div id="pagPaginador" style="margin-bottom:14px;"></div>
     </div>
   </div>
 
@@ -708,32 +816,39 @@ function renderFinanzasHTML(){
         <div class="btn primary sm" id="btnAddGasto">+ Registrar gasto</div>
       </div>
       <div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Concepto</th><th>Categoria</th><th>Monto</th></tr></thead><tbody id="gastosTbody"></tbody></table></div>
+      <div id="gastoPaginador"></div>
     </div>
   </div>`;
 }
 function fillPagosTable(filter){
   const tbody = document.getElementById('pagosTbody'); if(!tbody) return;
   const f = filter||'';
-  const rows = [...DATA.pagos].sort((a,b)=>b.Fecha.localeCompare(a.Fecha)).filter(p=>{
+  const filtrados = [...DATA.pagos].sort((a,b)=>b.Fecha.localeCompare(a.Fecha)).filter(p=>{
     const blob = [p.Fecha,p.Paciente,p.Tratamiento,p.Monto_Total,p.Monto_Pagado,p.Saldo].join(' ');
     return matches(blob, f);
   });
+  const { pageItems: rows, total, totalPaginas } = paginar('pagos', filtrados);
   tbody.innerHTML = rows.map(p=>`<tr><td>${p.Fecha}</td><td>${p.Paciente}</td><td>${p.Tratamiento}</td><td>${fmtMoney(p.Monto_Total)}</td><td>${fmtMoney(p.Monto_Pagado)}</td><td>${Number(p.Saldo)>0?`<span class="badge pend">${fmtMoney(p.Saldo)}</span>`:`<span class="badge ok">$0</span>`}</td><td>${Number(p.Saldo)>0?`<div class="btn sm" data-abonar="${p.ID}">Abonar</div>`:''}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">Sin resultados</td></tr>';
   tbody.querySelectorAll('[data-abonar]').forEach(btn=>{ btn.addEventListener('click', ()=> openAbonoModal(btn.dataset.abonar, ()=>{ fillPagosTable(document.getElementById('pagoSearch').value); })); });
+  const pagBox = document.getElementById('pagPaginador');
+  if(pagBox){ pagBox.innerHTML = renderPaginador('pagos', total, totalPaginas); attachPaginadorEvents('pagos', ()=>fillPagosTable(filter)); }
 }
 function fillGastosTable(filter){
   const tbody = document.getElementById('gastosTbody'); if(!tbody) return;
   const f = filter||'';
-  const rows = [...DATA.gastos].sort((a,b)=>b.Fecha.localeCompare(a.Fecha)).filter(g=>{ const blob = [g.Fecha,g.Concepto,g.Categoria,g.Monto].join(' '); return matches(blob, f); });
+  const filtrados = [...DATA.gastos].sort((a,b)=>b.Fecha.localeCompare(a.Fecha)).filter(g=>{ const blob = [g.Fecha,g.Concepto,g.Categoria,g.Monto].join(' '); return matches(blob, f); });
+  const { pageItems: rows, total, totalPaginas } = paginar('gastos', filtrados);
   tbody.innerHTML = rows.map(g=>`<tr><td>${g.Fecha}</td><td>${g.Concepto}</td><td>${g.Categoria}</td><td>${fmtMoney(g.Monto)}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">Sin resultados</td></tr>';
+  const pagBox = document.getElementById('gastoPaginador');
+  if(pagBox){ pagBox.innerHTML = renderPaginador('gastos', total, totalPaginas); attachPaginadorEvents('gastos', ()=>fillGastosTable(filter)); }
 }
 async function guardarPagoNuevo(selPac, selTrat, total, pagado){
   let id = 'F' + String(DATA.pagos.length+1).padStart(3,'0');
   if(CONFIG.API_URL){
-    const res = await apiCall('add_pago', { fecha:todayStr(), pacienteId:selPac.ID, paciente:selPac.Nombre, tratamiento:selTrat.nombre, montoTotal:total, montoPagado:pagado });
-    if(res && res.id) id = res.id;
+    await apiCall('add_pago', { fecha:todayStr(), pacienteId:selPac.ID, paciente:selPac.Nombre, tratamiento:selTrat.nombre, montoTotal:total, montoPagado:pagado }, ['pagos']);
+  } else {
+    DATA.pagos.push({ID:id, Fecha:todayStr(), Paciente_ID:selPac.ID, Paciente:selPac.Nombre, Tratamiento:selTrat.nombre, Monto_Total:total, Monto_Pagado:pagado, Saldo:total-pagado});
   }
-  DATA.pagos.push({ID:id, Fecha:todayStr(), Paciente_ID:selPac.ID, Paciente:selPac.Nombre, Tratamiento:selTrat.nombre, Monto_Total:total, Monto_Pagado:pagado, Saldo:total-pagado});
   showToast('Pago registrado'); render();
 }
 
@@ -747,9 +862,8 @@ function openAbonoModal(pagoId, onDone){
   document.getElementById('mGuardarAbono').addEventListener('click', async ()=>{
     const monto = Number(document.getElementById('mAbono').value)||0;
     if(monto<=0) return showToast('Ingresa un monto valido');
-    if(CONFIG.API_URL) await apiCall('add_abono', { pagoId: pago.ID, monto });
-    pago.Monto_Pagado = Number(pago.Monto_Pagado) + monto;
-    pago.Saldo = Number(pago.Monto_Total) - Number(pago.Monto_Pagado);
+    if(CONFIG.API_URL){ await apiCall('add_abono', { pagoId: pago.ID, monto }, ['pagos']); }
+    else { pago.Monto_Pagado = Number(pago.Monto_Pagado) + monto; pago.Saldo = Number(pago.Monto_Total) - Number(pago.Monto_Pagado); }
     closeModal(); showToast('Abono registrado');
     if(ACTIVE_TAB==='dashboard' || ACTIVE_TAB==='finanzas') render();
     if(onDone) onDone();
@@ -771,13 +885,17 @@ function renderTratamientosHTML(){
     <input class="search" id="tratSearch" placeholder="Buscar por tratamiento, categoria o precio..." value="${SEARCH_STATE.tratamientos}">
     <div class="btn primary" id="btnAddTratamiento">+ Nuevo tratamiento</div>
   </div>
-  <div class="table-wrap"><table><thead><tr><th>Tratamiento</th><th>Categoria</th><th>Precio</th><th>Duración</th></tr></thead><tbody id="tratTbody"></tbody></table></div>`;
+  <div class="table-wrap"><table><thead><tr><th>Tratamiento</th><th>Categoria</th><th>Precio</th><th>Duración</th></tr></thead><tbody id="tratTbody"></tbody></table></div>
+  <div id="tratPaginador"></div>`;
 }
 function fillTratamientosTable(filter){
   const tbody = document.getElementById('tratTbody'); if(!tbody) return;
   const f = filter||'';
-  const rows = DATA.tratamientos.filter(t=>{ const blob = [t.Nombre,t.Categoria,t.Precio_MXN].join(' '); return matches(blob, f); });
+  const filtrados = DATA.tratamientos.filter(t=>{ const blob = [t.Nombre,t.Categoria,t.Precio_MXN].join(' '); return matches(blob, f); });
+  const { pageItems: rows, total, totalPaginas } = paginar('tratamientos', filtrados);
   tbody.innerHTML = rows.map(t=>`<tr><td>${t.Nombre}</td><td>${t.Categoria}</td><td>${fmtMoney(t.Precio_MXN)}</td><td>${t.Duracion_Min||30} min</td></tr>`).join('') || '<tr><td colspan="4" class="empty">Sin resultados</td></tr>';
+  const pagBox = document.getElementById('tratPaginador');
+  if(pagBox){ pagBox.innerHTML = renderPaginador('tratamientos', total, totalPaginas); attachPaginadorEvents('tratamientos', ()=>fillTratamientosTable(filter)); }
 }
 
 /* ==================== AGENDA ==================== */
@@ -823,7 +941,9 @@ Maria Ramirez Cruz,Corona dental,2026-08-11,11:00</div>
           const esHoy = c.Fecha===hoy; const esPasada = c.Fecha < hoy;
           const color = esPasada ? 'var(--text-mute)' : (esHoy ? 'var(--amber)' : 'var(--teal)');
           const dur = duracionCitaMin(c.Tratamientos||c.Tratamiento);
-          const acciones = esPasada ? '' : `<div style="display:flex;gap:6px;margin-top:6px;"><div class="btn sm" data-reagendar="${c.ID}">Reagendar</div><div class="btn sm danger" data-cancelar="${c.ID}">Cancelar</div></div>`;
+          const acciones = esPasada
+            ? `<div style="display:flex;gap:6px;margin-top:6px;"><div class="btn sm" data-reagendar="${c.ID}">Reagendar</div></div>`
+            : `<div style="display:flex;gap:6px;margin-top:6px;"><div class="btn sm" data-reagendar="${c.ID}">Reagendar</div><div class="btn sm danger" data-cancelar="${c.ID}">Cancelar</div></div>`;
           return `<div class="appt"><div class="appt-time">${c.Fecha.slice(5)}<br>${c.Hora}</div><div class="appt-info" style="border-left-color:${color}"><b>${c.Paciente}</b><span>${tratArr(c.Tratamientos||c.Tratamiento).join(' + ')} · ${dur} min</span>${acciones}</div></div>`;
         }).join('') || '<div class="empty">Sin citas</div>'}
       </div>
@@ -891,13 +1011,15 @@ function afterRenderHooks(){
 
   if(ACTIVE_TAB === 'pacientes'){
     fillPacientesTable(SEARCH_STATE.pacientes);
-    document.getElementById('pacSearch').addEventListener('input', e=>{ SEARCH_STATE.pacientes = e.target.value; fillPacientesTable(e.target.value); });
+    document.getElementById('pacSearch').addEventListener('input', e=>{ SEARCH_STATE.pacientes = e.target.value; PAGINATION.pacientes.page = 1; fillPacientesTable(e.target.value); });
     document.getElementById('btnAddPaciente').addEventListener('click', ()=>{
       let selectedTrats = [];
       openModal(`
         <h3>Nuevo paciente</h3>
         <div class="field" style="margin-bottom:12px;"><label>Nombre completo</label><input id="mNombre"></div>
         <div class="field" style="margin-bottom:12px;"><label>Telefono</label><input id="mTelefono"></div>
+        <div class="field" style="margin-bottom:4px;"><label>Ultima visita anterior (opcional)</label><input id="mUltimaVisitaAnterior" type="date" max="${todayStr()}"></div>
+        <p class="subtle" style="margin-bottom:12px;">Solo si el paciente ya tenia historial antes de usar el sistema. En cuanto le agendes su primera cita aqui, el sistema calcula su ultima visita solo.</p>
         <div class="field" style="margin-bottom:12px;"><label>Tratamientos</label>
           <div class="picker-btn" id="mTratBtn">Selecciona uno o varios tratamientos</div>
           <div class="chip-row" id="mTratChips"></div>
@@ -909,13 +1031,14 @@ function afterRenderHooks(){
       document.getElementById('mGuardarPaciente').addEventListener('click', async ()=>{
         const nombre = document.getElementById('mNombre').value.trim();
         const tel = document.getElementById('mTelefono').value.trim();
+        const ultimaVisitaAnterior = document.getElementById('mUltimaVisitaAnterior').value || '';
         if(!nombre) return showToast('Falta el nombre');
         let id = 'P' + String(DATA.pacientes.length+1).padStart(3,'0');
         if(CONFIG.API_URL){
-          const res = await apiCall('add_paciente', { nombre, telefono:tel, tratamientos: selectedTrats.join(', ') });
-          if(res && res.id) id = res.id;
+          await apiCall('add_paciente', { nombre, telefono:tel, tratamientos: selectedTrats.join(', '), ultimaVisitaAnterior }, ['pacientes']);
+        } else {
+          DATA.pacientes.push({ID:id, Nombre:nombre, Telefono:tel, Ultima_Visita: ultimaVisitaAnterior || '—', Tratamientos: selectedTrats.join(', '), Estado:'Activo'});
         }
-        DATA.pacientes.push({ID:id, Nombre:nombre, Telefono:tel, Ultima_Visita:'—', Tratamientos: selectedTrats.join(', '), Estado:'Activo'});
         closeModal(); showToast('Paciente agregado'); render();
       });
     });
@@ -924,8 +1047,8 @@ function afterRenderHooks(){
   if(ACTIVE_TAB === 'finanzas'){
     drawFinanzasChart();
     fillPagosTable(SEARCH_STATE.pagos); fillGastosTable(SEARCH_STATE.gastos);
-    document.getElementById('pagoSearch').addEventListener('input', e=>{ SEARCH_STATE.pagos = e.target.value; fillPagosTable(e.target.value); });
-    document.getElementById('gastoSearch').addEventListener('input', e=>{ SEARCH_STATE.gastos = e.target.value; fillGastosTable(e.target.value); });
+    document.getElementById('pagoSearch').addEventListener('input', e=>{ SEARCH_STATE.pagos = e.target.value; PAGINATION.pagos.page = 1; fillPagosTable(e.target.value); });
+    document.getElementById('gastoSearch').addEventListener('input', e=>{ SEARCH_STATE.gastos = e.target.value; PAGINATION.gastos.page = 1; fillGastosTable(e.target.value); });
     document.getElementById('btnAddPago').addEventListener('click', ()=>{
       let selPac = null; let selTrat = null;
       openModal(`
@@ -989,10 +1112,10 @@ function afterRenderHooks(){
         if(!concepto || monto<=0) return showToast('Completa concepto y monto');
         let id = 'G' + String(DATA.gastos.length+1).padStart(3,'0');
         if(CONFIG.API_URL){
-          const res = await apiCall('add_gasto', { fecha:todayStr(), concepto, categoria, monto });
-          if(res && res.id) id = res.id;
+          await apiCall('add_gasto', { fecha:todayStr(), concepto, categoria, monto }, ['gastos']);
+        } else {
+          DATA.gastos.push({ID:id, Fecha:todayStr(), Concepto:concepto, Categoria:categoria, Monto:monto});
         }
-        DATA.gastos.push({ID:id, Fecha:todayStr(), Concepto:concepto, Categoria:categoria, Monto:monto});
         closeModal(); showToast('Gasto registrado'); render();
       });
     });
@@ -1000,7 +1123,7 @@ function afterRenderHooks(){
 
   if(ACTIVE_TAB === 'tratamientos'){
     fillTratamientosTable(SEARCH_STATE.tratamientos);
-    document.getElementById('tratSearch').addEventListener('input', e=>{ SEARCH_STATE.tratamientos = e.target.value; fillTratamientosTable(e.target.value); });
+    document.getElementById('tratSearch').addEventListener('input', e=>{ SEARCH_STATE.tratamientos = e.target.value; PAGINATION.tratamientos.page = 1; fillTratamientosTable(e.target.value); });
     document.getElementById('btnAddTratamiento').addEventListener('click', ()=>{
       let categoriaSel = DATA.categorias_tratamiento[0] ? DATA.categorias_tratamiento[0].Categoria : '';
       openModal(`
@@ -1017,13 +1140,13 @@ function afterRenderHooks(){
         const nombre = document.getElementById('mtNombre').value.trim();
         const precio = Number(document.getElementById('mtPrecio').value)||0;
         const duracionMin = Number(document.getElementById('mtDuracion').value)||30;
-        if(!nombre) return showToast('Falta el nombre');
+        if(!nombre || precio<=0) return showToast('Completa nombre y precio');
         let id = 'T' + String(DATA.tratamientos.length+1).padStart(2,'0');
         if(CONFIG.API_URL){
-          const res = await apiCall('add_tratamiento', { nombre, categoria:categoriaSel, precio, duracionMin });
-          if(res && res.id) id = res.id;
+          await apiCall('add_tratamiento', { nombre, categoria:categoriaSel, precio, duracionMin }, ['tratamientos']);
+        } else {
+          DATA.tratamientos.push({ID:id, Nombre:nombre, Categoria:categoriaSel, Precio_MXN:precio, Duracion_Min:duracionMin});
         }
-        DATA.tratamientos.push({ID:id, Nombre:nombre, Categoria:categoriaSel, Precio_MXN:precio, Duracion_Min:duracionMin});
         closeModal(); showToast('Tratamiento agregado'); render();
       });
     });
@@ -1123,8 +1246,8 @@ function afterRenderHooks(){
         const citaId = btn.dataset.cancelar;
         const cita = DATA.citas.find(c=>c.ID===citaId); if(!cita) return;
         if(!confirm(`¿Cancelar la cita de ${cita.Paciente} el ${cita.Fecha} a las ${cita.Hora}?`)) return;
-        if(CONFIG.API_URL) await apiCall('cancelar_cita', { citaId });
-        cita.Estado = 'Cancelada';
+        if(CONFIG.API_URL){ await apiCall('cancelar_cita', { citaId }, ['citas']); }
+        else { cita.Estado = 'Cancelada'; }
         showToast('Cita cancelada'); render();
       });
     });
@@ -1134,9 +1257,9 @@ function afterRenderHooks(){
     document.getElementById('btnGuardarConfig').addEventListener('click', async ()=>{
       CONFIG.CURRENCY = document.getElementById('cfgMoneda').value;
       document.getElementById('clinicName').innerHTML = document.getElementById('cfgNombre').value + ' <span class="accent"></span>';
-      if(CONFIG.API_URL) await apiCall('set_config', { clave:'Moneda', valor: CONFIG.CURRENCY });
+      if(CONFIG.API_URL) await apiCall('set_config', { clave:'Moneda', valor: CONFIG.CURRENCY }, ['config']);
       showToast('Configuracion guardada');
-      await loadData(); render();
+      render();
     });
     document.getElementById('referralTeaser').addEventListener('click', showReferidosModal);
     document.querySelectorAll('.day-block').forEach(block=>{
@@ -1159,8 +1282,8 @@ function afterRenderHooks(){
         if(turnos.length===0){ nuevoHorario.push({Dia:dia, Activo:false, HoraInicio:'', HoraFin:''}); }
         else{ turnos.forEach(row=>{ nuevoHorario.push({Dia:dia, Activo:activo, HoraInicio:row.querySelector('.hInicio').value, HoraFin:row.querySelector('.hFin').value}); }); }
       });
-      if(CONFIG.API_URL) await apiCall('update_horario', { dias: nuevoHorario });
-      DATA.horario = nuevoHorario;
+      if(CONFIG.API_URL){ await apiCall('update_horario', { dias: nuevoHorario }, ['horario']); }
+      else { DATA.horario = nuevoHorario; }
       showToast('Horario guardado'); render();
     });
   }
@@ -1199,7 +1322,7 @@ function showReferidosModal(){
 async function guardarCitaNueva(pac, trats, fecha, hora, forzar){
   let id = 'C' + String(DATA.citas.length+1).padStart(3,'0');
   if(CONFIG.API_URL){
-    const res = await apiCall('add_cita', { pacienteId:pac.ID, paciente:pac.Nombre, tratamientos:trats.join(', '), fecha, hora, forzar: !!forzar });
+    const res = await apiCall('add_cita', { pacienteId:pac.ID, paciente:pac.Nombre, tratamientos:trats.join(', '), fecha, hora, forzar: !!forzar }, ['citas']);
     if(res && res.conflict){
       openModal(`
         <h3>Horario ocupado</h3>
@@ -1208,10 +1331,11 @@ async function guardarCitaNueva(pac, trats, fecha, hora, forzar){
       document.getElementById('btnForzarCita').addEventListener('click', ()=>{ closeModal(); guardarCitaNueva(pac, trats, fecha, hora, true); });
       return;
     }
-    if(res && res.id) id = res.id;
     showToast(res ? 'Cita creada y agregada a Google Calendar' : 'Cita guardada localmente (sin conexion)');
-  } else { showToast('Cita agendada (modo demo)'); }
-  DATA.citas.push({ID:id, Fecha:fecha, Hora:hora, Paciente_ID:pac.ID, Paciente:pac.Nombre, Tratamientos:trats.join(', '), Estado:'Confirmada'});
+  } else {
+    DATA.citas.push({ID:id, Fecha:fecha, Hora:hora, Paciente_ID:pac.ID, Paciente:pac.Nombre, Tratamientos:trats.join(', '), Estado:'Confirmada'});
+    showToast('Cita agendada (modo demo)');
+  }
   render();
 }
 
@@ -1224,7 +1348,7 @@ async function intentarReagendar(citaId, nuevaFecha, nuevaHora, forzar){
     closeModal(); showToast('Cita reagendada (modo demo)'); render();
     return;
   }
-  const res = await apiCall('reagendar_cita', { citaId, nuevaFecha, nuevaHora, forzar: !!forzar });
+  const res = await apiCall('reagendar_cita', { citaId, nuevaFecha, nuevaHora, forzar: !!forzar }, ['citas']);
   if(res && res.conflict){
     openModal(`
       <h3>Horario ocupado</h3>
@@ -1236,8 +1360,6 @@ async function intentarReagendar(citaId, nuevaFecha, nuevaHora, forzar){
     return;
   }
   if(res && res.ok){
-    const cita = DATA.citas.find(c=>c.ID===citaId);
-    cita.Fecha = nuevaFecha; cita.Hora = nuevaHora;
     closeModal(); showToast('Cita reagendada y actualizada en Google Calendar'); render();
   } else {
     showToast('No se pudo reagendar. Intenta de nuevo.');

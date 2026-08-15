@@ -106,7 +106,8 @@
   .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
   .field{display:flex;flex-direction:column;gap:6px;}
   .field label{font-size:12px;color:var(--text-dim);}
-  .field input,.field select{background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:9px 11px;color:var(--text);font-size:13px;width:100%;}
+  .field input:not([type="checkbox"]),.field select{background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:9px 11px;color:var(--text);font-size:13px;width:100%;}
+  .field input[type="checkbox"]{width:16px;height:16px;flex-shrink:0;accent-color:var(--teal);margin:0;}
   .field input:focus,.field select:focus{outline:none;border-color:var(--teal);}
   .field input[readonly]{color:var(--text-dim);background:#0a1420;cursor:not-allowed;}
   .picker-btn{background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:9px 11px;color:var(--text-dim);font-size:13px;cursor:pointer;text-align:left;}
@@ -187,7 +188,7 @@
     .row2{grid-template-columns:1fr;}
     .kpi-row{grid-template-columns:1fr 1fr;}
     .form-grid{grid-template-columns:1fr;}
-    .donut-wrap{flex-direction:column;align-items:flex-start;}
+    .donut-wrap{flex-direction:column;align-items:center;text-align:center;}
     .turno-row{grid-template-columns:1fr 1fr;}
   }
   @media (max-width:380px){
@@ -239,7 +240,7 @@
 Chart.defaults.color = '#8FA1AE';
 Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
 
-const CONFIG = { API_URL: "https://script.google.com/macros/s/AKfycby2vc5fO1g4A08vLKsWTAhMBwO5HvVKqh1KkaigexC8JkGVgdTf-bl6rmMpPhSvNYRO/exec", CLIENT_ID: "DEMO", CURRENCY: "MXN", WHATSAPP_REFERIDOS: "5214431660960" };
+const CONFIG = { API_URL: "https://script.google.com/macros/s/AKfycby2vc5fO1g4A08vLKsWTAhMBwO5HvVKqh1KkaigexC8JkGVgdTf-bl6rmMpPhSvNYRO/exec", CLIENT_ID: "DEMO", CURRENCY: "MXN", DIAS_SIN_VISITA: 60, WHATSAPP_REFERIDOS: "5214431660960" };
 const REFERRAL_COMMISSION = 300;
 const CURRENCIES = {
   MXN:{symbol:'$',nombre:'Peso mexicano'}, USD:{symbol:'$',nombre:'Dólar estadounidense'},
@@ -273,6 +274,16 @@ async function loadData(){
   }
 }
 async function reintentarConexion(){ showMask('Conectando...'); await loadData(); hideMask(); render(); }
+/* Toma Moneda y DiasSinVisita de la hoja Config y los aplica a CONFIG en
+   memoria. Sin esto, CONFIG solo reflejaba el valor guardado en ESTA
+   sesion del navegador — si guardabas Moneda hoy y recargabas la pagina
+   mañana, se te olvidaba porque nunca se releia de vuelta del Sheet. */
+function hidratarConfigDesdeSheet(){
+  if(!Array.isArray(DATA.config)) return;
+  const mapa = {}; DATA.config.forEach(c=>{ mapa[c.Clave] = c.Valor; });
+  if(mapa.Moneda && CURRENCIES[mapa.Moneda]) CONFIG.CURRENCY = mapa.Moneda;
+  if(mapa.DiasSinVisita) CONFIG.DIAS_SIN_VISITA = Number(mapa.DiasSinVisita) || 60;
+}
 
 /* Mapa entre las claves del JSON del backend y los nombres de hoja que
    entiende doGet para la recarga parcial (?sheets=...). */
@@ -332,8 +343,21 @@ function matches(text, query){ return normalize(text).includes(normalize(query))
 function showToast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
 function showMask(text){ document.getElementById('maskText').textContent = text||'Cargando información...'; document.getElementById('blockingMask').classList.add('show'); }
 function hideMask(){ document.getElementById('blockingMask').classList.remove('show'); }
-function closeModal(){ document.getElementById('modalOverlay').classList.remove('open'); }
+let MODAL_STACK = [];
+function closeModal(){ MODAL_STACK = []; document.getElementById('modalOverlay').classList.remove('open'); }
 function openModal(html, wide){ const m=document.getElementById('modalBody'); m.className = wide?'modal wide':'modal'; m.innerHTML = html; document.getElementById('modalOverlay').classList.add('open'); }
+/* Guarda el contenido actual del modal para poder regresar a el mas
+   adelante con volverModal() en vez de cerrar todo. */
+function pushModalState(){ const m=document.getElementById('modalBody'); MODAL_STACK.push({ html:m.innerHTML, wide:m.classList.contains('wide') }); }
+/* Regresa al modal anterior guardado con pushModalState(); si no hay
+   ninguno guardado, simplemente cierra (mismo comportamiento de siempre). */
+function volverModal(){
+  if(!MODAL_STACK.length){ closeModal(); return; }
+  const prev = MODAL_STACK.pop();
+  const m = document.getElementById('modalBody');
+  m.className = prev.wide?'modal wide':'modal';
+  m.innerHTML = prev.html;
+}
 function closePicker(){ document.getElementById('pickerOverlay').classList.remove('open'); }
 /* Señal visual (degradado) de que una lista dentro de un picker tiene mas
    contenido abajo del que cabe — el scrollbar delgado solo no siempre se
@@ -615,6 +639,8 @@ function openGastoCategoryPicker(current, onSelect){
 function renderDashboardHTML(){
   const hoy = todayStr(); const ahora = nowHM();
   const proximasHoy = [...DATA.citas].filter(c=>c.Estado!=='Cancelada' && c.Fecha===hoy && c.Hora>=ahora).sort((a,b)=> a.Hora.localeCompare(b.Hora));
+  const semanaActual = 'S'+Math.ceil(diaDelMes(hoy)/7);
+  const citasEstaSemana = DATA.citas.filter(c=>c.Estado!=='Cancelada' && esMesActual(c.Fecha) && ('S'+Math.ceil(diaDelMes(c.Fecha)/7))===semanaActual).length;
   const ingresosMes = DATA.pagos.reduce((s,p)=>s+Number(p.Monto_Pagado),0);
   const pendiente = DATA.pagos.reduce((s,p)=>s+Number(p.Saldo),0);
   const activos = DATA.pacientes.filter(p=>p.Estado!=='Inactivo').length;
@@ -624,36 +650,43 @@ function renderDashboardHTML(){
   const catEntries = Object.entries(porCategoria).sort((a,b)=>b[1]-a[1]).slice(0,3);
   const catTotal = catEntries.reduce((s,e)=>s+e[1],0) || 1;
   const colors = ['#2FD8B0','#1B6E5C','#3A4E60'];
+  const noHanVuelto = calcularPacientesQueNoHanVuelto();
 
   return `
   <p style="color:var(--text-dim);font-size:13px;margin:-14px 0 18px;">Vista general de la clínica</p>
   <div class="grid">
-    <div class="card">
+    <div class="card" style="display:flex;flex-direction:column;">
       <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>Citas de hoy</div><span class="link-btn" data-goto="agendar">Ver agenda</span></div>
-      <div class="appt-list">
+      <div class="appt-list" style="flex:1;">
         ${proximasHoy.map(c=>`<div class="appt"><div class="appt-time">${c.Hora}</div><div class="appt-info"><b>${c.Paciente}</b><span>${tratArr(c.Tratamientos||c.Tratamiento).join(' + ')}</span></div></div>`).join('') || '<div class="empty">No hay más citas por hoy</div>'}
       </div>
-    </div>
-    <div class="card" style="display:flex;flex-direction:column;justify-content:space-between;overflow:visible;">
-      <div>
-        <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/></svg>Pacientes</div><span class="link-btn" data-goto="pacientes">Ver pacientes →</span></div>
-        <div class="stat-row">
-          <div class="stat-chip act"><span class="num">${activos}</span><span class="lbl">Activos</span></div>
-          <div class="stat-chip inact"><span class="num">${inactivos}</span><span class="lbl">Inactivos</span></div>
-        </div>
+      <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+        <span class="subtle">Citas esta semana (${semanaActual})</span><b style="color:var(--teal);font-size:15px;">${citasEstaSemana}</b>
       </div>
-      <div style="margin-top:16px;">
-        <div class="card-title" style="margin-bottom:8px;">Tratamientos más rentables (por categoría)</div>
-        <div class="donut-wrap">
-          <div class="donut-canvas-wrap"><canvas id="donutChart"></canvas></div>
-          <div class="legend">${catEntries.map((e,i)=>`<div class="legend-item"><span class="dot" style="background:${colors[i]}"></span>${e[0]}: ${fmtMoney(e[1])} (${Math.round(e[1]/catTotal*100)}%)</div>`).join('')}</div>
-        </div>
+    </div>
+    <div class="card" style="display:flex;flex-direction:column;overflow:visible;">
+      <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/></svg>Pacientes</div><span class="link-btn" data-goto="pacientes">Ver pacientes →</span></div>
+      <div class="stat-row">
+        <div class="stat-chip act"><span class="num">${activos}</span><span class="lbl">Activos</span></div>
+        <div class="stat-chip inact"><span class="num">${inactivos}</span><span class="lbl">Inactivos</span></div>
+      </div>
+      <div style="margin-top:16px;flex:1;">
+        <div class="card-title" style="margin-bottom:2px;">Pacientes que no han vuelto</div>
+        <p class="subtle" style="margin:0 0 8px;">Más de ${CONFIG.DIAS_SIN_VISITA} días sin visita</p>
+        ${noHanVuelto.length
+          ? noHanVuelto.map(p=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:12.5px;"><span>${p.nombre}</span><span class="subtle">${p.dias} días</span></div>`).join('')
+          : '<p class="subtle">Nadie rebasa el umbral configurado — vas bien.</p>'}
       </div>
     </div>
     <div class="card">
-      <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M13 3v6h8"/></svg>Tratamientos más solicitados</div></div>
-      <p class="subtle" style="margin:-4px 0 6px;">Por cantidad de citas este mes — complementa la rentabilidad de arriba</p>
-      <div class="mini-chart-wrap" style="height:170px;"><canvas id="tratSolicitadosChart"></canvas></div>
+      <div class="card-title" style="margin-bottom:8px;">Tratamientos más rentables (por categoría)</div>
+      <div class="donut-wrap" style="justify-content:center;">
+        <div class="donut-canvas-wrap"><canvas id="donutChart"></canvas></div>
+        <div class="legend">${catEntries.map((e,i)=>`<div class="legend-item"><span class="dot" style="background:${colors[i]}"></span>${e[0]}: ${fmtMoney(e[1])} (${Math.round(e[1]/catTotal*100)}%)</div>`).join('')}</div>
+      </div>
+      <div class="card-title" style="margin:18px 0 2px;">Tratamientos más solicitados</div>
+      <p class="subtle" style="margin:0 0 6px;">Por cantidad de citas este mes — complementa la rentabilidad por categoría</p>
+      <div class="mini-chart-wrap" style="height:150px;"><canvas id="tratSolicitadosChart"></canvas></div>
     </div>
   </div>
   <div class="row2">
@@ -664,10 +697,12 @@ function renderDashboardHTML(){
       </div>
       <div class="cash-chart-wrap"><canvas id="cashChart"></canvas></div>
     </div>
-    <div class="card clickable-card" id="pendienteCard" style="display:flex;flex-direction:column;justify-content:center;">
+    <div class="card clickable-card" id="pendienteCard" style="display:flex;flex-direction:column;">
       <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>Pendiente por cobrar</div>
-      <div class="pending-value">${fmtMoney(pendiente)}</div>
-      <div style="color:var(--text-dim);font-size:12.5px;margin-top:6px;">${new Set(DATA.pagos.filter(p=>Number(p.Saldo)>0).map(p=>p.Paciente_ID)).size} pacientes con saldo pendiente · toca para ver detalle</div>
+      <div style="flex:1;display:flex;flex-direction:column;justify-content:center;">
+        <div class="pending-value">${fmtMoney(pendiente)}</div>
+        <div style="color:var(--text-dim);font-size:12.5px;margin-top:6px;">${new Set(DATA.pagos.filter(p=>Number(p.Saldo)>0).map(p=>p.Paciente_ID)).size} pacientes con saldo pendiente · toca para ver detalle</div>
+      </div>
     </div>
   </div>
   <div class="card" style="margin-top:16px;">
@@ -677,6 +712,19 @@ function renderDashboardHTML(){
   </div>`;
 }
 /* ============ CALCULOS PARA GRAFICAS COMPLEMENTARIAS (dashboard y finanzas) ============ */
+/* #42e — pacientes activos cuya "ultima visita efectiva" ya rebasa el
+   umbral configurado (CONFIG.DIAS_SIN_VISITA). Los que nunca han tenido
+   visita ('—') se excluyen — no hay fecha de la cual medir. */
+function calcularPacientesQueNoHanVuelto(){
+  const hoyMs = new Date(todayStr()+'T00:00:00').getTime();
+  const umbral = CONFIG.DIAS_SIN_VISITA || 60;
+  return DATA.pacientes.filter(p=>p.Estado!=='Inactivo').map(p=>{
+    const uv = ultimaVisitaEfectiva(p);
+    if(uv==='—') return null;
+    const dias = Math.round((hoyMs - new Date(uv+'T00:00:00').getTime()) / 86400000);
+    return dias>=umbral ? { nombre:p.Nombre, dias } : null;
+  }).filter(Boolean).sort((a,b)=>b.dias-a.dias).slice(0,5);
+}
 /* #31 — Tratamientos mas solicitados por CANTIDAD (no por dinero), a partir
    de las citas del mes en curso. Complementa la dona, que es por dinero. */
 function calcularTratamientosSolicitados(){
@@ -724,8 +772,10 @@ function calcularUltimos6Meses(){
   const gastos = meses.map(({y,m})=> DATA.gastos.filter(g=>{ const f=ymd(g.Fecha); return f.y===y && f.m===m; }).reduce((s,g)=>s+Number(g.Monto),0));
   return { labels: meses.map(x=>x.label), ingresos, gastos };
 }
-/* #32 — Gastos por categoria a traves de los ultimos 6 meses (top 4
-   categorias por gasto acumulado, el resto no se grafica para no saturar). */
+/* #32/#42g — Gastos por categoria a traves de los ultimos 6 meses (top 4
+   categorias por gasto acumulado, el resto no se grafica para no saturar).
+   Devuelve tambien "meses" y "topCats" para poder mapear un clic en una
+   barra (datasetIndex+index) de vuelta a categoria+mes exactos. */
 function calcularGastosPorCategoriaMeses(){
   const now = new Date();
   const meses = [];
@@ -739,7 +789,49 @@ function calcularGastosPorCategoriaMeses(){
     data: meses.map(({y,m})=> DATA.gastos.filter(g=>{ const f=ymd(g.Fecha); return f.y===y && f.m===m && g.Categoria===cat; }).reduce((s,g)=>s+Number(g.Monto),0)),
     backgroundColor: paleta[i%paleta.length],
   }));
-  return { labels: meses.map(x=>x.label), datasets };
+  return { labels: meses.map(x=>x.label), datasets, meses, topCats };
+}
+/* #42f — Ingresos por categoria de tratamiento a traves de los ultimos 6
+   meses (top 4 categorias por ingreso acumulado). Mismo patron que gastos
+   por categoria, pero agrupando Pagos via la Categoria de su Tratamiento. */
+function calcularIngresosPorCategoriaMeses(){
+  const now = new Date();
+  const meses = [];
+  for(let i=5;i>=0;i--){ const d = new Date(now.getFullYear(), now.getMonth()-i, 1); meses.push({y:d.getFullYear(), m:d.getMonth()+1, label:d.toLocaleDateString('es-MX',{month:'short'}).replace('.','')}); }
+  const catDeTratamiento = {}; DATA.tratamientos.forEach(t=>{ catDeTratamiento[t.Nombre] = t.Categoria; });
+  const totalPorCat = {};
+  DATA.pagos.forEach(p=>{ const cat = catDeTratamiento[p.Tratamiento]||'Otros'; totalPorCat[cat] = (totalPorCat[cat]||0) + Number(p.Monto_Pagado); });
+  const topCats = Object.entries(totalPorCat).sort((a,b)=>b[1]-a[1]).slice(0,4).map(e=>e[0]);
+  const paleta = ['#2FD8B0','#1B6E5C','#3A4E60','#5B6D7A'];
+  const datasets = topCats.map((cat,i)=>({
+    label: cat,
+    data: meses.map(({y,m})=> DATA.pagos.filter(p=>{ const f=ymd(p.Fecha); return f.y===y && f.m===m && (catDeTratamiento[p.Tratamiento]||'Otros')===cat; }).reduce((s,p)=>s+Number(p.Monto_Pagado),0)),
+    backgroundColor: paleta[i%paleta.length],
+  }));
+  return { labels: meses.map(x=>x.label), datasets, meses, topCats };
+}
+/* #42f/#42g — modal con el detalle de los movimientos individuales de una
+   categoria y mes exactos (los que se pintan en una barra al hacer clic). */
+function mostrarDetalleIngresosCategoria(cat, y, m, mesLabel){
+  const catDeTratamiento = {}; DATA.tratamientos.forEach(t=>{ catDeTratamiento[t.Nombre] = t.Categoria; });
+  const items = DATA.pagos.filter(p=>{ const f=ymd(p.Fecha); return f.y===y && f.m===m && (catDeTratamiento[p.Tratamiento]||'Otros')===cat; }).sort((a,b)=>b.Fecha.localeCompare(a.Fecha));
+  const total = items.reduce((s,p)=>s+Number(p.Monto_Pagado),0);
+  openModal(`<h3>${cat} — ${mesLabel}</h3>
+    <p class="subtle" style="margin-bottom:12px;">${items.length} pago${items.length===1?'':'s'} · Total: ${fmtMoney(total)}</p>
+    <div style="max-height:340px;overflow-y:auto;">
+    ${items.map(p=>`<div class="pend-row"><span>${p.Paciente} <span class="subtle">· ${p.Tratamiento} · ${p.Fecha}</span></span><b style="color:var(--teal);">${fmtMoney(p.Monto_Pagado)}</b></div>`).join('') || '<div class="empty">Sin movimientos</div>'}
+    </div>
+    <div class="modal-actions" style="margin-top:14px;"><div class="btn block" onclick="closeModal()">Cerrar</div></div>`);
+}
+function mostrarDetalleGastosCategoria(cat, y, m, mesLabel){
+  const items = DATA.gastos.filter(g=>{ const f=ymd(g.Fecha); return f.y===y && f.m===m && g.Categoria===cat; }).sort((a,b)=>b.Fecha.localeCompare(a.Fecha));
+  const total = items.reduce((s,g)=>s+Number(g.Monto),0);
+  openModal(`<h3>${cat} — ${mesLabel}</h3>
+    <p class="subtle" style="margin-bottom:12px;">${items.length} gasto${items.length===1?'':'s'} · Total: ${fmtMoney(total)}</p>
+    <div style="max-height:340px;overflow-y:auto;">
+    ${items.map(g=>`<div class="pend-row"><span>${g.Concepto} <span class="subtle">· ${g.Fecha}</span></span><b style="color:#E0555A;">${fmtMoney(g.Monto)}</b></div>`).join('') || '<div class="empty">Sin movimientos</div>'}
+    </div>
+    <div class="modal-actions" style="margin-top:14px;"><div class="btn block" onclick="closeModal()">Cerrar</div></div>`);
 }
 /* Tooltip de Chart.js "externo": en vez de dejar que Chart.js lo posicione
    dentro del canvas (donde queda a merced de cualquier overflow:hidden en
@@ -953,15 +1045,20 @@ function renderFinanzasHTML(){
     <p class="subtle" style="margin:-8px 0 10px;">S1-S5 = semanas del mes en curso (dias 1-7, 8-14, 15-21, 22-28, 29-31)</p>
     <div style="position:relative;height:200px;"><canvas id="finCashChart"></canvas></div>
   </div>
-  <div class="row2" style="margin-bottom:16px;">
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>Ingresos vs. Gastos — últimos 6 meses</div>
+    <p class="subtle" style="margin:-4px 0 10px;">Tendencia mes a mes, no solo el mes en curso</p>
+    <div style="position:relative;height:220px;"><canvas id="ingresosGastos6mChart"></canvas></div>
+  </div>
+  <div class="row2" style="grid-template-columns:1fr 1fr;margin-bottom:16px;">
     <div class="card">
-      <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>Ingresos vs. Gastos — últimos 6 meses</div>
-      <p class="subtle" style="margin:-4px 0 10px;">Tendencia mes a mes, no solo el mes en curso</p>
-      <div style="position:relative;height:220px;"><canvas id="ingresosGastos6mChart"></canvas></div>
+      <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M8 4v16M16 4v16"/></svg>Ingresos por categoría — últimos 6 meses</div>
+      <p class="subtle" style="margin:-4px 0 10px;">Top 4 categorías con más ingreso acumulado — toca una barra para ver el detalle</p>
+      <div style="position:relative;height:220px;"><canvas id="ingresosCategoria6mChart"></canvas></div>
     </div>
     <div class="card">
       <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M8 4v16M16 4v16"/></svg>Gastos por categoría — últimos 6 meses</div>
-      <p class="subtle" style="margin:-4px 0 10px;">Top 4 categorías con más gasto acumulado</p>
+      <p class="subtle" style="margin:-4px 0 10px;">Top 4 categorías con más gasto acumulado — toca una barra para ver el detalle</p>
       <div style="position:relative;height:220px;"><canvas id="gastosCategoria6mChart"></canvas></div>
     </div>
   </div>
@@ -1028,21 +1125,23 @@ async function guardarPagoNuevo(selPac, selTrat, total, pagado){
   closeModal(); showToast('Pago registrado'); render();
 }
 
-function openAbonoModal(pagoId, onDone){
+function openAbonoModal(pagoId, onDone, volver){
   const pago = DATA.pagos.find(p=>p.ID===pagoId); if(!pago) return;
+  if(volver) pushModalState();
   openModal(`
     <h3>Registrar abono</h3>
-    <p class="subtle" style="margin-bottom:14px;">${pago.Paciente} · Saldo actual: ${fmtMoney(pago.Saldo)}</p>
+    <p class="subtle" style="margin-bottom:2px;">${pago.Paciente} · Saldo actual: ${fmtMoney(pago.Saldo)}</p>
+    <p class="subtle" style="margin-bottom:14px;">${pago.Tratamiento} · Inicio: ${pago.Fecha}</p>
     <div class="field" style="margin-bottom:16px;"><label>Monto del abono</label><input id="mAbono" type="number" max="${pago.Saldo}"></div>
-    <div class="modal-actions"><div class="btn block" onclick="closeModal()">Cancelar</div><div class="btn primary block" id="mGuardarAbono">Registrar</div></div>`);
+    <div class="modal-actions"><div class="btn block" onclick="${volver?'volverModal()':'closeModal()'}">Cancelar</div><div class="btn primary block" id="mGuardarAbono">Registrar</div></div>`);
   document.getElementById('mGuardarAbono').addEventListener('click', async ()=>{
     const monto = Number(document.getElementById('mAbono').value)||0;
     if(monto<=0) return showToast('Ingresa un monto valido');
     if(CONFIG.API_URL){ await apiCall('add_abono', { pagoId: pago.ID, monto }, ['pagos']); }
     else { pago.Monto_Pagado = Number(pago.Monto_Pagado) + monto; pago.Saldo = Number(pago.Monto_Total) - Number(pago.Monto_Pagado); }
-    closeModal(); showToast('Abono registrado');
+    showToast('Abono registrado');
     if(ACTIVE_TAB==='dashboard' || ACTIVE_TAB==='finanzas') render();
-    if(onDone) onDone();
+    if(volver){ volverModal(); if(onDone) onDone(); } else { closeModal(); if(onDone) onDone(); }
   });
 }
 function drawFinanzasChart(){
@@ -1058,9 +1157,22 @@ function drawFinanzasChart(){
       {label:'Ingresos', data:ingresos, backgroundColor:'#2FD8B0', borderRadius:4},
       {label:'Gastos', data:gastos, backgroundColor:'#E0555A', borderRadius:4}
     ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'top',align:'end',labels:{color:'#8CA0B3',boxWidth:12,font:{size:11}}},tooltip:{mode:'index',intersect:false,callbacks:{label:c=>c.dataset.label+': '+fmtMoney(c.raw)}}},interaction:{mode:'index',intersect:false},scales:{x:{grid:{display:false},ticks:{color:'#5B6D7A'}},y:{grid:{color:'#1E2E42'},ticks:{color:'#5B6D7A',callback:v=>'$'+Number(v).toLocaleString('es-MX')}}}}}); }
+  const icEl = document.getElementById('ingresosCategoria6mChart');
+  if(icEl){ const { labels, datasets, meses, topCats } = calcularIngresosPorCategoriaMeses();
+    new Chart(icEl,{type:'bar',data:{labels,datasets},options:{responsive:true,maintainAspectRatio:false,
+      onClick:(evt,elements)=>{ if(!elements.length) return; const el2=elements[0]; const cat=topCats[el2.datasetIndex]; const {y,m,label}=meses[el2.index]; mostrarDetalleIngresosCategoria(cat,y,m,label); },
+      onHover:(evt,elements)=>{ evt.native.target.style.cursor = elements.length ? 'pointer' : 'default'; },
+      plugins:{legend:{display:true,position:'top',align:'end',labels:{color:'#8CA0B3',boxWidth:12,font:{size:11}}},tooltip:{mode:'index',intersect:false,callbacks:{label:c=>c.dataset.label+': '+fmtMoney(c.raw)}}},
+      interaction:{mode:'index',intersect:false},
+      scales:{x:{stacked:true,grid:{display:false},ticks:{color:'#5B6D7A'}},y:{stacked:true,grid:{color:'#1E2E42'},ticks:{color:'#5B6D7A',callback:v=>'$'+Number(v).toLocaleString('es-MX')}}}}}); }
   const gcEl = document.getElementById('gastosCategoria6mChart');
-  if(gcEl){ const { labels, datasets } = calcularGastosPorCategoriaMeses();
-    new Chart(gcEl,{type:'bar',data:{labels,datasets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'top',align:'end',labels:{color:'#8CA0B3',boxWidth:12,font:{size:11}}},tooltip:{mode:'index',intersect:false,callbacks:{label:c=>c.dataset.label+': '+fmtMoney(c.raw)}}},interaction:{mode:'index',intersect:false},scales:{x:{stacked:true,grid:{display:false},ticks:{color:'#5B6D7A'}},y:{stacked:true,grid:{color:'#1E2E42'},ticks:{color:'#5B6D7A',callback:v=>'$'+Number(v).toLocaleString('es-MX')}}}}}); }
+  if(gcEl){ const { labels, datasets, meses, topCats } = calcularGastosPorCategoriaMeses();
+    new Chart(gcEl,{type:'bar',data:{labels,datasets},options:{responsive:true,maintainAspectRatio:false,
+      onClick:(evt,elements)=>{ if(!elements.length) return; const el2=elements[0]; const cat=topCats[el2.datasetIndex]; const {y,m,label}=meses[el2.index]; mostrarDetalleGastosCategoria(cat,y,m,label); },
+      onHover:(evt,elements)=>{ evt.native.target.style.cursor = elements.length ? 'pointer' : 'default'; },
+      plugins:{legend:{display:true,position:'top',align:'end',labels:{color:'#8CA0B3',boxWidth:12,font:{size:11}}},tooltip:{mode:'index',intersect:false,callbacks:{label:c=>c.dataset.label+': '+fmtMoney(c.raw)}}},
+      interaction:{mode:'index',intersect:false},
+      scales:{x:{stacked:true,grid:{display:false},ticks:{color:'#5B6D7A'}},y:{stacked:true,grid:{color:'#1E2E42'},ticks:{color:'#5B6D7A',callback:v=>'$'+Number(v).toLocaleString('es-MX')}}}}}); }
 }
 
 /* ==================== TRATAMIENTOS ==================== */
@@ -1130,7 +1242,7 @@ Maria Ramirez Cruz,Corona dental,2026-08-11,11:00</div>
           const esHoy = c.Fecha===hoy;
           const yaConcluida = finCita <= Date.now();
           const esPasada = (c.Fecha < hoy) || (esHoy && yaConcluida);
-          const etiqueta = (esHoy && yaConcluida) ? '<br><span class="subtle">· Concluida hoy</span>' : '';
+          const etiqueta = (esHoy && yaConcluida) ? '<br><span class="subtle">· Concluida hoy</span><br>' : '';
           const color = esPasada ? 'var(--text-mute)' : (esHoy ? 'var(--amber)' : 'var(--teal)');
           const acciones = esPasada
             ? `<div style="display:flex;gap:6px;margin-top:6px;"><div class="btn sm" data-reagendar="${c.ID}">Reagendar</div></div>`
@@ -1156,6 +1268,7 @@ function renderConfiguracionHTML(){
     <div class="field" style="margin-bottom:12px;"><label>Doctor(a) a cargo</label><input value="${DATA.clienteNombreDoctor || 'Sin definir — contacta a soporte'}" readonly></div>
     <div class="field" style="margin-bottom:12px;"><label>Moneda</label>
       <select id="cfgMoneda">${Object.entries(CURRENCIES).map(([code,c])=>`<option value="${code}" ${CONFIG.CURRENCY===code?'selected':''}>${code} — ${c.nombre}</option>`).join('')}</select></div>
+    <div class="field" style="margin-bottom:12px;"><label>Días sin visita para aparecer en "Pacientes que no han vuelto"</label><input id="cfgDiasSinVisita" type="number" min="1" value="${CONFIG.DIAS_SIN_VISITA}"></div>
     <div class="field" style="margin-bottom:16px;"><label>ID de cliente</label><input value="${CONFIG.CLIENT_ID}" readonly></div>
     <div class="btn primary" id="btnGuardarConfig">Guardar cambios</div>
     <p style="color:var(--text-mute);font-size:12px;margin-top:14px;">Modo actual: <b style="color:${CONFIG.API_URL?'var(--teal)':'var(--amber)'}">${CONFIG.API_URL ? 'Conectado a datos reales' : 'Demo (datos de ejemplo)'}</b>.</p>
@@ -1463,7 +1576,11 @@ function afterRenderHooks(){
   if(ACTIVE_TAB === 'configuracion'){
     document.getElementById('btnGuardarConfig').addEventListener('click', async ()=>{
       CONFIG.CURRENCY = document.getElementById('cfgMoneda').value;
-      if(CONFIG.API_URL) await apiCall('set_config', { clave:'Moneda', valor: CONFIG.CURRENCY }, ['config']);
+      CONFIG.DIAS_SIN_VISITA = Number(document.getElementById('cfgDiasSinVisita').value) || 60;
+      if(CONFIG.API_URL){
+        await apiCall('set_config', { clave:'Moneda', valor: CONFIG.CURRENCY });
+        await apiCall('set_config', { clave:'DiasSinVisita', valor: CONFIG.DIAS_SIN_VISITA }, ['config']);
+      }
       showToast('Configuración guardada');
       render();
     });
@@ -1528,7 +1645,7 @@ function showReferidosModal(){
 async function guardarCitaNueva(pac, trats, fecha, hora, forzar){
   let id = 'C' + String(DATA.citas.length+1).padStart(3,'0');
   if(CONFIG.API_URL){
-    const res = await apiCall('add_cita', { pacienteId:pac.ID, paciente:pac.Nombre, tratamientos:trats.join(', '), fecha, hora, forzar: !!forzar }, ['citas']);
+    const res = await apiCall('add_cita', { pacienteId:pac.ID, paciente:pac.Nombre, tratamientos:trats.join(', '), fecha, hora, forzar: !!forzar }, ['citas','pacientes']);
     if(res && res.conflict){
       openModal(`
         <h3>Horario ocupado</h3>
@@ -1587,10 +1704,11 @@ function showPendientesModal(){
         const pacId = btn.dataset.abonarPac;
         const pagosAbiertos = DATA.pagos.filter(p=>p.Paciente_ID===pacId && Number(p.Saldo)>0);
         const refreshPend = ()=>{ document.getElementById('pendList').innerHTML = draw(document.getElementById('pendSearch').value); attachHandlers(); };
-        if(pagosAbiertos.length===1){ openAbonoModal(pagosAbiertos[0].ID, refreshPend); }
+        if(pagosAbiertos.length===1){ openAbonoModal(pagosAbiertos[0].ID, refreshPend, true); }
         else{
-          openModal(`<h3>Elige el pago a abonar</h3>${pagosAbiertos.map(p=>`<div class="pend-row"><span>${p.Tratamiento} <span class="subtle">· Inicio: ${p.Fecha}</span></span><span style="display:flex;align-items:center;gap:10px;"><b style="color:var(--amber);">${fmtMoney(p.Saldo)}</b><div class="btn sm" data-pick-pago="${p.ID}">Abonar</div></span></div>`).join('')}<div class="modal-actions"><div class="btn block" onclick="closeModal()">Cerrar</div></div>`);
-          document.querySelectorAll('[data-pick-pago]').forEach(b2=>{ b2.addEventListener('click', ()=> openAbonoModal(b2.dataset.pickPago, refreshPend)); });
+          pushModalState();
+          openModal(`<h3>Elige el pago a abonar</h3>${pagosAbiertos.map(p=>`<div class="pend-row"><span>${p.Tratamiento} <span class="subtle">· Inicio: ${p.Fecha}</span></span><span style="display:flex;align-items:center;gap:10px;"><b style="color:var(--amber);">${fmtMoney(p.Saldo)}</b><div class="btn sm" data-pick-pago="${p.ID}">Abonar</div></span></div>`).join('')}<div class="modal-actions"><div class="btn block" onclick="volverModal()">Cerrar</div></div>`);
+          document.querySelectorAll('[data-pick-pago]').forEach(b2=>{ b2.addEventListener('click', ()=> openAbonoModal(b2.dataset.pickPago, refreshPend, true)); });
         }
       });
     });
@@ -1604,7 +1722,7 @@ function showPendientesModal(){
   document.getElementById('pendSearch').addEventListener('input', e=>{ document.getElementById('pendList').innerHTML = draw(e.target.value); attachHandlers(); });
 }
 
-(async function init(){ await loadData(); hideMask(); render(); })();
+(async function init(){ await loadData(); hidratarConfigDesdeSheet(); hideMask(); render(); })();
 </script>
 </body>
 </html>

@@ -111,6 +111,14 @@
   .badge.cancel{background:#2A1614;color:var(--red);}
   .badge.inactive{background:#241a1a;color:var(--text-mute);}
   .table-wrap{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:6px 8px;overflow-x:auto;}
+  /* #64 (corregido de nuevo) — reservar altura minima en el contenedor NO
+     ancla el paginador al fondo por si solo — el espacio de mas queda
+     despues del paginador, no entre la tabla y el, asi que el paginador
+     seguia "subiendo" en paginas con menos filas. Con flex-column +
+     margin-top:auto en el paginador, este queda pegado al fondo siempre,
+     sin importar cuantas filas haya arriba. */
+  .table-wrap.tw-fija{display:flex;flex-direction:column;}
+  .table-wrap.tw-fija > div[id$="Paginador"]{margin-top:auto;padding-top:8px;}
 
   .collapsible .coll-header{display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px 2px;margin-bottom:10px;}
   .collapsible .coll-header b{font-size:13px;}
@@ -157,6 +165,8 @@
   .summary-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;gap:10px;}
   .summary-row span:first-child{color:var(--text-dim);}
   .pend-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);font-size:13px;gap:10px;}
+  .pend-row.clickable{cursor:pointer;}
+  .pend-row.clickable:hover{background:#12203099;}
   /* #62/#63 — alto minimo fijo (5 filas) para que la ventana de detalle no
      "brinque" de tamaño entre categorias con pocos y muchos registros. */
   .detail-block-fixed{min-height:220px;}
@@ -966,7 +976,7 @@ function mostrarDetalleIngresosCategoria(cat, y, m, pagina){
     <div class="divider"></div>
     <p class="subtle" style="margin-bottom:12px;">${filas.length} tratamiento${filas.length===1?'':'s'} de <b>${cat||'—'}</b> · Total: ${fmtMoney(total)}</p>
     <div class="detail-block-fixed">
-    ${filasPagina.map(([nombre,d])=>`<div class="pend-row"><span>${nombre} <span class="subtle">· ${d.cantidad} pago${d.cantidad===1?'':'s'}</span></span><b style="color:var(--teal);">${fmtMoney(d.total)}</b></div>`).join('') || '<div class="empty">Sin movimientos</div>'}
+    ${filasPagina.map(([nombre,d])=>`<div class="pend-row clickable" data-trat="${nombre}"><span>${nombre} <span class="subtle">· ${d.cantidad} pago${d.cantidad===1?'':'s'}</span></span><b style="color:var(--teal);">${fmtMoney(d.total)}</b></div>`).join('') || '<div class="empty">Sin movimientos</div>'}
     </div>
     ${filas.length>porPagina ? `<div class="paginador" style="padding-top:8px;">
       <span class="subtle">${filas.length} registros</span>
@@ -980,9 +990,50 @@ function mostrarDetalleIngresosCategoria(cat, y, m, pagina){
   document.querySelectorAll('.chip-click').forEach(chip=>{
     chip.addEventListener('click', ()=> mostrarDetalleIngresosCategoria(chip.dataset.cat, y, m));
   });
+  // #65 — cada renglon de tratamiento abre el desglose de sus pagos
+  // individuales (paciente, fecha, monto), regresando a esta misma vista
+  // (no cerrando todo) al terminar — mismo patron que ya usa Pendientes.
+  document.querySelectorAll('#modalBody [data-trat]').forEach(row=>{
+    row.addEventListener('click', ()=>{
+      pushModalState(()=> mostrarDetalleIngresosCategoria(cat, y, m, pagina));
+      mostrarDetallePagosTratamiento(row.dataset.trat, cat, y, m, mesLabelFull);
+    });
+  });
   if(filas.length>porPagina){
     document.getElementById('detPrevIng').addEventListener('click', ()=> mostrarDetalleIngresosCategoria(cat, y, m, pagina-1));
     document.getElementById('detNextIng').addEventListener('click', ()=> mostrarDetalleIngresosCategoria(cat, y, m, pagina+1));
+  }
+}
+/* #65 — desglose de cada pago individual de UN tratamiento, dentro de una
+   categoria y mes especificos: paciente, fecha, monto. Un solo boton para
+   regresar al detalle de tratamientos del que vino (mismo patron que la
+   cadena de Pendientes por cobrar), no cierra todo de un tiron. */
+function mostrarDetallePagosTratamiento(tratamiento, cat, y, m, mesLabelFull, pagina){
+  pagina = pagina || 1;
+  const pagos = DATA.pagos.filter(p=>{ const f=ymd(p.Fecha); return f.y===y && f.m===m && p.Tratamiento===tratamiento; }).sort((a,b)=>b.Fecha.localeCompare(a.Fecha));
+  const total = pagos.reduce((s,p)=>s+Number(p.Monto_Pagado),0);
+  const porPagina = 5;
+  const totalPaginas = Math.max(1, Math.ceil(pagos.length/porPagina));
+  if(pagina>totalPaginas) pagina = totalPaginas;
+  const pagosPagina = pagos.slice((pagina-1)*porPagina, pagina*porPagina);
+  openModal(`<h3>${tratamiento}</h3>
+    <p class="subtle" style="margin-bottom:12px;">${cat} · ${mesLabelFull} · ${pagos.length} pago${pagos.length===1?'':'s'} · Total: ${fmtMoney(total)}</p>
+    <div class="detail-block-fixed">
+    ${pagosPagina.map(p=>`<div class="pend-row"><span>${p.Paciente} <span class="subtle">· ${p.Fecha}</span></span><b style="color:var(--teal);">${fmtMoney(p.Monto_Pagado)}</b></div>`).join('') || '<div class="empty">Sin movimientos</div>'}
+    </div>
+    ${pagos.length>porPagina ? `<div class="paginador" style="padding-top:8px;">
+      <span class="subtle">${pagos.length} registros</span>
+      <div class="paginador-controles">
+        <div class="icon-btn" id="detPrevPagoTrat" style="${pagina<=1?'opacity:.35;pointer-events:none;':''}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></div>
+        <span class="subtle">Página ${pagina} de ${totalPaginas}</span>
+        <div class="icon-btn" id="detNextPagoTrat" style="${pagina>=totalPaginas?'opacity:.35;pointer-events:none;':''}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></div>
+      </div>
+    </div>` : ''}
+    <div class="modal-actions" style="margin-top:14px;"><div class="btn block" id="btnVolverPagoTrat">Regresar</div></div>`);
+  document.getElementById('btnVolverPagoTrat').addEventListener('click', volverModal);
+  if(pagos.length>porPagina){
+    document.getElementById('detPrevPagoTrat').addEventListener('click', ()=>{ pagina--; mostrarDetallePagosTratamiento(tratamiento, cat, y, m, mesLabelFull, pagina); });
+    document.getElementById('detNextPagoTrat').addEventListener('click', ()=>{ pagina++; mostrarDetallePagosTratamiento(tratamiento, cat, y, m, mesLabelFull, pagina); });
   }
 }
 function mostrarDetalleGastosCategoria(cat, y, m, pagina){
@@ -1117,7 +1168,7 @@ function renderPacientesHTML(){
     <input class="search" id="pacSearch" placeholder="Buscar por nombre o tratamiento..." value="${SEARCH_STATE.pacientes}">
     <div class="btn primary" id="btnAddPaciente">+ Nuevo paciente</div>
   </div>
-  <div class="table-wrap" id="pacTableBlock">
+  <div class="table-wrap tw-fija" id="pacTableBlock">
     <table><thead><tr>${thSort('pacientes','Paciente','Nombre')}${thSort('pacientes','Telefono','Telefono')}${thSort('pacientes','Ultima visita','Ultima_Visita')}${thSort('pacientes','Tratamientos','Tratamientos')}${thSort('pacientes','Estado','Estado')}${thSort('pacientes','Saldo','Saldo')}</tr></thead><tbody id="pacTbody"></tbody></table>
     <div id="pacPaginador"></div>
   </div>`;
@@ -1308,7 +1359,7 @@ function renderFinanzasHTML(){
         <input class="search" id="pagoSearch" placeholder="Buscar por fecha, paciente, tratamiento, monto..." value="${SEARCH_STATE.pagos}">
         <div class="btn primary sm" id="btnAddPago">+ Registrar pago</div>
       </div>
-      <div class="table-wrap" id="pagTableBlock">
+      <div class="table-wrap tw-fija" id="pagTableBlock">
         <table><thead><tr>${thSort('pagos','Paciente','Paciente')}${thSort('pagos','Tratamiento','Tratamiento')}${thSort('pagos','Fecha inicio','Fecha')}${thSort('pagos','Total','Monto_Total')}${thSort('pagos','Pagado','Monto_Pagado')}${thSort('pagos','Saldo','Saldo')}<th></th></tr></thead><tbody id="pagosTbody"></tbody></table>
         <div id="pagPaginador"></div>
       </div>
@@ -1322,7 +1373,7 @@ function renderFinanzasHTML(){
         <input class="search" id="gastoSearch" placeholder="Buscar por fecha, concepto, categoría, monto..." value="${SEARCH_STATE.gastos}">
         <div class="btn primary sm" id="btnAddGasto">+ Registrar gasto</div>
       </div>
-      <div class="table-wrap" id="gastoTableBlock">
+      <div class="table-wrap tw-fija" id="gastoTableBlock">
         <table><thead><tr>${thSort('gastos','Fecha','Fecha')}${thSort('gastos','Concepto','Concepto')}${thSort('gastos','Categoría','Categoria')}${thSort('gastos','Monto','Monto')}</tr></thead><tbody id="gastosTbody"></tbody></table>
         <div id="gastoPaginador"></div>
       </div>
@@ -1436,7 +1487,7 @@ function renderTratamientosHTML(){
     <input class="search" id="tratSearch" placeholder="Buscar por tratamiento, categoría o precio..." value="${SEARCH_STATE.tratamientos}">
     <div class="btn primary" id="btnAddTratamiento">+ Nuevo tratamiento</div>
   </div>
-  <div class="table-wrap" id="tratTableBlock">
+  <div class="table-wrap tw-fija" id="tratTableBlock">
     <table><thead><tr>${thSort('tratamientos','Tratamiento','Nombre')}${thSort('tratamientos','Categoría','Categoria')}${thSort('tratamientos','Precio','Precio_MXN')}${thSort('tratamientos','Duración','Duracion_Min')}</tr></thead><tbody id="tratTbody"></tbody></table>
     <div id="tratPaginador"></div>
   </div>`;

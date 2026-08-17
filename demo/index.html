@@ -164,7 +164,12 @@
      de tarjeta que ya usa el resto del sistema, para que el espacio de
      mas que queda cuando la ultima pagina trae menos registros se sienta
      parte del mismo componente, no un hueco suelto. */
-  .table-block{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:6px 8px;}
+  /* #64 (corregido) — antes .table-block envolvia a .table-wrap, que YA
+     tenia su propio fondo de tarjeta — quedaban 2 paneles anidados, y la
+     altura minima en el de afuera dejaba un hueco muerto entre la tabla
+     (adentro) y el paginador, en vez de estirar el panel visible completo.
+     Ahora la altura minima se aplica directo sobre .table-wrap, que ya
+     incluye tabla + paginador como un solo panel. */
   .pend-row .btn{flex-shrink:0;}
 
   .day-block{border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px;}
@@ -887,16 +892,33 @@ function calcularIngresosPorCategoriaMeses(){
    arriba del detalle, ya que el top 3 de la leyenda general es del
    periodo completo de 6 meses y puede no coincidir con el de ese mes). */
 function calcularTop3DelMes(items, campoMonto, campoCategoria){
+  return calcularTodasCategoriasDelMes(items, campoMonto, campoCategoria).slice(0,3);
+}
+/* #59b2 — todas las categorias que tuvieron actividad ese mes, no solo las
+   3 principales — para poder mostrar "otras categorias" debajo del top 3
+   en el detalle, y que el usuario nunca se quede sin ver algo que si paso
+   ese mes solo porque no entro en el top 3. */
+function calcularTodasCategoriasDelMes(items, campoMonto, campoCategoria){
   const totalPorCat = {};
   items.forEach(it=>{ const cat = campoCategoria(it); totalPorCat[cat] = (totalPorCat[cat]||0) + Number(it[campoMonto]); });
   const total = Object.values(totalPorCat).reduce((s,v)=>s+v,0) || 1;
-  return Object.entries(totalPorCat).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([cat,monto])=>({ cat, monto, pct: Math.round(monto/total*100) }));
+  return Object.entries(totalPorCat).sort((a,b)=>b[1]-a[1]).map(([cat,monto])=>({ cat, monto, pct: Math.round(monto/total*100) }));
 }
 /* #59a — nombre completo del mes (ej. "Agosto"), separado del texto corto
    que usa el eje de la grafica (ej. "ago") — solo para titulos de ventana. */
 function nombreMesCompleto(y, m){
   const nombre = new Date(y, m-1, 1).toLocaleDateString('es-MX', {month:'long'});
   return nombre.charAt(0).toUpperCase() + nombre.slice(1);
+}
+/* Chip reutilizable para el top 3 y para "otras categorias" — mismo look,
+   mismo click, misma logica de resaltado (color solo si es la seleccionada,
+   gris neutro las demas — nunca ambiguo entre si esta o no seleccionada). */
+function chipCategoria(t, cat, colorFondo, colorBorde){
+  const activo = t.cat===cat;
+  const estilo = activo
+    ? `background:${colorFondo};border:1px solid ${colorBorde};color:${colorBorde};font-weight:600;`
+    : `background:#1B2733;border:1px solid transparent;color:#8CA0B3;`;
+  return `<span class="chip chip-click" data-cat="${t.cat}" style="cursor:pointer;${estilo}">${t.cat}: ${fmtMoney(t.monto)} (${t.pct}%)</span>`;
 }
 /* #42f/#42g/#59 — modal con el detalle de una categoria y mes exactos.
    "cat" es opcional: si no se indica (por ejemplo, al tocar un mes que no
@@ -905,15 +927,20 @@ function nombreMesCompleto(y, m){
    especifico. Los chips del "Top 3 del mes" son clickeables — sin importar
    si esa categoria tiene o no una barra visible ese mes en la grafica de 6
    meses (#59b) — y solo la categoria seleccionada se resalta con su color;
-   el resto siempre en gris neutro, nunca en un color que se pueda
-   confundir con "seleccionado" (#59d, #59e). Ingresos se agrupa por
-   TRATAMIENTO (el desglose natural de una categoria), Gastos como lista de
-   movimientos individuales. */
+   el resto siempre en gris neutro (#59d, #59e). #59b2 — debajo del top 3
+   se agrega "Otras categorias del mes" con el resto de lo que hubo ese mes
+   (tambien clickeable) — asi, si la categoria que tocaste en la grafica
+   general (top 3 de 6 meses) no es parte del top 3 de ESTE mes, igual se
+   encuentra y se resalta ahi abajo, sin perder ningun dato. Ingresos se
+   agrupa por TRATAMIENTO (el desglose natural de una categoria), Gastos
+   como lista de movimientos individuales. */
 function mostrarDetalleIngresosCategoria(cat, y, m, pagina){
   pagina = pagina || 1;
   const catDeTratamiento = {}; DATA.tratamientos.forEach(t=>{ catDeTratamiento[t.Nombre] = t.Categoria; });
   const todasDelMes = DATA.pagos.filter(p=>{ const f=ymd(p.Fecha); return f.y===y && f.m===m; });
-  const top3Mes = calcularTop3DelMes(todasDelMes, 'Monto_Pagado', p=>catDeTratamiento[p.Tratamiento]||'Otros');
+  const todasCats = calcularTodasCategoriasDelMes(todasDelMes, 'Monto_Pagado', p=>catDeTratamiento[p.Tratamiento]||'Otros');
+  const top3Mes = todasCats.slice(0,3);
+  const otrasCats = todasCats.slice(3);
   if(!cat) cat = top3Mes.length ? top3Mes[0].cat : null;
   const mesLabelFull = nombreMesCompleto(y, m);
   const items = cat ? todasDelMes.filter(p=>(catDeTratamiento[p.Tratamiento]||'Otros')===cat) : [];
@@ -921,15 +948,21 @@ function mostrarDetalleIngresosCategoria(cat, y, m, pagina){
   items.forEach(p=>{ if(!porTratamiento[p.Tratamiento]) porTratamiento[p.Tratamiento] = { cantidad:0, total:0 }; porTratamiento[p.Tratamiento].cantidad++; porTratamiento[p.Tratamiento].total += Number(p.Monto_Pagado); });
   const filas = Object.entries(porTratamiento).sort((a,b)=>b[1].total-a[1].total);
   const total = items.reduce((s,p)=>s+Number(p.Monto_Pagado),0);
+  // #62/#63 — bloques fijos de 5, sin selector de cantidad (es una ventana
+  // secundaria, no necesita la flexibilidad de las tablas principales).
   const porPagina = 5;
   const totalPaginas = Math.max(1, Math.ceil(filas.length/porPagina));
   if(pagina>totalPaginas) pagina = totalPaginas;
   const filasPagina = filas.slice((pagina-1)*porPagina, pagina*porPagina);
   openModal(`<h3>${cat||'Sin movimientos'} — ${mesLabelFull}</h3>
     <p class="subtle" style="margin-bottom:6px;">Top 3 de ${mesLabelFull} (toca una para ver su detalle):</p>
-    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;">
-      ${top3Mes.map(t=>`<span class="chip chip-click" data-cat="${t.cat}" style="cursor:pointer;${t.cat===cat?'background:#12291F;border:1px solid var(--teal);color:var(--teal);font-weight:600;':'background:#1B2733;border:1px solid transparent;color:#8CA0B3;'}">${t.cat}: ${fmtMoney(t.monto)} (${t.pct}%)</span>`).join('') || '<span class="subtle">Sin movimientos este mes</span>'}
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:${otrasCats.length?10:14}px;">
+      ${top3Mes.map(t=>chipCategoria(t,cat,'#12291F','var(--teal)')).join('') || '<span class="subtle">Sin movimientos este mes</span>'}
     </div>
+    ${otrasCats.length ? `<p class="subtle" style="margin-bottom:6px;">Otras categorías de ${mesLabelFull}:</p>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;">
+      ${otrasCats.map(t=>chipCategoria(t,cat,'#12291F','var(--teal)')).join('')}
+    </div>` : ''}
     <div class="divider"></div>
     <p class="subtle" style="margin-bottom:12px;">${filas.length} tratamiento${filas.length===1?'':'s'} de <b>${cat||'—'}</b> · Total: ${fmtMoney(total)}</p>
     <div class="detail-block-fixed">
@@ -955,7 +988,9 @@ function mostrarDetalleIngresosCategoria(cat, y, m, pagina){
 function mostrarDetalleGastosCategoria(cat, y, m, pagina){
   pagina = pagina || 1;
   const todasDelMes = DATA.gastos.filter(g=>{ const f=ymd(g.Fecha); return f.y===y && f.m===m; });
-  const top3Mes = calcularTop3DelMes(todasDelMes, 'Monto', g=>g.Categoria);
+  const todasCats = calcularTodasCategoriasDelMes(todasDelMes, 'Monto', g=>g.Categoria);
+  const top3Mes = todasCats.slice(0,3);
+  const otrasCats = todasCats.slice(3);
   if(!cat) cat = top3Mes.length ? top3Mes[0].cat : null;
   const mesLabelFull = nombreMesCompleto(y, m);
   const items = cat ? todasDelMes.filter(g=>g.Categoria===cat).sort((a,b)=>b.Fecha.localeCompare(a.Fecha)) : [];
@@ -966,9 +1001,13 @@ function mostrarDetalleGastosCategoria(cat, y, m, pagina){
   const itemsPagina = items.slice((pagina-1)*porPagina, pagina*porPagina);
   openModal(`<h3>${cat||'Sin movimientos'} — ${mesLabelFull}</h3>
     <p class="subtle" style="margin-bottom:6px;">Top 3 de ${mesLabelFull} (toca una para ver su detalle):</p>
-    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;">
-      ${top3Mes.map(t=>`<span class="chip chip-click" data-cat="${t.cat}" style="cursor:pointer;${t.cat===cat?'background:#2A1417;border:1px solid #E0555A;color:#E0555A;font-weight:600;':'background:#1B2733;border:1px solid transparent;color:#8CA0B3;'}">${t.cat}: ${fmtMoney(t.monto)} (${t.pct}%)</span>`).join('') || '<span class="subtle">Sin movimientos este mes</span>'}
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:${otrasCats.length?10:14}px;">
+      ${top3Mes.map(t=>chipCategoria(t,cat,'#2A1417','#E0555A')).join('') || '<span class="subtle">Sin movimientos este mes</span>'}
     </div>
+    ${otrasCats.length ? `<p class="subtle" style="margin-bottom:6px;">Otras categorías de ${mesLabelFull}:</p>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;">
+      ${otrasCats.map(t=>chipCategoria(t,cat,'#2A1417','#E0555A')).join('')}
+    </div>` : ''}
     <div class="divider"></div>
     <p class="subtle" style="margin-bottom:12px;">${items.length} gasto${items.length===1?'':'s'} de <b>${cat||'—'}</b> · Total: ${fmtMoney(total)}</p>
     <div class="detail-block-fixed">
@@ -1044,8 +1083,14 @@ function chartTooltipHandler(context){
   tip.style.top = y + 'px';
 }
 function drawDashboardCharts(){
+  const now = new Date();
   const byWeek = {};
-  DATA.pagos.forEach(p=>{ const w='S'+Math.ceil(diaDelMes(p.Fecha)/7); byWeek[w]=(byWeek[w]||0)+Number(p.Monto_Pagado); });
+  // #60 — antes sumaba TODOS los pagos de siempre, sin filtrar por mes.
+  // Con S1-S5 siendo "dia 1-7", "dia 8-14"... de CUALQUIER mes, un pago de
+  // julio en S1 se sumaba junto con uno de agosto en S1 — por eso el
+  // dashboard mostraba mas dinero que la grafica de Finanzas (que si
+  // filtra al mes en curso). Ahora ambas usan la misma regla.
+  DATA.pagos.forEach(p=>{ if(!esMesActual(p.Fecha, now)) return; const w='S'+Math.ceil(diaDelMes(p.Fecha)/7); byWeek[w]=(byWeek[w]||0)+Number(p.Monto_Pagado); });
   const weeks=['S1','S2','S3','S4','S5'];
   const cashEl = document.getElementById('cashChart');
   if(cashEl){ let running=0; const cum=weeks.map(w=>{running+=byWeek[w]||0;return running;});
@@ -1072,11 +1117,9 @@ function renderPacientesHTML(){
     <input class="search" id="pacSearch" placeholder="Buscar por nombre o tratamiento..." value="${SEARCH_STATE.pacientes}">
     <div class="btn primary" id="btnAddPaciente">+ Nuevo paciente</div>
   </div>
-  <div class="table-block" id="pacTableBlock">
-  <div class="table-wrap">
+  <div class="table-wrap" id="pacTableBlock">
     <table><thead><tr>${thSort('pacientes','Paciente','Nombre')}${thSort('pacientes','Telefono','Telefono')}${thSort('pacientes','Ultima visita','Ultima_Visita')}${thSort('pacientes','Tratamientos','Tratamientos')}${thSort('pacientes','Estado','Estado')}${thSort('pacientes','Saldo','Saldo')}</tr></thead><tbody id="pacTbody"></tbody></table>
-  </div>
-  <div id="pacPaginador"></div>
+    <div id="pacPaginador"></div>
   </div>`;
 }
 /* ============ ORDEN GENERICO (clic en encabezado) — Pacientes, Pagos, Gastos, Tratamientos ============ */
@@ -1265,11 +1308,9 @@ function renderFinanzasHTML(){
         <input class="search" id="pagoSearch" placeholder="Buscar por fecha, paciente, tratamiento, monto..." value="${SEARCH_STATE.pagos}">
         <div class="btn primary sm" id="btnAddPago">+ Registrar pago</div>
       </div>
-      <div class="table-block" id="pagTableBlock">
-      <div class="table-wrap" style="margin-bottom:6px;">
+      <div class="table-wrap" id="pagTableBlock">
         <table><thead><tr>${thSort('pagos','Paciente','Paciente')}${thSort('pagos','Tratamiento','Tratamiento')}${thSort('pagos','Fecha inicio','Fecha')}${thSort('pagos','Total','Monto_Total')}${thSort('pagos','Pagado','Monto_Pagado')}${thSort('pagos','Saldo','Saldo')}<th></th></tr></thead><tbody id="pagosTbody"></tbody></table>
-      </div>
-      <div id="pagPaginador"></div>
+        <div id="pagPaginador"></div>
       </div>
     </div>
   </div>
@@ -1281,9 +1322,9 @@ function renderFinanzasHTML(){
         <input class="search" id="gastoSearch" placeholder="Buscar por fecha, concepto, categoría, monto..." value="${SEARCH_STATE.gastos}">
         <div class="btn primary sm" id="btnAddGasto">+ Registrar gasto</div>
       </div>
-      <div class="table-block" id="gastoTableBlock">
-      <div class="table-wrap"><table><thead><tr>${thSort('gastos','Fecha','Fecha')}${thSort('gastos','Concepto','Concepto')}${thSort('gastos','Categoría','Categoria')}${thSort('gastos','Monto','Monto')}</tr></thead><tbody id="gastosTbody"></tbody></table></div>
-      <div id="gastoPaginador"></div>
+      <div class="table-wrap" id="gastoTableBlock">
+        <table><thead><tr>${thSort('gastos','Fecha','Fecha')}${thSort('gastos','Concepto','Concepto')}${thSort('gastos','Categoría','Categoria')}${thSort('gastos','Monto','Monto')}</tr></thead><tbody id="gastosTbody"></tbody></table>
+        <div id="gastoPaginador"></div>
       </div>
     </div>
   </div>`;
@@ -1395,9 +1436,9 @@ function renderTratamientosHTML(){
     <input class="search" id="tratSearch" placeholder="Buscar por tratamiento, categoría o precio..." value="${SEARCH_STATE.tratamientos}">
     <div class="btn primary" id="btnAddTratamiento">+ Nuevo tratamiento</div>
   </div>
-  <div class="table-block" id="tratTableBlock">
-  <div class="table-wrap"><table><thead><tr>${thSort('tratamientos','Tratamiento','Nombre')}${thSort('tratamientos','Categoría','Categoria')}${thSort('tratamientos','Precio','Precio_MXN')}${thSort('tratamientos','Duración','Duracion_Min')}</tr></thead><tbody id="tratTbody"></tbody></table></div>
-  <div id="tratPaginador"></div>
+  <div class="table-wrap" id="tratTableBlock">
+    <table><thead><tr>${thSort('tratamientos','Tratamiento','Nombre')}${thSort('tratamientos','Categoría','Categoria')}${thSort('tratamientos','Precio','Precio_MXN')}${thSort('tratamientos','Duración','Duracion_Min')}</tr></thead><tbody id="tratTbody"></tbody></table>
+    <div id="tratPaginador"></div>
   </div>`;
 }
 function fillTratamientosTable(filter){

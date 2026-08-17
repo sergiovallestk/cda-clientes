@@ -1327,12 +1327,11 @@ function attachCitasListHandlers(){
 /* #51 — refresca solo el panel de Citas (datos + esa lista), sin tocar el
    formulario de "Nueva cita" que pueda estar a medio llenar al lado. */
 async function actualizarAgenda(){
-  const btn = document.getElementById('btnActualizarAgenda');
-  if(btn) btn.textContent = 'Actualizando…';
+  showMask('Actualizando agenda...');
   if(CONFIG.API_URL) await syncData(['citas']);
   const list = document.getElementById('agendaCitasList');
   if(list){ list.innerHTML = renderCitasListHTML(); attachCitasListHandlers(); }
-  if(btn) btn.textContent = '↻ Actualizar agenda';
+  hideMask();
   showToast('Agenda actualizada');
 }
 

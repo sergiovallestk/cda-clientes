@@ -30,6 +30,21 @@
   .header p{color:var(--text-dim);font-size:13px;margin-top:4px;}
   .grid{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:16px;}
   .row2{display:grid;grid-template-columns:1.5fr 1fr;gap:16px;margin-top:16px;}
+  /* #57 — el bloque de ejemplo del CSV no tenia NINGUN estilo propio, asi
+     que el navegador ignoraba los saltos de linea del texto y lo mostraba
+     todo corrido en un solo parrafo. Con white-space:pre se respetan los
+     saltos de linea tal cual estan escritos, y la fuente monoespaciada
+     alinea las columnas como una tabla. */
+  .csv-example{white-space:pre;font-family:'Courier New',monospace;font-size:11.5px;line-height:1.7;background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;overflow-x:auto;margin-bottom:12px;color:var(--text-dim);}
+  /* #56 — tarjetas de categoria (Ingresos/Gastos) en Finanzas: 2 columnas
+     iguales por default; en movil VERTICAL se apilan a 1 columna. En
+     movil horizontal se quedan igual que en escritorio (misma regla que
+     usa .grid/.row2 normalmente, pero aqui por orientacion, no por ancho,
+     porque un telefono en horizontal ya tiene ancho de sobra). */
+  .row2-cat{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;}
+  @media (orientation:portrait){
+    .row2-cat{grid-template-columns:1fr;}
+  }
   .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:18px 20px;min-width:0;overflow:hidden;}
   .card-title{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:14px;min-width:0;overflow-wrap:break-word;}
   .card-title svg{width:15px;height:15px;color:var(--teal);flex-shrink:0;}
@@ -389,6 +404,7 @@ function setTab(tab){
   document.querySelectorAll('.nav-item').forEach(i=>i.classList.remove('active'));
   document.querySelector(`.nav-item[data-tab="${tab}"]`).classList.add('active');
   ACTIVE_TAB = tab; render();
+  ocultarChartTooltip();
   document.getElementById('sidebar').classList.remove('open');
   document.getElementById('sidebarOverlay').classList.remove('open');
 }
@@ -869,6 +885,17 @@ function mostrarDetalleGastosCategoria(cat, y, m, mesLabel){
    los contenedores de arriba), lo dibujamos nosotros en un div propio
    pegado a <body> con position:fixed, y le calculamos la posicion a mano
    para que nunca se salga de la pantalla. */
+/* #55 — el tooltip de la dona vive pegado a <body>, no dentro de la
+   pestaña ni de la tarjeta (necesario para que nunca se corte, ver #1).
+   Por eso, a diferencia del tooltip nativo de Chart.js que usan las demas
+   graficas, no se oculta solo al hacer scroll o cambiar de pestaña en
+   movil (donde no hay "mouse que se aleja" para que Chart.js lo detecte
+   solo) — hay que ocultarlo nosotros a mano en esos casos. */
+function ocultarChartTooltip(){
+  const t = document.getElementById('chartTooltipEl');
+  if(t) t.style.opacity = 0;
+}
+window.addEventListener('scroll', ocultarChartTooltip, true);
 function chartTooltipHandler(context){
   let tip = document.getElementById('chartTooltipEl');
   if(!tip){ tip = document.createElement('div'); tip.id='chartTooltipEl'; tip.className='chart-tooltip'; document.body.appendChild(tip); }
@@ -1083,7 +1110,7 @@ function renderFinanzasHTML(){
     <p class="subtle" style="margin:-4px 0 10px;">Tendencia mes a mes, no solo el mes en curso</p>
     <div style="position:relative;height:220px;"><canvas id="ingresosGastos6mChart"></canvas></div>
   </div>
-  <div class="row2" style="grid-template-columns:1fr 1fr;margin-bottom:16px;">
+  <div class="row2-cat">
     <div class="card">
       <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M8 4v16M16 4v16"/></svg>Ingresos por categoría — últimos 6 meses</div>
       <p class="subtle" style="margin:-4px 0 10px;">Top 4 categorías con más ingreso acumulado — toca una barra para ver el detalle</p>
@@ -1256,7 +1283,14 @@ function renderAgendarHTML(){
       <div class="collapsible collapsed" id="collCsv">
         <div class="coll-header" onclick="toggleCollapse(this)"><svg class="coll-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg><b>Importar citas desde CSV</b></div>
         <div class="coll-body">
-          <p class="subtle" style="margin-bottom:8px;">Columnas requeridas: <b>Paciente, Tratamientos, Fecha, Hora</b>. El paciente debe existir y estar activo. Fecha AAAA-MM-DD, hora HH:MM. Varios tratamientos: separalos con punto y coma.</p>
+          <p class="subtle" style="margin-bottom:10px;">El archivo debe tener 4 columnas, en este orden exacto: <b>Paciente, Tratamientos, Fecha, Hora</b>. Cada renglón es una cita distinta. El paciente debe existir en el sistema y estar activo. La fecha va como AAAA-MM-DD (ej. 2026-08-10) y la hora en formato 24 horas, HH:MM (ej. 09:00, 14:30). Si una cita tiene más de un tratamiento, sepáralos con punto y coma (<b>;</b>) dentro de la misma columna.</p>
+          <p class="subtle" style="margin-bottom:4px;"><b>Ejemplo 1 — una cita con un solo tratamiento:</b></p>
+          <div class="csv-example">Paciente,Tratamientos,Fecha,Hora
+Ana Lopez Garcia,Limpieza dental,2026-08-10,09:00</div>
+          <p class="subtle" style="margin-bottom:4px;"><b>Ejemplo 2 — una cita con varios tratamientos (separados por punto y coma):</b></p>
+          <div class="csv-example">Paciente,Tratamientos,Fecha,Hora
+Juan Perez Diaz,Extraccion simple;Resina dental,2026-08-10,10:30</div>
+          <p class="subtle" style="margin-bottom:4px;"><b>Ejemplo 3 — varias citas juntas en un mismo archivo:</b></p>
           <div class="csv-example">Paciente,Tratamientos,Fecha,Hora
 Ana Lopez Garcia,Limpieza dental,2026-08-10,09:00
 Juan Perez Diaz,Extraccion simple;Resina dental,2026-08-10,10:30

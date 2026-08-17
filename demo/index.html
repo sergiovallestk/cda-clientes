@@ -166,7 +166,8 @@
   .referral-row:last-child{border-bottom:none;}
 
   /* scrollbars visibles */
-  .chart-tooltip{position:fixed;pointer-events:none;background:#0B1420;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:12.5px;color:var(--text);z-index:9999;opacity:0;transition:opacity .08s;white-space:nowrap;box-shadow:0 4px 14px rgba(0,0,0,.35);}
+  .chart-tooltip{position:fixed;pointer-events:none;background:#0B1420;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:12.5px;color:var(--text);z-index:9999;opacity:0;transition:opacity .18s ease,left .12s ease,top .12s ease;white-space:nowrap;box-shadow:0 4px 14px rgba(0,0,0,.35);}
+  .chart-tooltip .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;}
   .chart-tooltip b{display:block;margin-bottom:2px;}
   th.sortable{cursor:pointer;user-select:none;white-space:nowrap;}
   th.sortable:hover{color:var(--text);}
@@ -878,7 +879,9 @@ function chartTooltipHandler(context){
     const data = context.chart.data.datasets[0].data;
     const total = data.reduce((s,v)=>s+Number(v),0);
     const pct = total>0 ? Math.round(Number(dp.raw)/total*100) : 0;
-    tip.innerHTML = `<b>${dp.label}</b><div>${fmtMoney(dp.raw)} (${pct}%)</div>`;
+    const bg = dp.dataset.backgroundColor;
+    const color = Array.isArray(bg) ? bg[dp.dataIndex] : bg;
+    tip.innerHTML = `<b><span class="dot" style="background:${color}"></span>${dp.label}</b><div>${fmtMoney(dp.raw)} (${pct}%)</div>`;
   }
   const rect = context.chart.canvas.getBoundingClientRect();
   tip.style.opacity = 1;

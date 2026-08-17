@@ -256,8 +256,7 @@
 Chart.defaults.color = '#8FA1AE';
 Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
 
-const CONFIG = { API_URL: "https://script.google.com/macros/s/AKfycby2vc5fO1g4A08vLKsWTAhMBwO5HvVKqh1KkaigexC8JkGVgdTf-bl6rmMpPhSvNYRO/exec", CLIENT_ID: "DEMO", CURRENCY: "MXN", DIAS_SIN_VISITA: 60, WHATSAPP_REFERIDOS: "5214431660960" };
-const REFERRAL_COMMISSION = 300;
+const CONFIG = { API_URL: "https://script.google.com/macros/s/AKfycby2vc5fO1g4A08vLKsWTAhMBwO5HvVKqh1KkaigexC8JkGVgdTf-bl6rmMpPhSvNYRO/exec", CLIENT_ID: "DEMO", CURRENCY: "MXN", DIAS_SIN_VISITA: 60 };
 const CURRENCIES = {
   MXN:{symbol:'$',nombre:'Peso mexicano'}, USD:{symbol:'$',nombre:'Dólar estadounidense'},
   COP:{symbol:'$',nombre:'Peso colombiano'}, EUR:{symbol:'€',nombre:'Euro'},
@@ -265,14 +264,14 @@ const CURRENCIES = {
   GTQ:{symbol:'Q',nombre:'Quetzal guatemalteco'},
 };
 const DIAS_ORDEN = ["Lunes","Martes","Miercoles","Jueves","Viernes","Sabado","Domingo"];
-const DEMO_DATA = {"pacientes": [], "tratamientos": [], "citas": [], "pagos": [], "gastos": [], "categorias_tratamiento": [], "categorias_gasto": [], "horario": [], "config": [], "referidos": []};
+const DEMO_DATA = {"pacientes": [], "tratamientos": [], "citas": [], "pagos": [], "gastos": [], "categorias_tratamiento": [], "categorias_gasto": [], "horario": [], "config": [], "referidos": [], "comisionMoneda": "MXN", "comisionMonto": 300};
 let DATA = JSON.parse(JSON.stringify(DEMO_DATA));
 let ACTIVE_TAB = 'dashboard';
 let refreshTimer = null;
 
 let LOAD_ERROR = null;
 function emptyShell(){
-  return { pacientes:[], tratamientos:[], citas:[], pagos:[], gastos:[], categorias_tratamiento:[], categorias_gasto:[], horario:[], config:[], referidos:[] };
+  return { pacientes:[], tratamientos:[], citas:[], pagos:[], gastos:[], categorias_tratamiento:[], categorias_gasto:[], horario:[], config:[], referidos:[], comisionMoneda:'MXN', comisionMonto:300 };
 }
 async function loadData(){
   LOAD_ERROR = null;
@@ -317,6 +316,8 @@ async function syncData(keys){
     if(json && !json.error){
       keys.forEach(k=>{ if(json[k]!==undefined) DATA[k] = json[k]; });
       if(json.referidos!==undefined) DATA.referidos = json.referidos;
+      if(json.comisionMoneda!==undefined) DATA.comisionMoneda = json.comisionMoneda;
+      if(json.comisionMonto!==undefined) DATA.comisionMonto = json.comisionMonto;
     }
   }catch(err){ console.error('Error al sincronizar '+keys.join(','), err); }
 }
@@ -347,6 +348,11 @@ function anyModalOpen(){
 }
 
 function fmtMoney(n){ const c = CURRENCIES[CONFIG.CURRENCY]||CURRENCIES.MXN; return c.symbol + Math.round(n).toLocaleString('es-MX') + ' ' + CONFIG.CURRENCY; }
+/* #57b/c — la comision de referidos se paga en una moneda propia
+   (MXN/USD/EUR segun el cliente), independiente de la Moneda que ese
+   mismo cliente tenga configurada para su propio sistema — por eso usa su
+   propio formateador, nunca fmtMoney() (que usa CONFIG.CURRENCY). */
+function fmtComision(n){ const moneda = DATA.comisionMoneda||'MXN'; const c = CURRENCIES[moneda]||CURRENCIES.MXN; return c.symbol + Math.round(n).toLocaleString('es-MX') + ' ' + moneda; }
 function tratArr(str){ return (str||'').split(',').map(s=>s.trim()).filter(Boolean); }
 function duracionCitaMin(tratamientosStr){
   const nombres = tratArr(tratamientosStr);
@@ -821,8 +827,11 @@ function calcularGastosPorCategoriaMeses(){
   const now = new Date();
   const meses = [];
   for(let i=5;i>=0;i--){ const d = new Date(now.getFullYear(), now.getMonth()-i, 1); meses.push({y:d.getFullYear(), m:d.getMonth()+1, label:d.toLocaleDateString('es-MX',{month:'short'}).replace('.','')}); }
+  // #59 — el top 3 se calcula SOLO con estos mismos 6 meses (antes usaba
+  // todo el historial de siempre, lo que podia meter una categoria vieja
+  // sin nada de actividad reciente).
   const totalPorCat = {};
-  DATA.gastos.forEach(g=>{ totalPorCat[g.Categoria] = (totalPorCat[g.Categoria]||0) + Number(g.Monto); });
+  DATA.gastos.forEach(g=>{ const f=ymd(g.Fecha); if(!meses.some(mm=>mm.y===f.y && mm.m===f.m)) return; totalPorCat[g.Categoria] = (totalPorCat[g.Categoria]||0) + Number(g.Monto); });
   const topCats = Object.entries(totalPorCat).sort((a,b)=>b[1]-a[1]).slice(0,3).map(e=>e[0]);
   const paleta = ['#2FD8B0','#1B6E5C','#3A4E60'];
   const datasets = topCats.map((cat,i)=>({
@@ -840,8 +849,9 @@ function calcularIngresosPorCategoriaMeses(){
   const meses = [];
   for(let i=5;i>=0;i--){ const d = new Date(now.getFullYear(), now.getMonth()-i, 1); meses.push({y:d.getFullYear(), m:d.getMonth()+1, label:d.toLocaleDateString('es-MX',{month:'short'}).replace('.','')}); }
   const catDeTratamiento = {}; DATA.tratamientos.forEach(t=>{ catDeTratamiento[t.Nombre] = t.Categoria; });
+  // #59 — top 3 calculado solo con estos mismos 6 meses (ver nota arriba).
   const totalPorCat = {};
-  DATA.pagos.forEach(p=>{ const cat = catDeTratamiento[p.Tratamiento]||'Otros'; totalPorCat[cat] = (totalPorCat[cat]||0) + Number(p.Monto_Pagado); });
+  DATA.pagos.forEach(p=>{ const f=ymd(p.Fecha); if(!meses.some(mm=>mm.y===f.y && mm.m===f.m)) return; const cat = catDeTratamiento[p.Tratamiento]||'Otros'; totalPorCat[cat] = (totalPorCat[cat]||0) + Number(p.Monto_Pagado); });
   const topCats = Object.entries(totalPorCat).sort((a,b)=>b[1]-a[1]).slice(0,3).map(e=>e[0]);
   const paleta = ['#2FD8B0','#1B6E5C','#3A4E60'];
   const datasets = topCats.map((cat,i)=>({
@@ -851,31 +861,56 @@ function calcularIngresosPorCategoriaMeses(){
   }));
   return { labels: meses.map(x=>x.label), datasets, meses, topCats };
 }
+/* #59 — top 3 real de UN mes especifico (para mostrarlo como contexto
+   arriba del detalle, ya que el top 3 de la leyenda general es del
+   periodo completo de 6 meses y puede no coincidir con el de ese mes). */
+function calcularTop3DelMes(items, campoMonto, campoCategoria){
+  const totalPorCat = {};
+  items.forEach(it=>{ const cat = campoCategoria(it); totalPorCat[cat] = (totalPorCat[cat]||0) + Number(it[campoMonto]); });
+  const total = Object.values(totalPorCat).reduce((s,v)=>s+v,0) || 1;
+  return Object.entries(totalPorCat).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([cat,monto])=>({ cat, monto, pct: Math.round(monto/total*100) }));
+}
 /* #42f/#42g — modal con el detalle de una categoria y mes exactos (los que
    se pintan en una barra al hacer clic). Ingresos se agrupa por
    TRATAMIENTO (ya que la grafica agrupa por categoria, el desglose
    natural es "que tratamientos la componen", no "que pacientes pagaron").
-   Gastos se queda como lista de movimientos individuales. */
+   Gastos se queda como lista de movimientos individuales. Ambos muestran
+   arriba el top 3 REAL de ese mes especifico (#59), como contexto — puede
+   no coincidir con el top 3 general de los 6 meses de la leyenda. */
 function mostrarDetalleIngresosCategoria(cat, y, m, mesLabel){
   const catDeTratamiento = {}; DATA.tratamientos.forEach(t=>{ catDeTratamiento[t.Nombre] = t.Categoria; });
-  const items = DATA.pagos.filter(p=>{ const f=ymd(p.Fecha); return f.y===y && f.m===m && (catDeTratamiento[p.Tratamiento]||'Otros')===cat; });
+  const todasDelMes = DATA.pagos.filter(p=>{ const f=ymd(p.Fecha); return f.y===y && f.m===m; });
+  const top3Mes = calcularTop3DelMes(todasDelMes, 'Monto_Pagado', p=>catDeTratamiento[p.Tratamiento]||'Otros');
+  const items = todasDelMes.filter(p=>(catDeTratamiento[p.Tratamiento]||'Otros')===cat);
   const porTratamiento = {};
   items.forEach(p=>{ if(!porTratamiento[p.Tratamiento]) porTratamiento[p.Tratamiento] = { cantidad:0, total:0 }; porTratamiento[p.Tratamiento].cantidad++; porTratamiento[p.Tratamiento].total += Number(p.Monto_Pagado); });
   const filas = Object.entries(porTratamiento).sort((a,b)=>b[1].total-a[1].total);
   const total = items.reduce((s,p)=>s+Number(p.Monto_Pagado),0);
   openModal(`<h3>${cat} — ${mesLabel}</h3>
-    <p class="subtle" style="margin-bottom:12px;">${filas.length} tratamiento${filas.length===1?'':'s'} · Total: ${fmtMoney(total)}</p>
-    <div style="max-height:340px;overflow-y:auto;">
+    <p class="subtle" style="margin-bottom:6px;">Top 3 de ${mesLabel}:</p>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;">
+      ${top3Mes.map(t=>`<span class="chip" style="${t.cat===cat?'border:1px solid var(--teal);color:var(--teal);font-weight:600;':''}">${t.cat}: ${fmtMoney(t.monto)} (${t.pct}%)</span>`).join('')}
+    </div>
+    <div class="divider"></div>
+    <p class="subtle" style="margin-bottom:12px;">${filas.length} tratamiento${filas.length===1?'':'s'} de <b>${cat}</b> · Total: ${fmtMoney(total)}</p>
+    <div style="max-height:280px;overflow-y:auto;">
     ${filas.map(([nombre,d])=>`<div class="pend-row"><span>${nombre} <span class="subtle">· ${d.cantidad} pago${d.cantidad===1?'':'s'}</span></span><b style="color:var(--teal);">${fmtMoney(d.total)}</b></div>`).join('') || '<div class="empty">Sin movimientos</div>'}
     </div>
     <div class="modal-actions" style="margin-top:14px;"><div class="btn block" onclick="closeModal()">Cerrar</div></div>`);
 }
 function mostrarDetalleGastosCategoria(cat, y, m, mesLabel){
-  const items = DATA.gastos.filter(g=>{ const f=ymd(g.Fecha); return f.y===y && f.m===m && g.Categoria===cat; }).sort((a,b)=>b.Fecha.localeCompare(a.Fecha));
+  const todasDelMes = DATA.gastos.filter(g=>{ const f=ymd(g.Fecha); return f.y===y && f.m===m; });
+  const top3Mes = calcularTop3DelMes(todasDelMes, 'Monto', g=>g.Categoria);
+  const items = todasDelMes.filter(g=>g.Categoria===cat).sort((a,b)=>b.Fecha.localeCompare(a.Fecha));
   const total = items.reduce((s,g)=>s+Number(g.Monto),0);
   openModal(`<h3>${cat} — ${mesLabel}</h3>
-    <p class="subtle" style="margin-bottom:12px;">${items.length} gasto${items.length===1?'':'s'} · Total: ${fmtMoney(total)}</p>
-    <div style="max-height:340px;overflow-y:auto;">
+    <p class="subtle" style="margin-bottom:6px;">Top 3 de ${mesLabel}:</p>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;">
+      ${top3Mes.map(t=>`<span class="chip" style="${t.cat===cat?'border:1px solid #E0555A;color:#E0555A;font-weight:600;':''}">${t.cat}: ${fmtMoney(t.monto)} (${t.pct}%)</span>`).join('')}
+    </div>
+    <div class="divider"></div>
+    <p class="subtle" style="margin-bottom:12px;">${items.length} gasto${items.length===1?'':'s'} de <b>${cat}</b> · Total: ${fmtMoney(total)}</p>
+    <div style="max-height:280px;overflow-y:auto;">
     ${items.map(g=>`<div class="pend-row"><span>${g.Concepto} <span class="subtle">· ${g.Fecha}</span></span><b style="color:#E0555A;">${fmtMoney(g.Monto)}</b></div>`).join('') || '<div class="empty">Sin movimientos</div>'}
     </div>
     <div class="modal-actions" style="margin-top:14px;"><div class="btn block" onclick="closeModal()">Cerrar</div></div>`);
@@ -894,6 +929,16 @@ function mostrarDetalleGastosCategoria(cat, y, m, mesLabel){
 function ocultarChartTooltip(){
   const t = document.getElementById('chartTooltipEl');
   if(t) t.style.opacity = 0;
+  // #55 (seguimiento) — al hacer scroll, tambien se le pide a todas las
+  // demas graficas (las que usan el tooltip nativo de Chart.js) que
+  // quiten cualquier tooltip que tengan abierto — en movil, sin un mouse
+  // que "se aleje" solo, se quedarian pegadas hasta que tocaras otra
+  // parte de la pantalla.
+  if(typeof Chart!=='undefined' && Chart.instances){
+    Object.values(Chart.instances).forEach(c=>{
+      if(c && c.tooltip){ c.tooltip.setActiveElements([], {x:0,y:0}); c.update(); }
+    });
+  }
 }
 window.addEventListener('scroll', ocultarChartTooltip, true);
 function chartTooltipHandler(context){
@@ -1113,12 +1158,12 @@ function renderFinanzasHTML(){
   <div class="row2-cat">
     <div class="card">
       <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M8 4v16M16 4v16"/></svg>Ingresos por categoría — últimos 6 meses</div>
-      <p class="subtle" style="margin:-4px 0 10px;">Top 4 categorías con más ingreso acumulado — toca una barra para ver el detalle</p>
+      <p class="subtle" style="margin:-4px 0 10px;">Top 3 categorías con más ingreso acumulado en los últimos 6 meses — toca un mes para ver su propio top 3</p>
       <div style="position:relative;height:220px;"><canvas id="ingresosCategoria6mChart"></canvas></div>
     </div>
     <div class="card">
       <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M8 4v16M16 4v16"/></svg>Gastos por categoría — últimos 6 meses</div>
-      <p class="subtle" style="margin:-4px 0 10px;">Top 4 categorías con más gasto acumulado — toca una barra para ver el detalle</p>
+      <p class="subtle" style="margin:-4px 0 10px;">Top 3 categorías con más gasto acumulado en los últimos 6 meses — toca un mes para ver su propio top 3</p>
       <div style="position:relative;height:220px;"><canvas id="gastosCategoria6mChart"></canvas></div>
     </div>
   </div>
@@ -1418,7 +1463,7 @@ function renderConfiguracionHTML(){
   </div>
   <div class="referral-teaser" id="referralTeaser">
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-    ¿Sabías que puedes ganar ${fmtMoney(REFERRAL_COMMISSION)} por cada colega que refieras? Toca para ver más.
+    ¿Sabías que puedes ganar ${fmtComision(DATA.comisionMonto)} por cada colega que refieras? Toca para ver más.
   </div>`;
 }
 
@@ -1707,30 +1752,54 @@ function showReferidosModal(){
   const codigo = CONFIG.CLIENT_ID || 'DEMO';
   const referidos = DATA.referidos || [];
   const pendientes = referidos.filter(r=>r.Estado==='Pendiente de pago').length;
-  const convertidos = referidos.filter(r=>r.Estado==='Convertido').length;
-  const pagados = referidos.filter(r=>r.Estado==='Comisión pagada').length;
-  const numero = CONFIG.WHATSAPP_REFERIDOS;
-  const mensaje = encodeURIComponent(`Hola, uso Control Dental App para gestionar mi consultorio y me ha funcionado muy bien. Si te interesa que te lo instalen, menciona mi código ${codigo} — código: ${codigo}`);
-  const waLink = numero ? `https://wa.me/${numero}?text=${mensaje}` : null;
+  const convertidosLista = referidos.filter(r=>r.Estado==='Convertido');
+  const pagadosLista = referidos.filter(r=>r.Estado==='Comisión pagada');
+  const montoConvertidos = convertidosLista.length * (DATA.comisionMonto||0);
+  const montoPagados = pagadosLista.length * (DATA.comisionMonto||0);
+  const mensajeCompartir = `Hola, uso Control Dental App para gestionar mi consultorio y me ha funcionado muy bien. Si te interesa que te lo instalen, menciona mi código ${codigo}.`;
 
   const estadoColor = (e)=> e==='Comisión pagada' ? 'var(--teal)' : (e==='Convertido' ? 'var(--amber)' : 'var(--text-mute)');
 
   openModal(`
     <h3>Programa de referidos</h3>
-    <p class="subtle" style="margin-bottom:12px;">Comparte el sistema con un colega. Cuando esa persona pague su instalación, ganas ${fmtMoney(REFERRAL_COMMISSION)}.</p>
+    <p class="subtle" style="margin-bottom:12px;">Comparte el sistema con un colega. Cuando esa persona pague su instalación, ganas ${fmtComision(DATA.comisionMonto)}.</p>
     <div class="referral-code-box"><span class="subtle">Tu código</span><b>${codigo}</b></div>
-    ${waLink ? `<a href="${waLink}" target="_blank" class="btn primary block" style="display:block;text-decoration:none;margin-bottom:14px;">Compartir por WhatsApp</a>` : `<p class="subtle" style="margin-bottom:14px;">Comparte tu código directamente con tus colegas.</p>`}
+    <div class="btn primary block" id="btnCompartirReferido" style="margin-bottom:14px;">Compartir</div>
     <div class="divider"></div>
-    <div class="card-title" style="margin-bottom:4px;">Tu historial</div>
+    <div class="card-head" style="margin-bottom:4px;">
+      <div class="card-title">Tu historial</div>
+      <span class="link-btn" id="btnActualizarReferidos">↻ Actualizar</span>
+    </div>
     <div class="referral-stats">
       <div class="referral-stat"><div class="num" style="color:var(--text-mute);">${pendientes}</div><div class="lbl">Pendientes</div></div>
-      <div class="referral-stat"><div class="num" style="color:var(--amber);">${convertidos}</div><div class="lbl">Convertidos</div></div>
-      <div class="referral-stat"><div class="num" style="color:var(--teal);">${pagados}</div><div class="lbl">Comisión pagada</div></div>
+      <div class="referral-stat"><div class="num" style="color:var(--amber);">${convertidosLista.length}</div><div class="lbl">Convertidos</div><div class="subtle" style="font-size:11px;margin-top:2px;">${fmtComision(montoConvertidos)}</div></div>
+      <div class="referral-stat"><div class="num" style="color:var(--teal);">${pagadosLista.length}</div><div class="lbl">Comisión pagada</div><div class="subtle" style="font-size:11px;margin-top:2px;">${fmtComision(montoPagados)}</div></div>
     </div>
     <div style="max-height:220px;overflow-y:auto;">
       ${referidos.map(r=>`<div class="referral-row"><span>${r.NombreReferido}<br><span class="subtle">${r.Fecha}</span></span><b style="color:${estadoColor(r.Estado)};font-size:12px;">${r.Estado}</b></div>`).join('') || '<div class="empty">Aun no tienes referidos registrados</div>'}
     </div>
     <div class="modal-actions"><div class="btn primary block" onclick="closeModal()">Cerrar</div></div>`);
+
+  // #57e — antes esto era un link wa.me con un numero fijo (siempre abria
+  // chat con ESE numero, nunca dejaba elegir a quien enviar). El boton
+  // "compartir" nativo del navegador/telefono si deja escoger el
+  // contacto o grupo — en escritorio, donde no siempre existe, se cae a
+  // "copiar mensaje" para que lo peguen ellos mismos donde quieran.
+  document.getElementById('btnCompartirReferido').addEventListener('click', async ()=>{
+    if(navigator.share){
+      try{ await navigator.share({ text: mensajeCompartir }); }
+      catch(err){ /* el usuario cancelo el share, no es un error real */ }
+    } else {
+      try{ await navigator.clipboard.writeText(mensajeCompartir); showToast('Mensaje copiado — pégalo donde quieras'); }
+      catch(err){ showToast('No se pudo copiar. Copia el código a mano: '+codigo); }
+    }
+  });
+  // #57d — refresca solo esta ventana (referidos + los montos de
+  // comision), sin cerrar y volver a abrir todo el modal.
+  document.getElementById('btnActualizarReferidos').addEventListener('click', async ()=>{
+    if(CONFIG.API_URL){ showMask('Actualizando...'); await syncData(['config']); hideMask(); }
+    showReferidosModal();
+  });
 }
 
 async function guardarCitaNueva(pac, trats, fecha, hora, forzar){

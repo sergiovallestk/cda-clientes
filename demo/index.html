@@ -442,7 +442,20 @@ function actualizarBrandingConsultorio(){
     ? (DATA.clienteNombreDoctor ? `${DATA.clienteNombreConsultorio} · ${DATA.clienteNombreDoctor}` : DATA.clienteNombreConsultorio)
     : 'Dashboard gerencial · Odontología moderna · México';
 }
+/* #55 (prevencion) — registro de todas las graficas Chart.js activas en
+   pantalla. Antes, al cambiar de pestaña, las graficas viejas nunca se
+   destruian formalmente — quedaban "fantasma" en la memoria del navegador,
+   y si el sistema intentaba tocarlas (como al ocultar tooltips en scroll)
+   podian tronar y detener el resto del recorrido. Se destruyen todas antes
+   de pintar cualquier pestaña nueva. */
+let ACTIVE_CHARTS = [];
+function nuevoChart(el, config){ const c = new Chart(el, config); ACTIVE_CHARTS.push(c); return c; }
+function destruirGraficasActivas(){
+  ACTIVE_CHARTS.forEach(c=>{ try{ c.destroy(); }catch(err){ /* ya destruida o su canvas ya no existe, no es fatal */ } });
+  ACTIVE_CHARTS = [];
+}
 function render(){
+  destruirGraficasActivas();
   actualizarBrandingConsultorio();
   const c = document.getElementById('content');
   if(LOAD_ERROR && ACTIVE_TAB !== 'configuracion'){ c.innerHTML = renderErrorHTML(); return; }
@@ -870,50 +883,70 @@ function calcularTop3DelMes(items, campoMonto, campoCategoria){
   const total = Object.values(totalPorCat).reduce((s,v)=>s+v,0) || 1;
   return Object.entries(totalPorCat).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([cat,monto])=>({ cat, monto, pct: Math.round(monto/total*100) }));
 }
-/* #42f/#42g — modal con el detalle de una categoria y mes exactos (los que
-   se pintan en una barra al hacer clic). Ingresos se agrupa por
-   TRATAMIENTO (ya que la grafica agrupa por categoria, el desglose
-   natural es "que tratamientos la componen", no "que pacientes pagaron").
-   Gastos se queda como lista de movimientos individuales. Ambos muestran
-   arriba el top 3 REAL de ese mes especifico (#59), como contexto — puede
-   no coincidir con el top 3 general de los 6 meses de la leyenda. */
-function mostrarDetalleIngresosCategoria(cat, y, m, mesLabel){
+/* #59a — nombre completo del mes (ej. "Agosto"), separado del texto corto
+   que usa el eje de la grafica (ej. "ago") — solo para titulos de ventana. */
+function nombreMesCompleto(y, m){
+  const nombre = new Date(y, m-1, 1).toLocaleDateString('es-MX', {month:'long'});
+  return nombre.charAt(0).toUpperCase() + nombre.slice(1);
+}
+/* #42f/#42g/#59 — modal con el detalle de una categoria y mes exactos.
+   "cat" es opcional: si no se indica (por ejemplo, al tocar un mes que no
+   tiene actividad en ninguna de las 3 categorias "fijas" de la grafica —
+   #59c), se usa automaticamente la categoria mas fuerte de ESE mes en
+   especifico. Los chips del "Top 3 del mes" son clickeables — sin importar
+   si esa categoria tiene o no una barra visible ese mes en la grafica de 6
+   meses (#59b) — y solo la categoria seleccionada se resalta con su color;
+   el resto siempre en gris neutro, nunca en un color que se pueda
+   confundir con "seleccionado" (#59d, #59e). Ingresos se agrupa por
+   TRATAMIENTO (el desglose natural de una categoria), Gastos como lista de
+   movimientos individuales. */
+function mostrarDetalleIngresosCategoria(cat, y, m){
   const catDeTratamiento = {}; DATA.tratamientos.forEach(t=>{ catDeTratamiento[t.Nombre] = t.Categoria; });
   const todasDelMes = DATA.pagos.filter(p=>{ const f=ymd(p.Fecha); return f.y===y && f.m===m; });
   const top3Mes = calcularTop3DelMes(todasDelMes, 'Monto_Pagado', p=>catDeTratamiento[p.Tratamiento]||'Otros');
-  const items = todasDelMes.filter(p=>(catDeTratamiento[p.Tratamiento]||'Otros')===cat);
+  if(!cat) cat = top3Mes.length ? top3Mes[0].cat : null;
+  const mesLabelFull = nombreMesCompleto(y, m);
+  const items = cat ? todasDelMes.filter(p=>(catDeTratamiento[p.Tratamiento]||'Otros')===cat) : [];
   const porTratamiento = {};
   items.forEach(p=>{ if(!porTratamiento[p.Tratamiento]) porTratamiento[p.Tratamiento] = { cantidad:0, total:0 }; porTratamiento[p.Tratamiento].cantidad++; porTratamiento[p.Tratamiento].total += Number(p.Monto_Pagado); });
   const filas = Object.entries(porTratamiento).sort((a,b)=>b[1].total-a[1].total);
   const total = items.reduce((s,p)=>s+Number(p.Monto_Pagado),0);
-  openModal(`<h3>${cat} — ${mesLabel}</h3>
-    <p class="subtle" style="margin-bottom:6px;">Top 3 de ${mesLabel}:</p>
+  openModal(`<h3>${cat||'Sin movimientos'} — ${mesLabelFull}</h3>
+    <p class="subtle" style="margin-bottom:6px;">Top 3 de ${mesLabelFull} (toca una para ver su detalle):</p>
     <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;">
-      ${top3Mes.map(t=>`<span class="chip" style="${t.cat===cat?'border:1px solid var(--teal);color:var(--teal);font-weight:600;':''}">${t.cat}: ${fmtMoney(t.monto)} (${t.pct}%)</span>`).join('')}
+      ${top3Mes.map(t=>`<span class="chip chip-click" data-cat="${t.cat}" style="cursor:pointer;${t.cat===cat?'background:#12291F;border:1px solid var(--teal);color:var(--teal);font-weight:600;':'background:#1B2733;border:1px solid transparent;color:#8CA0B3;'}">${t.cat}: ${fmtMoney(t.monto)} (${t.pct}%)</span>`).join('') || '<span class="subtle">Sin movimientos este mes</span>'}
     </div>
     <div class="divider"></div>
-    <p class="subtle" style="margin-bottom:12px;">${filas.length} tratamiento${filas.length===1?'':'s'} de <b>${cat}</b> · Total: ${fmtMoney(total)}</p>
+    <p class="subtle" style="margin-bottom:12px;">${filas.length} tratamiento${filas.length===1?'':'s'} de <b>${cat||'—'}</b> · Total: ${fmtMoney(total)}</p>
     <div style="max-height:280px;overflow-y:auto;">
     ${filas.map(([nombre,d])=>`<div class="pend-row"><span>${nombre} <span class="subtle">· ${d.cantidad} pago${d.cantidad===1?'':'s'}</span></span><b style="color:var(--teal);">${fmtMoney(d.total)}</b></div>`).join('') || '<div class="empty">Sin movimientos</div>'}
     </div>
     <div class="modal-actions" style="margin-top:14px;"><div class="btn block" onclick="closeModal()">Cerrar</div></div>`);
+  document.querySelectorAll('.chip-click').forEach(chip=>{
+    chip.addEventListener('click', ()=> mostrarDetalleIngresosCategoria(chip.dataset.cat, y, m));
+  });
 }
-function mostrarDetalleGastosCategoria(cat, y, m, mesLabel){
+function mostrarDetalleGastosCategoria(cat, y, m){
   const todasDelMes = DATA.gastos.filter(g=>{ const f=ymd(g.Fecha); return f.y===y && f.m===m; });
   const top3Mes = calcularTop3DelMes(todasDelMes, 'Monto', g=>g.Categoria);
-  const items = todasDelMes.filter(g=>g.Categoria===cat).sort((a,b)=>b.Fecha.localeCompare(a.Fecha));
+  if(!cat) cat = top3Mes.length ? top3Mes[0].cat : null;
+  const mesLabelFull = nombreMesCompleto(y, m);
+  const items = cat ? todasDelMes.filter(g=>g.Categoria===cat).sort((a,b)=>b.Fecha.localeCompare(a.Fecha)) : [];
   const total = items.reduce((s,g)=>s+Number(g.Monto),0);
-  openModal(`<h3>${cat} — ${mesLabel}</h3>
-    <p class="subtle" style="margin-bottom:6px;">Top 3 de ${mesLabel}:</p>
+  openModal(`<h3>${cat||'Sin movimientos'} — ${mesLabelFull}</h3>
+    <p class="subtle" style="margin-bottom:6px;">Top 3 de ${mesLabelFull} (toca una para ver su detalle):</p>
     <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;">
-      ${top3Mes.map(t=>`<span class="chip" style="${t.cat===cat?'border:1px solid #E0555A;color:#E0555A;font-weight:600;':''}">${t.cat}: ${fmtMoney(t.monto)} (${t.pct}%)</span>`).join('')}
+      ${top3Mes.map(t=>`<span class="chip chip-click" data-cat="${t.cat}" style="cursor:pointer;${t.cat===cat?'background:#2A1417;border:1px solid #E0555A;color:#E0555A;font-weight:600;':'background:#1B2733;border:1px solid transparent;color:#8CA0B3;'}">${t.cat}: ${fmtMoney(t.monto)} (${t.pct}%)</span>`).join('') || '<span class="subtle">Sin movimientos este mes</span>'}
     </div>
     <div class="divider"></div>
-    <p class="subtle" style="margin-bottom:12px;">${items.length} gasto${items.length===1?'':'s'} de <b>${cat}</b> · Total: ${fmtMoney(total)}</p>
+    <p class="subtle" style="margin-bottom:12px;">${items.length} gasto${items.length===1?'':'s'} de <b>${cat||'—'}</b> · Total: ${fmtMoney(total)}</p>
     <div style="max-height:280px;overflow-y:auto;">
     ${items.map(g=>`<div class="pend-row"><span>${g.Concepto} <span class="subtle">· ${g.Fecha}</span></span><b style="color:#E0555A;">${fmtMoney(g.Monto)}</b></div>`).join('') || '<div class="empty">Sin movimientos</div>'}
     </div>
     <div class="modal-actions" style="margin-top:14px;"><div class="btn block" onclick="closeModal()">Cerrar</div></div>`);
+  document.querySelectorAll('.chip-click').forEach(chip=>{
+    chip.addEventListener('click', ()=> mostrarDetalleGastosCategoria(chip.dataset.cat, y, m));
+  });
 }
 /* Tooltip de Chart.js "externo": en vez de dejar que Chart.js lo posicione
    dentro del canvas (donde queda a merced de cualquier overflow:hidden en
@@ -936,7 +969,8 @@ function ocultarChartTooltip(){
   // parte de la pantalla.
   if(typeof Chart!=='undefined' && Chart.instances){
     Object.values(Chart.instances).forEach(c=>{
-      if(c && c.tooltip){ c.tooltip.setActiveElements([], {x:0,y:0}); c.update(); }
+      try{ if(c && c.tooltip){ c.tooltip.setActiveElements([], {x:0,y:0}); c.update(); } }
+      catch(err){ /* una grafica fantasma no debe frenar al resto */ }
     });
   }
 }
@@ -972,17 +1006,17 @@ function drawDashboardCharts(){
   const weeks=['S1','S2','S3','S4','S5'];
   const cashEl = document.getElementById('cashChart');
   if(cashEl){ let running=0; const cum=weeks.map(w=>{running+=byWeek[w]||0;return running;});
-    new Chart(cashEl,{type:'line',data:{labels:weeks,datasets:[{data:cum,borderColor:'#2FD8B0',borderWidth:2,tension:.35,pointRadius:4,pointBackgroundColor:'#2FD8B0',fill:true,backgroundColor:'rgba(47,216,176,0.10)'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false,callbacks:{label:c=>fmtMoney(c.raw)}}},interaction:{mode:'index',intersect:false},scales:{x:{grid:{display:false},ticks:{color:'#5B6D7A',font:{size:11}}},y:{grid:{color:'#1E2E42'},ticks:{color:'#5B6D7A',font:{size:11},callback:v=>'$'+Number(v).toLocaleString('es-MX')}}}}}); }
+    nuevoChart(cashEl,{type:'line',data:{labels:weeks,datasets:[{data:cum,borderColor:'#2FD8B0',borderWidth:2,tension:.35,pointRadius:4,pointBackgroundColor:'#2FD8B0',fill:true,backgroundColor:'rgba(47,216,176,0.10)'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false,callbacks:{label:c=>fmtMoney(c.raw)}}},interaction:{mode:'index',intersect:false},scales:{x:{grid:{display:false},ticks:{color:'#5B6D7A',font:{size:11}}},y:{grid:{color:'#1E2E42'},ticks:{color:'#5B6D7A',font:{size:11},callback:v=>'$'+Number(v).toLocaleString('es-MX')}}}}}); }
   const donutEl = document.getElementById('donutChart');
   if(donutEl){ const porCategoria={}; DATA.pagos.forEach(p=>{const t=DATA.tratamientos.find(t=>t.Nombre===p.Tratamiento);const cat=t?t.Categoria:'Otros';porCategoria[cat]=(porCategoria[cat]||0)+Number(p.Monto_Pagado);});
     const entries=Object.entries(porCategoria).sort((a,b)=>b[1]-a[1]).slice(0,3);
-    new Chart(donutEl,{type:'doughnut',data:{labels:entries.map(e=>e[0]),datasets:[{data:entries.map(e=>e[1]),backgroundColor:['#2FD8B0','#1B6E5C','#3A4E60'],borderColor:'#101C2C',borderWidth:3}]},options:{responsive:true,maintainAspectRatio:false,cutout:'62%',plugins:{legend:{display:false},tooltip:{enabled:false,external:chartTooltipHandler}}}}); }
+    nuevoChart(donutEl,{type:'doughnut',data:{labels:entries.map(e=>e[0]),datasets:[{data:entries.map(e=>e[1]),backgroundColor:['#2FD8B0','#1B6E5C','#3A4E60'],borderColor:'#101C2C',borderWidth:3}]},options:{responsive:true,maintainAspectRatio:false,cutout:'62%',plugins:{legend:{display:false},tooltip:{enabled:false,external:chartTooltipHandler}}}}); }
   const tratSolEl = document.getElementById('tratSolicitadosChart');
   if(tratSolEl){ const entriesT = calcularTratamientosSolicitados();
-    new Chart(tratSolEl,{type:'bar',data:{labels:entriesT.map(e=>e[0]),datasets:[{data:entriesT.map(e=>e[1]),backgroundColor:'#2FD8B0',borderRadius:4}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.raw+' cita'+(c.raw===1?'':'s')}}},scales:{x:{grid:{color:'#1E2E42'},ticks:{color:'#5B6D7A',precision:0}},y:{grid:{display:false},ticks:{color:'#8CA0B3',font:{size:11},callback:function(v){ const label=this.getLabelForValue(v); return label.length>16?label.slice(0,15)+'…':label; }}}}}}); }
+    nuevoChart(tratSolEl,{type:'bar',data:{labels:entriesT.map(e=>e[0]),datasets:[{data:entriesT.map(e=>e[1]),backgroundColor:'#2FD8B0',borderRadius:4}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.raw+' cita'+(c.raw===1?'':'s')}}},scales:{x:{grid:{color:'#1E2E42'},ticks:{color:'#5B6D7A',precision:0}},y:{grid:{display:false},ticks:{color:'#8CA0B3',font:{size:11},callback:function(v){ const label=this.getLabelForValue(v); return label.length>16?label.slice(0,15)+'…':label; }}}}}}); }
   const nrEl = document.getElementById('nuevosRecurrentesChart');
   if(nrEl){ const { weeks:w2, nuevos, recurrentes } = calcularNuevosVsRecurrentes();
-    new Chart(nrEl,{type:'bar',data:{labels:w2,datasets:[
+    nuevoChart(nrEl,{type:'bar',data:{labels:w2,datasets:[
       {label:'Nuevos', data:nuevos, backgroundColor:'#2FD8B0', borderRadius:4},
       {label:'Recurrentes', data:recurrentes, backgroundColor:'#3A4E60', borderRadius:4}
     ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'top',align:'end',labels:{color:'#8CA0B3',boxWidth:12,font:{size:11}}},tooltip:{mode:'index',intersect:false}},interaction:{mode:'index',intersect:false},scales:{x:{grid:{display:false},ticks:{color:'#5B6D7A'}},y:{grid:{color:'#1E2E42'},ticks:{color:'#5B6D7A',precision:0}}}}}); }
@@ -1255,25 +1289,25 @@ function drawFinanzasChart(){
   const byWeek = {};
   DATA.pagos.forEach(p=>{ if(!esMesActual(p.Fecha, now)) return; const w='S'+Math.ceil(diaDelMes(p.Fecha)/7); byWeek[w]=(byWeek[w]||0)+Number(p.Monto_Pagado); });
   const weeks=['S1','S2','S3','S4','S5'];
-  new Chart(el,{type:'bar',data:{labels:weeks,datasets:[{data:weeks.map(w=>byWeek[w]||0),backgroundColor:'#2FD8B0',borderRadius:4,barThickness:28}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false,callbacks:{label:c=>fmtMoney(c.raw)}}},interaction:{mode:'index',intersect:false},scales:{x:{grid:{display:false},ticks:{color:'#5B6D7A'}},y:{grid:{color:'#1E2E42'},ticks:{color:'#5B6D7A',callback:v=>'$'+Number(v).toLocaleString('es-MX')}}}}});
+  nuevoChart(el,{type:'bar',data:{labels:weeks,datasets:[{data:weeks.map(w=>byWeek[w]||0),backgroundColor:'#2FD8B0',borderRadius:4,barThickness:28}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false,callbacks:{label:c=>fmtMoney(c.raw)}}},interaction:{mode:'index',intersect:false},scales:{x:{grid:{display:false},ticks:{color:'#5B6D7A'}},y:{grid:{color:'#1E2E42'},ticks:{color:'#5B6D7A',callback:v=>'$'+Number(v).toLocaleString('es-MX')}}}}});
   const igEl = document.getElementById('ingresosGastos6mChart');
   if(igEl){ const { labels, ingresos, gastos } = calcularUltimos6Meses();
-    new Chart(igEl,{type:'bar',data:{labels,datasets:[
+    nuevoChart(igEl,{type:'bar',data:{labels,datasets:[
       {label:'Ingresos', data:ingresos, backgroundColor:'#2FD8B0', borderRadius:4},
       {label:'Gastos', data:gastos, backgroundColor:'#E0555A', borderRadius:4}
     ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'top',align:'end',labels:{color:'#8CA0B3',boxWidth:12,font:{size:11}}},tooltip:{mode:'index',intersect:false,callbacks:{label:c=>c.dataset.label+': '+fmtMoney(c.raw)}}},interaction:{mode:'index',intersect:false},scales:{x:{grid:{display:false},ticks:{color:'#5B6D7A'}},y:{grid:{color:'#1E2E42'},ticks:{color:'#5B6D7A',callback:v=>'$'+Number(v).toLocaleString('es-MX')}}}}}); }
   const icEl = document.getElementById('ingresosCategoria6mChart');
   if(icEl){ const { labels, datasets, meses, topCats } = calcularIngresosPorCategoriaMeses();
-    new Chart(icEl,{type:'bar',data:{labels,datasets},options:{responsive:true,maintainAspectRatio:false,
-      onClick:(evt,elements,chart)=>{ const exactas=chart.getElementsAtEventForMode(evt,'nearest',{intersect:true},true); if(!exactas.length) return; const el2=exactas[0]; const cat=topCats[el2.datasetIndex]; const {y,m,label}=meses[el2.index]; mostrarDetalleIngresosCategoria(cat,y,m,label); },
+    nuevoChart(icEl,{type:'bar',data:{labels,datasets},options:{responsive:true,maintainAspectRatio:false,
+      onClick:(evt,elements,chart)=>{ const cercanas=chart.getElementsAtEventForMode(evt,'index',{intersect:false},true); if(!cercanas.length) return; const {y,m}=meses[cercanas[0].index]; mostrarDetalleIngresosCategoria(undefined,y,m); },
       onHover:(evt,elements)=>{ evt.native.target.style.cursor = elements.length ? 'pointer' : 'default'; },
       plugins:{legend:{display:true,position:'top',align:'end',labels:{color:'#8CA0B3',boxWidth:12,font:{size:11}}},tooltip:{mode:'index',intersect:false,callbacks:{label:c=>c.dataset.label+': '+fmtMoney(c.raw)}}},
       interaction:{mode:'index',intersect:false},
       scales:{x:{stacked:true,grid:{display:false},ticks:{color:'#5B6D7A'}},y:{stacked:true,grid:{color:'#1E2E42'},ticks:{color:'#5B6D7A',callback:v=>'$'+Number(v).toLocaleString('es-MX')}}}}}); }
   const gcEl = document.getElementById('gastosCategoria6mChart');
   if(gcEl){ const { labels, datasets, meses, topCats } = calcularGastosPorCategoriaMeses();
-    new Chart(gcEl,{type:'bar',data:{labels,datasets},options:{responsive:true,maintainAspectRatio:false,
-      onClick:(evt,elements,chart)=>{ const exactas=chart.getElementsAtEventForMode(evt,'nearest',{intersect:true},true); if(!exactas.length) return; const el2=exactas[0]; const cat=topCats[el2.datasetIndex]; const {y,m,label}=meses[el2.index]; mostrarDetalleGastosCategoria(cat,y,m,label); },
+    nuevoChart(gcEl,{type:'bar',data:{labels,datasets},options:{responsive:true,maintainAspectRatio:false,
+      onClick:(evt,elements,chart)=>{ const cercanas=chart.getElementsAtEventForMode(evt,'index',{intersect:false},true); if(!cercanas.length) return; const {y,m}=meses[cercanas[0].index]; mostrarDetalleGastosCategoria(undefined,y,m); },
       onHover:(evt,elements)=>{ evt.native.target.style.cursor = elements.length ? 'pointer' : 'default'; },
       plugins:{legend:{display:true,position:'top',align:'end',labels:{color:'#8CA0B3',boxWidth:12,font:{size:11}}},tooltip:{mode:'index',intersect:false,callbacks:{label:c=>c.dataset.label+': '+fmtMoney(c.raw)}}},
       interaction:{mode:'index',intersect:false},

@@ -157,6 +157,14 @@
   .summary-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;gap:10px;}
   .summary-row span:first-child{color:var(--text-dim);}
   .pend-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);font-size:13px;gap:10px;}
+  /* #62/#63 — alto minimo fijo (5 filas) para que la ventana de detalle no
+     "brinque" de tamaño entre categorias con pocos y muchos registros. */
+  .detail-block-fixed{min-height:220px;}
+  /* #64 — envuelve tabla+paginador en un solo bloque con el mismo fondo
+     de tarjeta que ya usa el resto del sistema, para que el espacio de
+     mas que queda cuando la ultima pagina trae menos registros se sienta
+     parte del mismo componente, no un hueco suelto. */
+  .table-block{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:6px 8px;}
   .pend-row .btn{flex-shrink:0;}
 
   .day-block{border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px;}
@@ -743,6 +751,7 @@ function renderDashboardHTML(){
         <span class="subtle">Ingresos del mes:</span><b style="font-size:15px;color:var(--teal);">${fmtMoney(ingresosMes)}</b>
       </div>
       <div class="cash-chart-wrap" style="height:160px;"><canvas id="cashChart"></canvas></div>
+      <p class="subtle" style="margin-top:8px;">Acumulado semana con semana — para el detalle exacto de cada semana, ve a Finanzas</p>
     </div>
     <div class="card clickable-card" id="pendienteCard" style="display:flex;flex-direction:column;">
       <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>Pendiente por cobrar</div>
@@ -900,7 +909,8 @@ function nombreMesCompleto(y, m){
    confundir con "seleccionado" (#59d, #59e). Ingresos se agrupa por
    TRATAMIENTO (el desglose natural de una categoria), Gastos como lista de
    movimientos individuales. */
-function mostrarDetalleIngresosCategoria(cat, y, m){
+function mostrarDetalleIngresosCategoria(cat, y, m, pagina){
+  pagina = pagina || 1;
   const catDeTratamiento = {}; DATA.tratamientos.forEach(t=>{ catDeTratamiento[t.Nombre] = t.Categoria; });
   const todasDelMes = DATA.pagos.filter(p=>{ const f=ymd(p.Fecha); return f.y===y && f.m===m; });
   const top3Mes = calcularTop3DelMes(todasDelMes, 'Monto_Pagado', p=>catDeTratamiento[p.Tratamiento]||'Otros');
@@ -911,6 +921,10 @@ function mostrarDetalleIngresosCategoria(cat, y, m){
   items.forEach(p=>{ if(!porTratamiento[p.Tratamiento]) porTratamiento[p.Tratamiento] = { cantidad:0, total:0 }; porTratamiento[p.Tratamiento].cantidad++; porTratamiento[p.Tratamiento].total += Number(p.Monto_Pagado); });
   const filas = Object.entries(porTratamiento).sort((a,b)=>b[1].total-a[1].total);
   const total = items.reduce((s,p)=>s+Number(p.Monto_Pagado),0);
+  const porPagina = 5;
+  const totalPaginas = Math.max(1, Math.ceil(filas.length/porPagina));
+  if(pagina>totalPaginas) pagina = totalPaginas;
+  const filasPagina = filas.slice((pagina-1)*porPagina, pagina*porPagina);
   openModal(`<h3>${cat||'Sin movimientos'} — ${mesLabelFull}</h3>
     <p class="subtle" style="margin-bottom:6px;">Top 3 de ${mesLabelFull} (toca una para ver su detalle):</p>
     <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;">
@@ -918,21 +932,38 @@ function mostrarDetalleIngresosCategoria(cat, y, m){
     </div>
     <div class="divider"></div>
     <p class="subtle" style="margin-bottom:12px;">${filas.length} tratamiento${filas.length===1?'':'s'} de <b>${cat||'—'}</b> · Total: ${fmtMoney(total)}</p>
-    <div style="max-height:280px;overflow-y:auto;">
-    ${filas.map(([nombre,d])=>`<div class="pend-row"><span>${nombre} <span class="subtle">· ${d.cantidad} pago${d.cantidad===1?'':'s'}</span></span><b style="color:var(--teal);">${fmtMoney(d.total)}</b></div>`).join('') || '<div class="empty">Sin movimientos</div>'}
+    <div class="detail-block-fixed">
+    ${filasPagina.map(([nombre,d])=>`<div class="pend-row"><span>${nombre} <span class="subtle">· ${d.cantidad} pago${d.cantidad===1?'':'s'}</span></span><b style="color:var(--teal);">${fmtMoney(d.total)}</b></div>`).join('') || '<div class="empty">Sin movimientos</div>'}
     </div>
+    ${filas.length>porPagina ? `<div class="paginador" style="padding-top:8px;">
+      <span class="subtle">${filas.length} registros</span>
+      <div class="paginador-controles">
+        <div class="icon-btn" id="detPrevIng" style="${pagina<=1?'opacity:.35;pointer-events:none;':''}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></div>
+        <span class="subtle">Página ${pagina} de ${totalPaginas}</span>
+        <div class="icon-btn" id="detNextIng" style="${pagina>=totalPaginas?'opacity:.35;pointer-events:none;':''}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></div>
+      </div>
+    </div>` : ''}
     <div class="modal-actions" style="margin-top:14px;"><div class="btn block" onclick="closeModal()">Cerrar</div></div>`);
   document.querySelectorAll('.chip-click').forEach(chip=>{
     chip.addEventListener('click', ()=> mostrarDetalleIngresosCategoria(chip.dataset.cat, y, m));
   });
+  if(filas.length>porPagina){
+    document.getElementById('detPrevIng').addEventListener('click', ()=> mostrarDetalleIngresosCategoria(cat, y, m, pagina-1));
+    document.getElementById('detNextIng').addEventListener('click', ()=> mostrarDetalleIngresosCategoria(cat, y, m, pagina+1));
+  }
 }
-function mostrarDetalleGastosCategoria(cat, y, m){
+function mostrarDetalleGastosCategoria(cat, y, m, pagina){
+  pagina = pagina || 1;
   const todasDelMes = DATA.gastos.filter(g=>{ const f=ymd(g.Fecha); return f.y===y && f.m===m; });
   const top3Mes = calcularTop3DelMes(todasDelMes, 'Monto', g=>g.Categoria);
   if(!cat) cat = top3Mes.length ? top3Mes[0].cat : null;
   const mesLabelFull = nombreMesCompleto(y, m);
   const items = cat ? todasDelMes.filter(g=>g.Categoria===cat).sort((a,b)=>b.Fecha.localeCompare(a.Fecha)) : [];
   const total = items.reduce((s,g)=>s+Number(g.Monto),0);
+  const porPagina = 5;
+  const totalPaginas = Math.max(1, Math.ceil(items.length/porPagina));
+  if(pagina>totalPaginas) pagina = totalPaginas;
+  const itemsPagina = items.slice((pagina-1)*porPagina, pagina*porPagina);
   openModal(`<h3>${cat||'Sin movimientos'} — ${mesLabelFull}</h3>
     <p class="subtle" style="margin-bottom:6px;">Top 3 de ${mesLabelFull} (toca una para ver su detalle):</p>
     <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;">
@@ -940,13 +971,25 @@ function mostrarDetalleGastosCategoria(cat, y, m){
     </div>
     <div class="divider"></div>
     <p class="subtle" style="margin-bottom:12px;">${items.length} gasto${items.length===1?'':'s'} de <b>${cat||'—'}</b> · Total: ${fmtMoney(total)}</p>
-    <div style="max-height:280px;overflow-y:auto;">
-    ${items.map(g=>`<div class="pend-row"><span>${g.Concepto} <span class="subtle">· ${g.Fecha}</span></span><b style="color:#E0555A;">${fmtMoney(g.Monto)}</b></div>`).join('') || '<div class="empty">Sin movimientos</div>'}
+    <div class="detail-block-fixed">
+    ${itemsPagina.map(g=>`<div class="pend-row"><span>${g.Concepto} <span class="subtle">· ${g.Fecha}</span></span><b style="color:#E0555A;">${fmtMoney(g.Monto)}</b></div>`).join('') || '<div class="empty">Sin movimientos</div>'}
     </div>
+    ${items.length>porPagina ? `<div class="paginador" style="padding-top:8px;">
+      <span class="subtle">${items.length} registros</span>
+      <div class="paginador-controles">
+        <div class="icon-btn" id="detPrevGas" style="${pagina<=1?'opacity:.35;pointer-events:none;':''}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></div>
+        <span class="subtle">Página ${pagina} de ${totalPaginas}</span>
+        <div class="icon-btn" id="detNextGas" style="${pagina>=totalPaginas?'opacity:.35;pointer-events:none;':''}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></div>
+      </div>
+    </div>` : ''}
     <div class="modal-actions" style="margin-top:14px;"><div class="btn block" onclick="closeModal()">Cerrar</div></div>`);
   document.querySelectorAll('.chip-click').forEach(chip=>{
     chip.addEventListener('click', ()=> mostrarDetalleGastosCategoria(chip.dataset.cat, y, m));
   });
+  if(items.length>porPagina){
+    document.getElementById('detPrevGas').addEventListener('click', ()=> mostrarDetalleGastosCategoria(cat, y, m, pagina-1));
+    document.getElementById('detNextGas').addEventListener('click', ()=> mostrarDetalleGastosCategoria(cat, y, m, pagina+1));
+  }
 }
 /* Tooltip de Chart.js "externo": en vez de dejar que Chart.js lo posicione
    dentro del canvas (donde queda a merced de cualquier overflow:hidden en
@@ -1029,10 +1072,12 @@ function renderPacientesHTML(){
     <input class="search" id="pacSearch" placeholder="Buscar por nombre o tratamiento..." value="${SEARCH_STATE.pacientes}">
     <div class="btn primary" id="btnAddPaciente">+ Nuevo paciente</div>
   </div>
+  <div class="table-block" id="pacTableBlock">
   <div class="table-wrap">
     <table><thead><tr>${thSort('pacientes','Paciente','Nombre')}${thSort('pacientes','Telefono','Telefono')}${thSort('pacientes','Ultima visita','Ultima_Visita')}${thSort('pacientes','Tratamientos','Tratamientos')}${thSort('pacientes','Estado','Estado')}${thSort('pacientes','Saldo','Saldo')}</tr></thead><tbody id="pacTbody"></tbody></table>
   </div>
-  <div id="pacPaginador"></div>`;
+  <div id="pacPaginador"></div>
+  </div>`;
 }
 /* ============ ORDEN GENERICO (clic en encabezado) — Pacientes, Pagos, Gastos, Tratamientos ============ */
 const SORT_STATE = { pacientes:{key:null,dir:1}, pagos:{key:null,dir:1}, gastos:{key:null,dir:1}, tratamientos:{key:null,dir:1} };
@@ -1091,6 +1136,16 @@ function renderPaginador(key, total, totalPaginas){
     </div>
   </div>`;
 }
+/* #64 — reserva la altura de la pagina "llena" (min(size,total) filas) en
+   el bloque que envuelve tabla+paginador, para que la ultima pagina (con
+   menos registros) no encoja el contenedor ni haga saltar el paginador. */
+function actualizarAlturaTabla(blockId, key, total){
+  const el = document.getElementById(blockId);
+  if(!el) return;
+  if(total===0){ el.style.minHeight = ''; return; }
+  const filas = Math.min(PAGINATION[key].size, total);
+  el.style.minHeight = (42 + filas*45 + 50) + 'px';
+}
 function attachPaginadorEvents(key, refillFn){
   document.querySelectorAll(`.pag-size[data-pag-key="${key}"]`).forEach(sel=>{
     sel.onchange = e=>{ PAGINATION[key].size = Number(e.target.value); PAGINATION[key].page = 1; refillFn(); };
@@ -1135,6 +1190,7 @@ function fillPacientesTable(filter){
   tbody.querySelectorAll('tr[data-pac]').forEach(tr=>{ tr.addEventListener('click', ()=> showPacienteDetalle(tr.dataset.pac)); });
   const pagBox = document.getElementById('pacPaginador');
   if(pagBox){ pagBox.innerHTML = renderPaginador('pacientes', total, totalPaginas); attachPaginadorEvents('pacientes', ()=>fillPacientesTable(filter)); }
+  actualizarAlturaTabla('pacTableBlock', 'pacientes', total);
   refreshSortArrows('pacientes'); attachSortHeaders('pacientes', ()=>fillPacientesTable(filter));
 }
 function showPacienteDetalle(pacId){
@@ -1181,7 +1237,7 @@ function renderFinanzasHTML(){
   </div>
   <div class="card" style="margin-bottom:16px;">
     <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3v18h18M7 15l4-4 3 3 5-6"/></svg>Flujo de caja — ${meses[mesActual]} ${anioActual}</div>
-    <p class="subtle" style="margin:-8px 0 10px;">S1-S5 = semanas del mes en curso (dias 1-7, 8-14, 15-21, 22-28, 29-31)</p>
+    <p class="subtle" style="margin:-8px 0 10px;">S1-S5 = semanas del mes en curso (dias 1-7, 8-14, 15-21, 22-28, 29-31) — monto exacto de cada semana (no acumulado)</p>
     <div style="position:relative;height:200px;"><canvas id="finCashChart"></canvas></div>
   </div>
   <div class="card" style="margin-bottom:16px;">
@@ -1209,10 +1265,12 @@ function renderFinanzasHTML(){
         <input class="search" id="pagoSearch" placeholder="Buscar por fecha, paciente, tratamiento, monto..." value="${SEARCH_STATE.pagos}">
         <div class="btn primary sm" id="btnAddPago">+ Registrar pago</div>
       </div>
+      <div class="table-block" id="pagTableBlock">
       <div class="table-wrap" style="margin-bottom:6px;">
         <table><thead><tr>${thSort('pagos','Paciente','Paciente')}${thSort('pagos','Tratamiento','Tratamiento')}${thSort('pagos','Fecha inicio','Fecha')}${thSort('pagos','Total','Monto_Total')}${thSort('pagos','Pagado','Monto_Pagado')}${thSort('pagos','Saldo','Saldo')}<th></th></tr></thead><tbody id="pagosTbody"></tbody></table>
       </div>
-      <div id="pagPaginador" style="margin-bottom:14px;"></div>
+      <div id="pagPaginador"></div>
+      </div>
     </div>
   </div>
 
@@ -1223,8 +1281,10 @@ function renderFinanzasHTML(){
         <input class="search" id="gastoSearch" placeholder="Buscar por fecha, concepto, categoría, monto..." value="${SEARCH_STATE.gastos}">
         <div class="btn primary sm" id="btnAddGasto">+ Registrar gasto</div>
       </div>
+      <div class="table-block" id="gastoTableBlock">
       <div class="table-wrap"><table><thead><tr>${thSort('gastos','Fecha','Fecha')}${thSort('gastos','Concepto','Concepto')}${thSort('gastos','Categoría','Categoria')}${thSort('gastos','Monto','Monto')}</tr></thead><tbody id="gastosTbody"></tbody></table></div>
       <div id="gastoPaginador"></div>
+      </div>
     </div>
   </div>`;
 }
@@ -1241,6 +1301,7 @@ function fillPagosTable(filter){
   tbody.querySelectorAll('[data-abonar]').forEach(btn=>{ btn.addEventListener('click', ()=> openAbonoModal(btn.dataset.abonar, ()=>{ fillPagosTable(document.getElementById('pagoSearch').value); })); });
   const pagBox = document.getElementById('pagPaginador');
   if(pagBox){ pagBox.innerHTML = renderPaginador('pagos', total, totalPaginas); attachPaginadorEvents('pagos', ()=>fillPagosTable(filter)); }
+  actualizarAlturaTabla('pagTableBlock', 'pagos', total);
   refreshSortArrows('pagos'); attachSortHeaders('pagos', ()=>fillPagosTable(filter));
 }
 function fillGastosTable(filter){
@@ -1252,6 +1313,7 @@ function fillGastosTable(filter){
   tbody.innerHTML = rows.map(g=>`<tr><td>${g.Fecha}</td><td>${g.Concepto}</td><td>${g.Categoria}</td><td>${fmtMoney(g.Monto)}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">Sin resultados</td></tr>';
   const pagBox = document.getElementById('gastoPaginador');
   if(pagBox){ pagBox.innerHTML = renderPaginador('gastos', total, totalPaginas); attachPaginadorEvents('gastos', ()=>fillGastosTable(filter)); }
+  actualizarAlturaTabla('gastoTableBlock', 'gastos', total);
   refreshSortArrows('gastos'); attachSortHeaders('gastos', ()=>fillGastosTable(filter));
 }
 async function guardarPagoNuevo(selPac, selTrat, total, pagado){
@@ -1299,7 +1361,13 @@ function drawFinanzasChart(){
   const icEl = document.getElementById('ingresosCategoria6mChart');
   if(icEl){ const { labels, datasets, meses, topCats } = calcularIngresosPorCategoriaMeses();
     nuevoChart(icEl,{type:'bar',data:{labels,datasets},options:{responsive:true,maintainAspectRatio:false,
-      onClick:(evt,elements,chart)=>{ const cercanas=chart.getElementsAtEventForMode(evt,'index',{intersect:false},true); if(!cercanas.length) return; const {y,m}=meses[cercanas[0].index]; mostrarDetalleIngresosCategoria(undefined,y,m); },
+      onClick:(evt,elements,chart)=>{
+        const exactas = chart.getElementsAtEventForMode(evt,'nearest',{intersect:true},true);
+        let y,m,cat;
+        if(exactas.length){ const el2=exactas[0]; cat=topCats[el2.datasetIndex]; ({y,m}=meses[el2.index]); }
+        else{ const cercanas=chart.getElementsAtEventForMode(evt,'index',{intersect:false},true); if(!cercanas.length) return; ({y,m}=meses[cercanas[0].index]); }
+        mostrarDetalleIngresosCategoria(cat,y,m);
+      },
       onHover:(evt,elements)=>{ evt.native.target.style.cursor = elements.length ? 'pointer' : 'default'; },
       plugins:{legend:{display:true,position:'top',align:'end',labels:{color:'#8CA0B3',boxWidth:12,font:{size:11}}},tooltip:{mode:'index',intersect:false,callbacks:{label:c=>c.dataset.label+': '+fmtMoney(c.raw)}}},
       interaction:{mode:'index',intersect:false},
@@ -1307,7 +1375,13 @@ function drawFinanzasChart(){
   const gcEl = document.getElementById('gastosCategoria6mChart');
   if(gcEl){ const { labels, datasets, meses, topCats } = calcularGastosPorCategoriaMeses();
     nuevoChart(gcEl,{type:'bar',data:{labels,datasets},options:{responsive:true,maintainAspectRatio:false,
-      onClick:(evt,elements,chart)=>{ const cercanas=chart.getElementsAtEventForMode(evt,'index',{intersect:false},true); if(!cercanas.length) return; const {y,m}=meses[cercanas[0].index]; mostrarDetalleGastosCategoria(undefined,y,m); },
+      onClick:(evt,elements,chart)=>{
+        const exactas = chart.getElementsAtEventForMode(evt,'nearest',{intersect:true},true);
+        let y,m,cat;
+        if(exactas.length){ const el2=exactas[0]; cat=topCats[el2.datasetIndex]; ({y,m}=meses[el2.index]); }
+        else{ const cercanas=chart.getElementsAtEventForMode(evt,'index',{intersect:false},true); if(!cercanas.length) return; ({y,m}=meses[cercanas[0].index]); }
+        mostrarDetalleGastosCategoria(cat,y,m);
+      },
       onHover:(evt,elements)=>{ evt.native.target.style.cursor = elements.length ? 'pointer' : 'default'; },
       plugins:{legend:{display:true,position:'top',align:'end',labels:{color:'#8CA0B3',boxWidth:12,font:{size:11}}},tooltip:{mode:'index',intersect:false,callbacks:{label:c=>c.dataset.label+': '+fmtMoney(c.raw)}}},
       interaction:{mode:'index',intersect:false},
@@ -1321,8 +1395,10 @@ function renderTratamientosHTML(){
     <input class="search" id="tratSearch" placeholder="Buscar por tratamiento, categoría o precio..." value="${SEARCH_STATE.tratamientos}">
     <div class="btn primary" id="btnAddTratamiento">+ Nuevo tratamiento</div>
   </div>
+  <div class="table-block" id="tratTableBlock">
   <div class="table-wrap"><table><thead><tr>${thSort('tratamientos','Tratamiento','Nombre')}${thSort('tratamientos','Categoría','Categoria')}${thSort('tratamientos','Precio','Precio_MXN')}${thSort('tratamientos','Duración','Duracion_Min')}</tr></thead><tbody id="tratTbody"></tbody></table></div>
-  <div id="tratPaginador"></div>`;
+  <div id="tratPaginador"></div>
+  </div>`;
 }
 function fillTratamientosTable(filter){
   const tbody = document.getElementById('tratTbody'); if(!tbody) return;
@@ -1333,6 +1409,7 @@ function fillTratamientosTable(filter){
   tbody.innerHTML = rows.map(t=>`<tr><td>${t.Nombre}</td><td>${t.Categoria}</td><td>${fmtMoney(t.Precio_MXN)}</td><td>${t.Duracion_Min||30} min</td></tr>`).join('') || '<tr><td colspan="4" class="empty">Sin resultados</td></tr>';
   const pagBox = document.getElementById('tratPaginador');
   if(pagBox){ pagBox.innerHTML = renderPaginador('tratamientos', total, totalPaginas); attachPaginadorEvents('tratamientos', ()=>fillTratamientosTable(filter)); }
+  actualizarAlturaTabla('tratTableBlock', 'tratamientos', total);
   refreshSortArrows('tratamientos'); attachSortHeaders('tratamientos', ()=>fillTratamientosTable(filter));
 }
 

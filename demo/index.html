@@ -121,6 +121,8 @@
   .table-wrap.tw-fija > div[id$="Paginador"]{margin-top:auto;padding-top:8px;}
 
   .collapsible .coll-header{display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px 2px;margin-bottom:10px;}
+  /* #69 — sin esto, una seccion colapsable pegaba directo con la siguiente (ej. "Gastos fijos" quedaba justo donde terminara la tabla de Pagos, sea cual fuera su alto, sin ninguna separacion visual entre ambas). Se agrega margen solo entre colapsables consecutivos (no antes del primero, que ya tiene su propio espacio con las graficas de arriba). */
+  .collapsible + .collapsible{margin-top:20px;}
   .collapsible .coll-header b{font-size:13px;}
   .coll-chevron{transition:transform .15s;color:var(--teal);flex-shrink:0;}
   .collapsible.collapsed .coll-chevron{transform:rotate(-90deg);}
@@ -1273,12 +1275,24 @@ function renderPaginador(key, total, totalPaginas){
 /* #64 — reserva la altura de la pagina "llena" (min(size,total) filas) en
    el bloque que envuelve tabla+paginador, para que la ultima pagina (con
    menos registros) no encoja el contenedor ni haga saltar el paginador. */
-function actualizarAlturaTabla(blockId, key, total){
+/* #66 (corregido de raiz, v22) — medido directo en el navegador: Pagos es
+   la unica tabla cuyas celdas llevan un badge de saldo Y un boton Abonar,
+   lo que hace que sus renglones midan 49-53px reales — no los 45px que
+   esta formula asumia para las 4 tablas por igual (medido en Pacientes:
+   42px reales, por eso ahi nunca fallaba). Con la constante generica, una
+   pagina llena de Pagos (15 filas) media 883px reales contra apenas
+   767px reservados — como min-height es un piso, no un techo, la tabla
+   SI crecia de mas en paginas llenas y se desinflaba de vuelta al piso en
+   paginas con menos registros: ese "inflar y desinflar" era el salto de
+   tamaño y el paginador que no se quedaba en su lugar. Se agrega un
+   parametro de alto por fila (con margen sobre el maximo real medido) que
+   cada tabla puede pasar segun su propio contenido. */
+function actualizarAlturaTabla(blockId, key, total, altoFila){
   const el = document.getElementById(blockId);
   if(!el) return;
   if(total===0){ el.style.minHeight = ''; return; }
   const filas = Math.min(PAGINATION[key].size, total);
-  el.style.minHeight = (42 + filas*45 + 50) + 'px';
+  el.style.minHeight = (42 + filas*(altoFila||45) + 50) + 'px';
 }
 function attachPaginadorEvents(key, refillFn){
   document.querySelectorAll(`.pag-size[data-pag-key="${key}"]`).forEach(sel=>{
@@ -1441,7 +1455,7 @@ function fillPagosTable(filter){
   tbody.querySelectorAll('[data-abonar]').forEach(btn=>{ btn.addEventListener('click', ()=> openAbonoModal(btn.dataset.abonar, ()=>{ fillPagosTable(document.getElementById('pagoSearch').value); })); });
   const pagBox = document.getElementById('pagPaginador');
   if(pagBox){ pagBox.innerHTML = renderPaginador('pagos', total, totalPaginas); attachPaginadorEvents('pagos', ()=>fillPagosTable(filter)); }
-  actualizarAlturaTabla('pagTableBlock', 'pagos', total);
+  actualizarAlturaTabla('pagTableBlock', 'pagos', total, 54); // #66 — alto de fila real medido (49-53px) + margen
   refreshSortArrows('pagos'); attachSortHeaders('pagos', ()=>fillPagosTable(filter));
 }
 function fillGastosTable(filter){

@@ -1764,7 +1764,7 @@ function afterRenderHooks(){
       openModal(`
         <h3>Nuevo paciente</h3>
         <div class="field" style="margin-bottom:12px;"><label>Nombre completo</label><input id="mNombre"></div>
-        <div class="field" style="margin-bottom:12px;"><label>Teléfono <span class="subtle">(sin prefijo, solo ${telefonoInfo().longitud} dígitos)</span></label><input id="mTelefono" type="tel" maxlength="${telefonoInfo().longitud}"></div>
+        <div class="field" style="margin-bottom:12px;"><label>Teléfono <span class="subtle">(sin prefijo, solo ${telefonoInfo().longitud} dígitos)</span></label><input id="mTelefono" type="tel" inputmode="numeric" maxlength="${telefonoInfo().longitud}"></div>
         <div class="field" style="margin-bottom:6px;"><label>Última visita (opcional)</label><input id="mUltimaVisitaAnterior" type="date" max="${todayStr()}"></div>
         <p class="subtle" style="margin-bottom:18px;">Solo si el paciente ya tenía historial antes de usar el sistema. En cuanto le agendes su primera cita aquí, el sistema calcula su última visita solo.</p>
         <div class="field" style="margin:0 0 20px;padding:2px 0;"><label style="display:flex;align-items:center;gap:10px;cursor:pointer;"><input type="checkbox" id="mHistorialPrevio"> Ya era mi paciente antes de usar el sistema</label>
@@ -1778,17 +1778,26 @@ function afterRenderHooks(){
       document.getElementById('mTratBtn').addEventListener('click', ()=>{
         openTreatmentPicker(selectedTrats, (sel)=>{ selectedTrats = sel; document.getElementById('mTratChips').innerHTML = selectedTrats.map(t=>`<span class="chip">${t}</span>`).join(''); });
       });
+      // #74 — filtra en vivo cualquier caracter que no sea digito (letras,
+      // espacios, simbolos) mientras el usuario escribe. maxlength por si
+      // solo no bastaba: limitaba la CANTIDAD de caracteres, no el TIPO.
+      document.getElementById('mTelefono').addEventListener('input', e=>{
+        e.target.value = e.target.value.replace(/\D/g,'').slice(0, telefonoInfo().longitud);
+      });
       document.getElementById('mGuardarPaciente').addEventListener('click', async ()=>{
         const nombre = document.getElementById('mNombre').value.trim();
         const tel = document.getElementById('mTelefono').value.trim();
         const ultimaVisitaAnterior = document.getElementById('mUltimaVisitaAnterior').value || '';
         const historialPrevio = document.getElementById('mHistorialPrevio').checked;
-        if(!nombre) return showToast('Completa: Nombre completo');
         // #71 — telefono ahora obligatorio: exactamente N digitos (N segun el
         // pais configurado), sin prefijo — evita capturas basura ahora que
         // todavia no hay forma de editar el registro despues de creado.
+        // #73 — mismo patron que Tratamiento y Citas: junta TODOS los campos
+        // faltantes en un solo mensaje, en vez de mostrarlos uno por uno en
+        // envios separados.
         const infoTel = telefonoInfo();
-        if(!tel) return showToast('Completa: Teléfono');
+        const faltanPac = []; if(!nombre) faltanPac.push('Nombre completo'); if(!tel) faltanPac.push('Teléfono');
+        if(faltanPac.length) return showToast('Completa: '+faltanPac.join(', '));
         if(!/^\d+$/.test(tel) || tel.length!==infoTel.longitud) return showToast(`El teléfono debe tener exactamente ${infoTel.longitud} dígitos (sin prefijo)`);
         let id = 'P' + String(DATA.pacientes.length+1).padStart(3,'0');
         if(CONFIG.API_URL){

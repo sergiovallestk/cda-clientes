@@ -281,13 +281,25 @@
 Chart.defaults.color = '#8FA1AE';
 Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
 
-const CONFIG = { API_URL: "https://script.google.com/macros/s/AKfycby2vc5fO1g4A08vLKsWTAhMBwO5HvVKqh1KkaigexC8JkGVgdTf-bl6rmMpPhSvNYRO/exec", CLIENT_ID: "DEMO", CURRENCY: "MXN", DIAS_SIN_VISITA: 60 };
+const CONFIG = { API_URL: "https://script.google.com/macros/s/AKfycby2vc5fO1g4A08vLKsWTAhMBwO5HvVKqh1KkaigexC8JkGVgdTf-bl6rmMpPhSvNYRO/exec", CLIENT_ID: "DEMO", CURRENCY: "MXN", DIAS_SIN_VISITA: 60, PHONE_COUNTRY: "MX" };
 const CURRENCIES = {
   MXN:{symbol:'$',nombre:'Peso mexicano'}, USD:{symbol:'$',nombre:'Dólar estadounidense'},
   COP:{symbol:'$',nombre:'Peso colombiano'}, EUR:{symbol:'€',nombre:'Euro'},
   ARS:{symbol:'$',nombre:'Peso argentino'}, PEN:{symbol:'S/',nombre:'Sol peruano'},
   GTQ:{symbol:'Q',nombre:'Quetzal guatemalteco'},
 };
+/* #71 — catalogo pais -> prefijo y longitud de telefono, mismo patron
+   que CURRENCIES: el usuario solo elige el pais (como ya hace con la
+   moneda), y el sistema toma prefijo y longitud del catalogo — sin
+   pedirle que capture la longitud a mano (esa parte no cambia seguido
+   por pais, y un campo libre solo invita a errores de captura). */
+const PHONE_COUNTRIES = {
+  MX:{nombre:'México', prefijo:'52', longitud:10}, US:{nombre:'Estados Unidos', prefijo:'1', longitud:10},
+  CO:{nombre:'Colombia', prefijo:'57', longitud:10}, ES:{nombre:'España', prefijo:'34', longitud:9},
+  AR:{nombre:'Argentina', prefijo:'54', longitud:10}, PE:{nombre:'Perú', prefijo:'51', longitud:9},
+  GT:{nombre:'Guatemala', prefijo:'502', longitud:8},
+};
+function telefonoInfo(){ return PHONE_COUNTRIES[CONFIG.PHONE_COUNTRY] || PHONE_COUNTRIES.MX; }
 const DIAS_ORDEN = ["Lunes","Martes","Miercoles","Jueves","Viernes","Sabado","Domingo"];
 const DEMO_DATA = {"pacientes": [], "tratamientos": [], "citas": [], "pagos": [], "gastos": [], "categorias_tratamiento": [], "categorias_gasto": [], "horario": [], "config": [], "referidos": [], "comisionMoneda": "MXN", "comisionMonto": 300};
 let DATA = JSON.parse(JSON.stringify(DEMO_DATA));
@@ -323,6 +335,7 @@ function hidratarConfigDesdeSheet(){
   const mapa = {}; DATA.config.forEach(c=>{ mapa[c.Clave] = c.Valor; });
   if(mapa.Moneda && CURRENCIES[mapa.Moneda]) CONFIG.CURRENCY = mapa.Moneda;
   if(mapa.DiasSinVisita) CONFIG.DIAS_SIN_VISITA = Number(mapa.DiasSinVisita) || 60;
+  if(mapa.PaisTelefono && PHONE_COUNTRIES[mapa.PaisTelefono]) CONFIG.PHONE_COUNTRY = mapa.PaisTelefono; // #71
 }
 
 /* Mapa entre las claves del JSON del backend y los nombres de hoja que
@@ -1101,7 +1114,7 @@ function mostrarDetalleGastosCategoria(cat, y, m, pagina, orden){
     </div>` : ''}
     <div class="divider"></div>
     <p class="subtle" style="margin-bottom:12px;">${items.length} gasto${items.length===1?'':'s'} de <b>${cat||'—'}</b> · Total: ${fmtMoney(total)}</p>
-    <div class="link-btn" id="btnOrdenGasCat" style="display:inline-block;margin-bottom:10px;cursor:pointer;">↕ Ordenar: ${etiquetasOrden[orden]}</div>
+    <div class="link-btn" id="btnOrdenGasCat" style="display:inline-block;margin-bottom:10px;cursor:pointer;color:#E0555A;">↕ Ordenar: ${etiquetasOrden[orden]}</div>
     <div class="detail-block-fixed">
     ${itemsPagina.map(g=>`<div class="pend-row"><span>${g.Concepto} <span class="subtle">· ${g.Fecha}</span></span><b style="color:#E0555A;">${fmtMoney(g.Monto)}</b></div>`).join('') || '<div class="empty">Sin movimientos</div>'}
     </div>
@@ -1695,6 +1708,8 @@ function renderConfiguracionHTML(){
     <div class="field" style="margin-bottom:12px;"><label>Doctor(a) a cargo</label><input value="${DATA.clienteNombreDoctor || 'Sin definir — contacta a soporte'}" readonly></div>
     <div class="field" style="margin-bottom:12px;"><label>Moneda</label>
       <select id="cfgMoneda">${Object.entries(CURRENCIES).map(([code,c])=>`<option value="${code}" ${CONFIG.CURRENCY===code?'selected':''}>${code} — ${c.nombre}</option>`).join('')}</select></div>
+    <div class="field" style="margin-bottom:12px;"><label>País (prefijo y formato de teléfono)</label>
+      <select id="cfgPaisTelefono">${Object.entries(PHONE_COUNTRIES).map(([code,c])=>`<option value="${code}" ${CONFIG.PHONE_COUNTRY===code?'selected':''}>${c.nombre} (+${c.prefijo}, ${c.longitud} dígitos)</option>`).join('')}</select></div>
     <div class="field" style="margin-bottom:12px;"><label>Días sin visita para aparecer en "Pacientes que no han vuelto"</label><input id="cfgDiasSinVisita" type="number" min="1" value="${CONFIG.DIAS_SIN_VISITA}"></div>
     <div class="field" style="margin-bottom:16px;"><label>ID de cliente</label><input value="${CONFIG.CLIENT_ID}" readonly></div>
     <div class="btn primary" id="btnGuardarConfig">Guardar cambios</div>
@@ -1749,7 +1764,7 @@ function afterRenderHooks(){
       openModal(`
         <h3>Nuevo paciente</h3>
         <div class="field" style="margin-bottom:12px;"><label>Nombre completo</label><input id="mNombre"></div>
-        <div class="field" style="margin-bottom:12px;"><label>Teléfono</label><input id="mTelefono"></div>
+        <div class="field" style="margin-bottom:12px;"><label>Teléfono <span class="subtle">(sin prefijo, solo ${telefonoInfo().longitud} dígitos)</span></label><input id="mTelefono" type="tel" maxlength="${telefonoInfo().longitud}"></div>
         <div class="field" style="margin-bottom:6px;"><label>Última visita (opcional)</label><input id="mUltimaVisitaAnterior" type="date" max="${todayStr()}"></div>
         <p class="subtle" style="margin-bottom:18px;">Solo si el paciente ya tenía historial antes de usar el sistema. En cuanto le agendes su primera cita aquí, el sistema calcula su última visita solo.</p>
         <div class="field" style="margin:0 0 20px;padding:2px 0;"><label style="display:flex;align-items:center;gap:10px;cursor:pointer;"><input type="checkbox" id="mHistorialPrevio"> Ya era mi paciente antes de usar el sistema</label>
@@ -1769,6 +1784,12 @@ function afterRenderHooks(){
         const ultimaVisitaAnterior = document.getElementById('mUltimaVisitaAnterior').value || '';
         const historialPrevio = document.getElementById('mHistorialPrevio').checked;
         if(!nombre) return showToast('Completa: Nombre completo');
+        // #71 — telefono ahora obligatorio: exactamente N digitos (N segun el
+        // pais configurado), sin prefijo — evita capturas basura ahora que
+        // todavia no hay forma de editar el registro despues de creado.
+        const infoTel = telefonoInfo();
+        if(!tel) return showToast('Completa: Teléfono');
+        if(!/^\d+$/.test(tel) || tel.length!==infoTel.longitud) return showToast(`El teléfono debe tener exactamente ${infoTel.longitud} dígitos (sin prefijo)`);
         let id = 'P' + String(DATA.pacientes.length+1).padStart(3,'0');
         if(CONFIG.API_URL){
           await apiCall('add_paciente', { nombre, telefono:tel, tratamientos: selectedTrats.join(', '), ultimaVisitaAnterior, historialPrevio }, ['pacientes']);
@@ -1941,8 +1962,17 @@ function afterRenderHooks(){
           const fecha = (cols[iFecha]||'').trim();
           const hora = (cols[iHora]||'').trim();
           const pac = DATA.pacientes.find(p=> normalize(p.Nombre)===normalize(nombre) && p.Estado!=='Inactivo');
+          // #72 — un tratamiento requiere datos relacionados (precio, categoria,
+          // duracion) que solo existen si esta dado de alta en el sistema. Sin
+          // esta validacion, una fila con un tratamiento inexistente pasaba la
+          // vista previa como valida, se agregaba a DATA.citas en memoria (por
+          // eso aparecia en la tarjeta), pero el backend no podia guardarla en
+          // el Sheet ni en Calendar — se perdia en silencio. Mismo patron que
+          // ya usa la validacion de paciente.
+          const tratInexistente = trats.find(t=> !DATA.tratamientos.some(dt=> normalize(dt.Nombre)===normalize(t)));
           let error = '';
           if(!pac) error = 'Paciente no encontrado o inactivo';
+          else if(tratInexistente) error = `Tratamiento "${tratInexistente}" no registrado`;
           else if(!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) error = 'Fecha invalida (usar AAAA-MM-DD)';
           else if(!/^\d{2}:\d{2}$/.test(hora)) error = 'Hora invalida (usar HH:MM)';
           return { nombre, trats, fecha, hora, pac, error };
@@ -1977,9 +2007,11 @@ function afterRenderHooks(){
   if(ACTIVE_TAB === 'configuracion'){
     document.getElementById('btnGuardarConfig').addEventListener('click', async ()=>{
       CONFIG.CURRENCY = document.getElementById('cfgMoneda').value;
+      CONFIG.PHONE_COUNTRY = document.getElementById('cfgPaisTelefono').value;
       CONFIG.DIAS_SIN_VISITA = Number(document.getElementById('cfgDiasSinVisita').value) || 60;
       if(CONFIG.API_URL){
         await apiCall('set_config', { clave:'Moneda', valor: CONFIG.CURRENCY });
+        await apiCall('set_config', { clave:'PaisTelefono', valor: CONFIG.PHONE_COUNTRY });
         await apiCall('set_config', { clave:'DiasSinVisita', valor: CONFIG.DIAS_SIN_VISITA }, ['config']);
       }
       showToast('Configuración guardada');

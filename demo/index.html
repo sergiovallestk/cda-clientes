@@ -1021,11 +1021,15 @@ function mostrarDetallePagosTratamiento(tratamiento, cat, y, m, mesLabelFull, pa
   pagina = pagina || 1;
   orden = orden || 'fecha_desc';
   let pagos = DATA.pagos.filter(p=>{ const f=ymd(p.Fecha); return f.y===y && f.m===m && p.Tratamiento===tratamiento && Number(p.Monto_Pagado)>0; });
+  // #67c — cada orden es espejo exacto de su opuesto: mismo criterio de
+  // desempate, solo invertido, para que "antiguo" sea el espejo perfecto
+  // de "reciente" (y "menor" de "mayor"), sin depender del orden en que
+  // ya venian los datos antes de ordenar.
   const comparadores = {
-    fecha_desc: (a,b)=> b.Fecha.localeCompare(a.Fecha),
-    fecha_asc: (a,b)=> a.Fecha.localeCompare(b.Fecha),
-    monto_desc: (a,b)=> Number(b.Monto_Pagado)-Number(a.Monto_Pagado),
-    monto_asc: (a,b)=> Number(a.Monto_Pagado)-Number(b.Monto_Pagado),
+    fecha_desc: (a,b)=> b.Fecha.localeCompare(a.Fecha) || Number(b.Monto_Pagado)-Number(a.Monto_Pagado) || String(b.ID).localeCompare(String(a.ID)),
+    fecha_asc: (a,b)=> a.Fecha.localeCompare(b.Fecha) || Number(a.Monto_Pagado)-Number(b.Monto_Pagado) || String(a.ID).localeCompare(String(b.ID)),
+    monto_desc: (a,b)=> Number(b.Monto_Pagado)-Number(a.Monto_Pagado) || b.Fecha.localeCompare(a.Fecha) || String(b.ID).localeCompare(String(a.ID)),
+    monto_asc: (a,b)=> Number(a.Monto_Pagado)-Number(b.Monto_Pagado) || a.Fecha.localeCompare(b.Fecha) || String(a.ID).localeCompare(String(b.ID)),
   };
   const etiquetasOrden = { fecha_desc:'Más reciente primero', fecha_asc:'Más antiguo primero', monto_desc:'Monto mayor primero', monto_asc:'Monto menor primero' };
   const siguienteOrden = { fecha_desc:'fecha_asc', fecha_asc:'monto_desc', monto_desc:'monto_asc', monto_asc:'fecha_desc' };
@@ -1411,7 +1415,16 @@ function fillPagosTable(filter){
   });
   filtrados = ordenar('pagos', filtrados, (p,key)=> key==='Monto_Total'||key==='Monto_Pagado'||key==='Saldo' ? Number(p[key]) : p[key]);
   const { pageItems: rows, total, totalPaginas } = paginar('pagos', filtrados);
-  tbody.innerHTML = rows.map(p=>`<tr><td>${p.Paciente}</td><td>${p.Tratamiento}</td><td>${p.Fecha}</td><td>${fmtMoney(p.Monto_Total)}</td><td>${fmtMoney(p.Monto_Pagado)}</td><td>${Number(p.Saldo)>0?`<span class="badge pend">${fmtMoney(p.Saldo)}</span>`:`<span class="badge ok">$0</span>`}</td><td><div class="btn sm" data-abonar="${p.ID}" style="${Number(p.Saldo)>0?'':'visibility:hidden;'}">Abonar</div></td></tr>`).join('') || '<tr><td colspan="7" class="empty">Sin resultados</td></tr>';
+  // #66 — Pagos es la unica de las 4 tablas con una columna (Abonar) que
+  // puede quedar vacia en toda una pagina, y eso le sigue moviendo el
+  // alto real de vez en cuando pese a la reserva de espacio. En vez de
+  // seguir afinando un calculo de pixeles, se rellena la ultima pagina con
+  // renglones invisibles hasta completar el mismo numero de filas que una
+  // pagina llena — asi la tabla siempre mide exactamente lo mismo, sin
+  // depender de ningun calculo aproximado.
+  const faltantes = (rows.length>0 && rows.length<PAGINATION.pagos.size) ? PAGINATION.pagos.size-rows.length : 0;
+  const relleno = faltantes>0 ? Array.from({length:faltantes}).map(()=>`<tr style="visibility:hidden;"><td colspan="7">&nbsp;</td></tr>`).join('') : '';
+  tbody.innerHTML = (rows.map(p=>`<tr><td>${p.Paciente}</td><td>${p.Tratamiento}</td><td>${p.Fecha}</td><td>${fmtMoney(p.Monto_Total)}</td><td>${fmtMoney(p.Monto_Pagado)}</td><td>${Number(p.Saldo)>0?`<span class="badge pend">${fmtMoney(p.Saldo)}</span>`:`<span class="badge ok">$0</span>`}</td><td><div class="btn sm" data-abonar="${p.ID}" style="${Number(p.Saldo)>0?'':'visibility:hidden;'}">Abonar</div></td></tr>`).join('') || '<tr><td colspan="7" class="empty">Sin resultados</td></tr>') + relleno;
   tbody.querySelectorAll('[data-abonar]').forEach(btn=>{ btn.addEventListener('click', ()=> openAbonoModal(btn.dataset.abonar, ()=>{ fillPagosTable(document.getElementById('pagoSearch').value); })); });
   const pagBox = document.getElementById('pagPaginador');
   if(pagBox){ pagBox.innerHTML = renderPaginador('pagos', total, totalPaginas); attachPaginadorEvents('pagos', ()=>fillPagosTable(filter)); }

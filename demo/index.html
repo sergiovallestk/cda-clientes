@@ -1429,24 +1429,15 @@ function fillPagosTable(filter){
   });
   filtrados = ordenar('pagos', filtrados, (p,key)=> key==='Monto_Total'||key==='Monto_Pagado'||key==='Saldo' ? Number(p[key]) : p[key]);
   const { pageItems: rows, total, totalPaginas } = paginar('pagos', filtrados);
-  // #66 — Pagos es la unica de las 4 tablas con una columna (Abonar) que
-  // puede quedar vacia en toda una pagina, y eso le sigue moviendo el
-  // alto real de vez en cuando pese a la reserva de espacio. En vez de
-  // seguir afinando un calculo de pixeles, se rellena la ultima pagina con
-  // renglones invisibles hasta completar el mismo numero de filas que una
-  // pagina llena — asi la tabla siempre mide exactamente lo mismo, sin
-  // depender de ningun calculo aproximado.
-  // #66 (corregido de raiz) — el relleno solo tiene sentido cuando SI
-  // existe una pagina llena previa con la que emparejar (totalPaginas>1).
-  // La version anterior comparaba contra el tamaño de pagina elegido
-  // (15/30/50/100) sin fijarse si en verdad habia mas de una pagina —
-  // asi que una busqueda o filtro con menos resultados que el tamaño de
-  // pagina (ej. 8 resultados con tamaño 15) rellenaba con filas invisibles
-  // de mas (7 en ese ejemplo) sin que existiera ninguna pagina llena antes,
-  // inflando la tabla a su alto maximo con puro espacio fantasma.
-  const faltantes = (totalPaginas>1 && rows.length>0 && rows.length<PAGINATION.pagos.size) ? PAGINATION.pagos.size-rows.length : 0;
-  const relleno = faltantes>0 ? Array.from({length:faltantes}).map(()=>`<tr style="visibility:hidden;"><td colspan="7">&nbsp;</td></tr>`).join('') : '';
-  tbody.innerHTML = (rows.map(p=>`<tr><td>${p.Paciente}</td><td>${p.Tratamiento}</td><td>${p.Fecha}</td><td>${fmtMoney(p.Monto_Total)}</td><td>${fmtMoney(p.Monto_Pagado)}</td><td>${Number(p.Saldo)>0?`<span class="badge pend">${fmtMoney(p.Saldo)}</span>`:`<span class="badge ok">$0</span>`}</td><td><div class="btn sm" data-abonar="${p.ID}" style="${Number(p.Saldo)>0?'':'visibility:hidden;'}">Abonar</div></td></tr>`).join('') || '<tr><td colspan="7" class="empty">Sin resultados</td></tr>') + relleno;
+  // #66 (corregido de raiz, v21) — el parche de renglones invisibles de
+  // v19/v20 se elimina por completo: causaba que los bordes de esos
+  // renglones "hidden" se siguieran pintando (por el border-collapse:
+  // collapse global de las tablas), dejando lineas fantasma vacias en la
+  // ultima pagina. Pagos ya tenia el mismo mecanismo de min-height +
+  // paginador con margin-top:auto que usan sin ningun problema las otras
+  // 3 tablas (Pacientes, Tratamientos, Gastos) — bastaba con dejarlo
+  // trabajar solo, sin el relleno redundante.
+  tbody.innerHTML = rows.map(p=>`<tr><td>${p.Paciente}</td><td>${p.Tratamiento}</td><td>${p.Fecha}</td><td>${fmtMoney(p.Monto_Total)}</td><td>${fmtMoney(p.Monto_Pagado)}</td><td>${Number(p.Saldo)>0?`<span class="badge pend">${fmtMoney(p.Saldo)}</span>`:`<span class="badge ok">$0</span>`}</td><td><div class="btn sm" data-abonar="${p.ID}" style="${Number(p.Saldo)>0?'':'visibility:hidden;'}">Abonar</div></td></tr>`).join('') || '<tr><td colspan="7" class="empty">Sin resultados</td></tr>';
   tbody.querySelectorAll('[data-abonar]').forEach(btn=>{ btn.addEventListener('click', ()=> openAbonoModal(btn.dataset.abonar, ()=>{ fillPagosTable(document.getElementById('pagoSearch').value); })); });
   const pagBox = document.getElementById('pagPaginador');
   if(pagBox){ pagBox.innerHTML = renderPaginador('pagos', total, totalPaginas); attachPaginadorEvents('pagos', ()=>fillPagosTable(filter)); }

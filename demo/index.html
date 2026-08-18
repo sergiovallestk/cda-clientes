@@ -953,7 +953,10 @@ function mostrarDetalleIngresosCategoria(cat, y, m, pagina){
   const otrasCats = todasCats.slice(3);
   if(!cat) cat = top3Mes.length ? top3Mes[0].cat : null;
   const mesLabelFull = nombreMesCompleto(y, m);
-  const items = cat ? todasDelMes.filter(p=>(catDeTratamiento[p.Tratamiento]||'Otros')===cat) : [];
+  // #67b — los renglones con $0 pagado son cuentas pendientes, no ingreso
+  // todavia — no cuentan como "pago" en esta vista (ni aqui ni en el
+  // desglose por pago individual que abre cada tratamiento).
+  const items = cat ? todasDelMes.filter(p=>(catDeTratamiento[p.Tratamiento]||'Otros')===cat && Number(p.Monto_Pagado)>0) : [];
   const porTratamiento = {};
   items.forEach(p=>{ if(!porTratamiento[p.Tratamiento]) porTratamiento[p.Tratamiento] = { cantidad:0, total:0 }; porTratamiento[p.Tratamiento].cantidad++; porTratamiento[p.Tratamiento].total += Number(p.Monto_Pagado); });
   const filas = Object.entries(porTratamiento).sort((a,b)=>b[1].total-a[1].total);
@@ -1004,20 +1007,38 @@ function mostrarDetalleIngresosCategoria(cat, y, m, pagina){
     document.getElementById('detNextIng').addEventListener('click', ()=> mostrarDetalleIngresosCategoria(cat, y, m, pagina+1));
   }
 }
-/* #65 — desglose de cada pago individual de UN tratamiento, dentro de una
-   categoria y mes especificos: paciente, fecha, monto. Un solo boton para
-   regresar al detalle de tratamientos del que vino (mismo patron que la
-   cadena de Pendientes por cobrar), no cierra todo de un tiron. */
-function mostrarDetallePagosTratamiento(tratamiento, cat, y, m, mesLabelFull, pagina){
+/* #65/#67 — desglose de cada pago individual de UN tratamiento, dentro de
+   una categoria y mes especificos: paciente, fecha, monto. Un solo boton
+   para regresar al detalle de tratamientos del que vino (mismo patron que
+   la cadena de Pendientes por cobrar), no cierra todo de un tiron.
+   #67b — solo se listan pagos con algo realmente abonado (Monto_Pagado >
+   0): un renglon con $0 pagado es una cuenta pendiente, no un ingreso
+   todavia, y esta vista es de ingresos. #67c — se puede alternar el orden
+   entre fecha y monto con el boton de arriba (lista simple, no es una
+   tabla con columnas — por eso no lleva encabezados clickeables como las
+   demas pantallas). */
+function mostrarDetallePagosTratamiento(tratamiento, cat, y, m, mesLabelFull, pagina, orden){
   pagina = pagina || 1;
-  const pagos = DATA.pagos.filter(p=>{ const f=ymd(p.Fecha); return f.y===y && f.m===m && p.Tratamiento===tratamiento; }).sort((a,b)=>b.Fecha.localeCompare(a.Fecha));
+  orden = orden || 'fecha_desc';
+  let pagos = DATA.pagos.filter(p=>{ const f=ymd(p.Fecha); return f.y===y && f.m===m && p.Tratamiento===tratamiento && Number(p.Monto_Pagado)>0; });
+  const comparadores = {
+    fecha_desc: (a,b)=> b.Fecha.localeCompare(a.Fecha),
+    fecha_asc: (a,b)=> a.Fecha.localeCompare(b.Fecha),
+    monto_desc: (a,b)=> Number(b.Monto_Pagado)-Number(a.Monto_Pagado),
+    monto_asc: (a,b)=> Number(a.Monto_Pagado)-Number(b.Monto_Pagado),
+  };
+  const etiquetasOrden = { fecha_desc:'Más reciente primero', fecha_asc:'Más antiguo primero', monto_desc:'Monto mayor primero', monto_asc:'Monto menor primero' };
+  const siguienteOrden = { fecha_desc:'fecha_asc', fecha_asc:'monto_desc', monto_desc:'monto_asc', monto_asc:'fecha_desc' };
+  pagos = pagos.sort(comparadores[orden]);
   const total = pagos.reduce((s,p)=>s+Number(p.Monto_Pagado),0);
   const porPagina = 5;
   const totalPaginas = Math.max(1, Math.ceil(pagos.length/porPagina));
   if(pagina>totalPaginas) pagina = totalPaginas;
   const pagosPagina = pagos.slice((pagina-1)*porPagina, pagina*porPagina);
   openModal(`<h3>${tratamiento}</h3>
-    <p class="subtle" style="margin-bottom:12px;">${cat} · ${mesLabelFull} · ${pagos.length} pago${pagos.length===1?'':'s'} · Total: ${fmtMoney(total)}</p>
+    <p class="subtle" style="margin-bottom:2px;"><b style="color:var(--text);">Categoría:</b> ${cat} &nbsp;·&nbsp; <b style="color:var(--text);">Mes:</b> ${mesLabelFull}</p>
+    <p class="subtle" style="margin-bottom:12px;"><b style="color:var(--text);">Pagos registrados:</b> ${pagos.length} &nbsp;·&nbsp; <b style="color:var(--text);">Total cobrado:</b> ${fmtMoney(total)}</p>
+    <div class="link-btn" id="btnOrdenPagoTrat" style="display:inline-block;margin-bottom:10px;cursor:pointer;">↕ Ordenar: ${etiquetasOrden[orden]}</div>
     <div class="detail-block-fixed">
     ${pagosPagina.map(p=>`<div class="pend-row"><span>${p.Paciente} <span class="subtle">· ${p.Fecha}</span></span><b style="color:var(--teal);">${fmtMoney(p.Monto_Pagado)}</b></div>`).join('') || '<div class="empty">Sin movimientos</div>'}
     </div>
@@ -1030,10 +1051,11 @@ function mostrarDetallePagosTratamiento(tratamiento, cat, y, m, mesLabelFull, pa
       </div>
     </div>` : ''}
     <div class="modal-actions" style="margin-top:14px;"><div class="btn block" id="btnVolverPagoTrat">Regresar</div></div>`);
+  document.getElementById('btnOrdenPagoTrat').addEventListener('click', ()=> mostrarDetallePagosTratamiento(tratamiento, cat, y, m, mesLabelFull, 1, siguienteOrden[orden]));
   document.getElementById('btnVolverPagoTrat').addEventListener('click', volverModal);
   if(pagos.length>porPagina){
-    document.getElementById('detPrevPagoTrat').addEventListener('click', ()=>{ pagina--; mostrarDetallePagosTratamiento(tratamiento, cat, y, m, mesLabelFull, pagina); });
-    document.getElementById('detNextPagoTrat').addEventListener('click', ()=>{ pagina++; mostrarDetallePagosTratamiento(tratamiento, cat, y, m, mesLabelFull, pagina); });
+    document.getElementById('detPrevPagoTrat').addEventListener('click', ()=>{ pagina--; mostrarDetallePagosTratamiento(tratamiento, cat, y, m, mesLabelFull, pagina, orden); });
+    document.getElementById('detNextPagoTrat').addEventListener('click', ()=>{ pagina++; mostrarDetallePagosTratamiento(tratamiento, cat, y, m, mesLabelFull, pagina, orden); });
   }
 }
 function mostrarDetalleGastosCategoria(cat, y, m, pagina){
@@ -1389,7 +1411,7 @@ function fillPagosTable(filter){
   });
   filtrados = ordenar('pagos', filtrados, (p,key)=> key==='Monto_Total'||key==='Monto_Pagado'||key==='Saldo' ? Number(p[key]) : p[key]);
   const { pageItems: rows, total, totalPaginas } = paginar('pagos', filtrados);
-  tbody.innerHTML = rows.map(p=>`<tr><td>${p.Paciente}</td><td>${p.Tratamiento}</td><td>${p.Fecha}</td><td>${fmtMoney(p.Monto_Total)}</td><td>${fmtMoney(p.Monto_Pagado)}</td><td>${Number(p.Saldo)>0?`<span class="badge pend">${fmtMoney(p.Saldo)}</span>`:`<span class="badge ok">$0</span>`}</td><td>${Number(p.Saldo)>0?`<div class="btn sm" data-abonar="${p.ID}">Abonar</div>`:''}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">Sin resultados</td></tr>';
+  tbody.innerHTML = rows.map(p=>`<tr><td>${p.Paciente}</td><td>${p.Tratamiento}</td><td>${p.Fecha}</td><td>${fmtMoney(p.Monto_Total)}</td><td>${fmtMoney(p.Monto_Pagado)}</td><td>${Number(p.Saldo)>0?`<span class="badge pend">${fmtMoney(p.Saldo)}</span>`:`<span class="badge ok">$0</span>`}</td><td><div class="btn sm" data-abonar="${p.ID}" style="${Number(p.Saldo)>0?'':'visibility:hidden;'}">Abonar</div></td></tr>`).join('') || '<tr><td colspan="7" class="empty">Sin resultados</td></tr>';
   tbody.querySelectorAll('[data-abonar]').forEach(btn=>{ btn.addEventListener('click', ()=> openAbonoModal(btn.dataset.abonar, ()=>{ fillPagosTable(document.getElementById('pagoSearch').value); })); });
   const pagBox = document.getElementById('pagPaginador');
   if(pagBox){ pagBox.innerHTML = renderPaginador('pagos', total, totalPaginas); attachPaginadorEvents('pagos', ()=>fillPagosTable(filter)); }

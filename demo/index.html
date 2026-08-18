@@ -1062,15 +1062,27 @@ function mostrarDetallePagosTratamiento(tratamiento, cat, y, m, mesLabelFull, pa
     document.getElementById('detNextPagoTrat').addEventListener('click', ()=>{ pagina++; mostrarDetallePagosTratamiento(tratamiento, cat, y, m, mesLabelFull, pagina, orden); });
   }
 }
-function mostrarDetalleGastosCategoria(cat, y, m, pagina){
+/* #68 — mismo mecanismo de orden de 4 vias que #67c (fecha/monto,
+   asc/desc, con desempate espejado), aplicado aqui al detalle de gastos
+   por categoria. */
+function mostrarDetalleGastosCategoria(cat, y, m, pagina, orden){
   pagina = pagina || 1;
+  orden = orden || 'fecha_desc';
   const todasDelMes = DATA.gastos.filter(g=>{ const f=ymd(g.Fecha); return f.y===y && f.m===m; });
   const todasCats = calcularTodasCategoriasDelMes(todasDelMes, 'Monto', g=>g.Categoria);
   const top3Mes = todasCats.slice(0,3);
   const otrasCats = todasCats.slice(3);
   if(!cat) cat = top3Mes.length ? top3Mes[0].cat : null;
   const mesLabelFull = nombreMesCompleto(y, m);
-  const items = cat ? todasDelMes.filter(g=>g.Categoria===cat).sort((a,b)=>b.Fecha.localeCompare(a.Fecha)) : [];
+  const comparadores = {
+    fecha_desc: (a,b)=> b.Fecha.localeCompare(a.Fecha) || Number(b.Monto)-Number(a.Monto) || String(b.ID).localeCompare(String(a.ID)),
+    fecha_asc: (a,b)=> a.Fecha.localeCompare(b.Fecha) || Number(a.Monto)-Number(b.Monto) || String(a.ID).localeCompare(String(b.ID)),
+    monto_desc: (a,b)=> Number(b.Monto)-Number(a.Monto) || b.Fecha.localeCompare(a.Fecha) || String(b.ID).localeCompare(String(a.ID)),
+    monto_asc: (a,b)=> Number(a.Monto)-Number(b.Monto) || a.Fecha.localeCompare(b.Fecha) || String(a.ID).localeCompare(String(b.ID)),
+  };
+  const etiquetasOrden = { fecha_desc:'Más reciente primero', fecha_asc:'Más antiguo primero', monto_desc:'Monto mayor primero', monto_asc:'Monto menor primero' };
+  const siguienteOrden = { fecha_desc:'fecha_asc', fecha_asc:'monto_desc', monto_desc:'monto_asc', monto_asc:'fecha_desc' };
+  const items = cat ? todasDelMes.filter(g=>g.Categoria===cat).sort(comparadores[orden]) : [];
   const total = items.reduce((s,g)=>s+Number(g.Monto),0);
   const porPagina = 5;
   const totalPaginas = Math.max(1, Math.ceil(items.length/porPagina));
@@ -1087,6 +1099,7 @@ function mostrarDetalleGastosCategoria(cat, y, m, pagina){
     </div>` : ''}
     <div class="divider"></div>
     <p class="subtle" style="margin-bottom:12px;">${items.length} gasto${items.length===1?'':'s'} de <b>${cat||'—'}</b> · Total: ${fmtMoney(total)}</p>
+    <div class="link-btn" id="btnOrdenGasCat" style="display:inline-block;margin-bottom:10px;cursor:pointer;">↕ Ordenar: ${etiquetasOrden[orden]}</div>
     <div class="detail-block-fixed">
     ${itemsPagina.map(g=>`<div class="pend-row"><span>${g.Concepto} <span class="subtle">· ${g.Fecha}</span></span><b style="color:#E0555A;">${fmtMoney(g.Monto)}</b></div>`).join('') || '<div class="empty">Sin movimientos</div>'}
     </div>
@@ -1102,9 +1115,10 @@ function mostrarDetalleGastosCategoria(cat, y, m, pagina){
   document.querySelectorAll('.chip-click').forEach(chip=>{
     chip.addEventListener('click', ()=> mostrarDetalleGastosCategoria(chip.dataset.cat, y, m));
   });
+  document.getElementById('btnOrdenGasCat').addEventListener('click', ()=> mostrarDetalleGastosCategoria(cat, y, m, 1, siguienteOrden[orden]));
   if(items.length>porPagina){
-    document.getElementById('detPrevGas').addEventListener('click', ()=> mostrarDetalleGastosCategoria(cat, y, m, pagina-1));
-    document.getElementById('detNextGas').addEventListener('click', ()=> mostrarDetalleGastosCategoria(cat, y, m, pagina+1));
+    document.getElementById('detPrevGas').addEventListener('click', ()=> mostrarDetalleGastosCategoria(cat, y, m, pagina-1, orden));
+    document.getElementById('detNextGas').addEventListener('click', ()=> mostrarDetalleGastosCategoria(cat, y, m, pagina+1, orden));
   }
 }
 /* Tooltip de Chart.js "externo": en vez de dejar que Chart.js lo posicione
@@ -1422,7 +1436,15 @@ function fillPagosTable(filter){
   // renglones invisibles hasta completar el mismo numero de filas que una
   // pagina llena — asi la tabla siempre mide exactamente lo mismo, sin
   // depender de ningun calculo aproximado.
-  const faltantes = (rows.length>0 && rows.length<PAGINATION.pagos.size) ? PAGINATION.pagos.size-rows.length : 0;
+  // #66 (corregido de raiz) — el relleno solo tiene sentido cuando SI
+  // existe una pagina llena previa con la que emparejar (totalPaginas>1).
+  // La version anterior comparaba contra el tamaño de pagina elegido
+  // (15/30/50/100) sin fijarse si en verdad habia mas de una pagina —
+  // asi que una busqueda o filtro con menos resultados que el tamaño de
+  // pagina (ej. 8 resultados con tamaño 15) rellenaba con filas invisibles
+  // de mas (7 en ese ejemplo) sin que existiera ninguna pagina llena antes,
+  // inflando la tabla a su alto maximo con puro espacio fantasma.
+  const faltantes = (totalPaginas>1 && rows.length>0 && rows.length<PAGINATION.pagos.size) ? PAGINATION.pagos.size-rows.length : 0;
   const relleno = faltantes>0 ? Array.from({length:faltantes}).map(()=>`<tr style="visibility:hidden;"><td colspan="7">&nbsp;</td></tr>`).join('') : '';
   tbody.innerHTML = (rows.map(p=>`<tr><td>${p.Paciente}</td><td>${p.Tratamiento}</td><td>${p.Fecha}</td><td>${fmtMoney(p.Monto_Total)}</td><td>${fmtMoney(p.Monto_Pagado)}</td><td>${Number(p.Saldo)>0?`<span class="badge pend">${fmtMoney(p.Saldo)}</span>`:`<span class="badge ok">$0</span>`}</td><td><div class="btn sm" data-abonar="${p.ID}" style="${Number(p.Saldo)>0?'':'visibility:hidden;'}">Abonar</div></td></tr>`).join('') || '<tr><td colspan="7" class="empty">Sin resultados</td></tr>') + relleno;
   tbody.querySelectorAll('[data-abonar]').forEach(btn=>{ btn.addEventListener('click', ()=> openAbonoModal(btn.dataset.abonar, ()=>{ fillPagosTable(document.getElementById('pagoSearch').value); })); });

@@ -885,7 +885,11 @@ function calcularGastosPorCategoriaMeses(){
   const totalPorCat = {};
   DATA.gastos.forEach(g=>{ const f=ymd(g.Fecha); if(!meses.some(mm=>mm.y===f.y && mm.m===f.m)) return; totalPorCat[g.Categoria] = (totalPorCat[g.Categoria]||0) + Number(g.Monto); });
   const topCats = Object.entries(totalPorCat).sort((a,b)=>b[1]-a[1]).slice(0,3).map(e=>e[0]);
-  const paleta = ['#2FD8B0','#1B6E5C','#3A4E60'];
+  // #76 — paleta propia de Gastos (2 tonos de rojo + el mismo neutro que
+  // ya usa Ingresos en su 3er lugar), antes compartia por error la misma
+  // paleta de verdes que Ingresos — la gráfica de Gastos se veía verde
+  // pese a que todo el resto del sistema usa rojo para gastos.
+  const paleta = ['#E0555A','#8C3338','#3A4E60'];
   const datasets = topCats.map((cat,i)=>({
     label: cat,
     data: meses.map(({y,m})=> DATA.gastos.filter(g=>{ const f=ymd(g.Fecha); return f.y===y && f.m===m && g.Categoria===cat; }).reduce((s,g)=>s+Number(g.Monto),0)),
@@ -1409,12 +1413,12 @@ function renderFinanzasHTML(){
   <div class="row2-cat">
     <div class="card">
       <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M8 4v16M16 4v16"/></svg>Ingresos por categoría — últimos 6 meses</div>
-      <p class="subtle" style="margin:-4px 0 10px;">Top 3 categorías con más ingreso acumulado en los últimos 6 meses — toca un mes para ver su propio top 3</p>
+      <p class="subtle" style="margin:-4px 0 10px;">Top 3 categorías con más ingreso acumulado en los últimos 6 meses — las barras solo suman estas 3 categorías; toca un mes para ver su desglose completo</p>
       <div style="position:relative;height:220px;"><canvas id="ingresosCategoria6mChart"></canvas></div>
     </div>
     <div class="card">
       <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M8 4v16M16 4v16"/></svg>Gastos por categoría — últimos 6 meses</div>
-      <p class="subtle" style="margin:-4px 0 10px;">Top 3 categorías con más gasto acumulado en los últimos 6 meses — toca un mes para ver su propio top 3</p>
+      <p class="subtle" style="margin:-4px 0 10px;">Top 3 categorías con más gasto acumulado en los últimos 6 meses — las barras solo suman estas 3 categorías; toca un mes para ver su desglose completo</p>
       <div style="position:relative;height:220px;"><canvas id="gastosCategoria6mChart"></canvas></div>
     </div>
   </div>
@@ -1524,7 +1528,18 @@ function drawFinanzasChart(){
     nuevoChart(igEl,{type:'bar',data:{labels,datasets:[
       {label:'Ingresos', data:ingresos, backgroundColor:'#2FD8B0', borderRadius:4},
       {label:'Gastos', data:gastos, backgroundColor:'#E0555A', borderRadius:4}
-    ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'top',align:'end',labels:{color:'#8CA0B3',boxWidth:12,font:{size:11}}},tooltip:{mode:'index',intersect:false,callbacks:{label:c=>c.dataset.label+': '+fmtMoney(c.raw)}}},interaction:{mode:'index',intersect:false},scales:{x:{grid:{display:false},ticks:{color:'#5B6D7A'}},y:{grid:{color:'#1E2E42'},ticks:{color:'#5B6D7A',callback:v=>'$'+Number(v).toLocaleString('es-MX')}}}}}); }
+    ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'top',align:'end',labels:{color:'#8CA0B3',boxWidth:12,font:{size:11}}},tooltip:{mode:'index',intersect:false,callbacks:{
+      label:c=>c.dataset.label+': '+fmtMoney(c.raw),
+      // #75 — utilidad del mes (ingresos - gastos) como renglon final del
+      // tooltip, calculada al vuelo a partir de los mismos 2 valores que ya
+      // se muestran arriba — asi el doctor no tiene que restarlo a mano ni
+      // llevarlo aparte.
+      footer:items=>{
+        const ing = items.find(i=>i.dataset.label==='Ingresos')?.raw || 0;
+        const gas = items.find(i=>i.dataset.label==='Gastos')?.raw || 0;
+        return 'Utilidad: '+fmtMoney(ing-gas);
+      }
+    }}},interaction:{mode:'index',intersect:false},scales:{x:{grid:{display:false},ticks:{color:'#5B6D7A'}},y:{grid:{color:'#1E2E42'},ticks:{color:'#5B6D7A',callback:v=>'$'+Number(v).toLocaleString('es-MX')}}}}}); }
   const icEl = document.getElementById('ingresosCategoria6mChart');
   if(icEl){ const { labels, datasets, meses, topCats } = calcularIngresosPorCategoriaMeses();
     nuevoChart(icEl,{type:'bar',data:{labels,datasets},options:{responsive:true,maintainAspectRatio:false,

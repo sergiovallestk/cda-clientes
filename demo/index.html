@@ -281,7 +281,7 @@
 Chart.defaults.color = '#8FA1AE';
 Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
 
-const CONFIG = { API_URL: "https://script.google.com/macros/s/AKfycby2vc5fO1g4A08vLKsWTAhMBwO5HvVKqh1KkaigexC8JkGVgdTf-bl6rmMpPhSvNYRO/exec", CLIENT_ID: "DEMO", CURRENCY: "MXN", DIAS_SIN_VISITA: 60, PHONE_COUNTRY: "MX" };
+const CONFIG = { API_URL: "https://script.google.com/macros/s/AKfycby2vc5fO1g4A08vLKsWTAhMBwO5HvVKqh1KkaigexC8JkGVgdTf-bl6rmMpPhSvNYRO/exec", CLIENT_ID: "DEMO", CURRENCY: "MXN", DIAS_SIN_VISITA: 60, PHONE_COUNTRY: "MX", FORMATO_HORA: "24h", FORMATO_FECHA: "iso", SEPARADOR: "es-MX", DECIMALES_PRECIO: false };
 const CURRENCIES = {
   MXN:{symbol:'$',nombre:'Peso mexicano'}, USD:{symbol:'$',nombre:'Dólar estadounidense'},
   COP:{symbol:'$',nombre:'Peso colombiano'}, EUR:{symbol:'€',nombre:'Euro'},
@@ -336,6 +336,11 @@ function hidratarConfigDesdeSheet(){
   if(mapa.Moneda && CURRENCIES[mapa.Moneda]) CONFIG.CURRENCY = mapa.Moneda;
   if(mapa.DiasSinVisita) CONFIG.DIAS_SIN_VISITA = Number(mapa.DiasSinVisita) || 60;
   if(mapa.PaisTelefono && PHONE_COUNTRIES[mapa.PaisTelefono]) CONFIG.PHONE_COUNTRY = mapa.PaisTelefono; // #71
+  // Grupo 1 (#27/#28/#34/#35) — formato regional configurable
+  if(mapa.FormatoHora==='12h' || mapa.FormatoHora==='24h') CONFIG.FORMATO_HORA = mapa.FormatoHora;
+  if(['iso','iso-texto','dmy','dmy-texto'].includes(mapa.FormatoFecha)) CONFIG.FORMATO_FECHA = mapa.FormatoFecha;
+  if(mapa.Separador==='es-MX' || mapa.Separador==='es-ES') CONFIG.SEPARADOR = mapa.Separador;
+  if(mapa.DecimalesPrecio!==undefined) CONFIG.DECIMALES_PRECIO = (mapa.DecimalesPrecio==='true' || mapa.DecimalesPrecio===true);
 }
 
 /* Mapa entre las claves del JSON del backend y los nombres de hoja que
@@ -385,12 +390,58 @@ function anyModalOpen(){
   return document.getElementById('modalOverlay').classList.contains('open') || document.getElementById('pickerOverlay').classList.contains('open');
 }
 
-function fmtMoney(n){ const c = CURRENCIES[CONFIG.CURRENCY]||CURRENCIES.MXN; return c.symbol + Math.round(n).toLocaleString('es-MX') + ' ' + CONFIG.CURRENCY; }
+/* Grupo 1 (#34/#35) — separador de miles/decimales y decimales en
+   precios, ambos configurables. El precio siempre se guarda completo en
+   el Sheet (nunca se pierde el decimal); lo unico que cambia aqui es
+   como se MUESTRA. toLocaleString ya sabe generar ambos formatos
+   (1,234.56 vs 1.234,56) nativamente segun la region — no hay que
+   programar el formato a mano. */
+function fmtMoney(n){
+  const c = CURRENCIES[CONFIG.CURRENCY]||CURRENCIES.MXN;
+  const opciones = CONFIG.DECIMALES_PRECIO ? {minimumFractionDigits:2,maximumFractionDigits:2,useGrouping:true} : {maximumFractionDigits:0,useGrouping:true};
+  return c.symbol + Number(n).toLocaleString(CONFIG.SEPARADOR||'es-MX', opciones) + ' ' + CONFIG.CURRENCY;
+}
 /* #57b/c — la comision de referidos se paga en una moneda propia
    (MXN/USD/EUR segun el cliente), independiente de la Moneda que ese
    mismo cliente tenga configurada para su propio sistema — por eso usa su
    propio formateador, nunca fmtMoney() (que usa CONFIG.CURRENCY). */
-function fmtComision(n){ const moneda = DATA.comisionMoneda||'MXN'; const c = CURRENCIES[moneda]||CURRENCIES.MXN; return c.symbol + Math.round(n).toLocaleString('es-MX') + ' ' + moneda; }
+function fmtComision(n){ const moneda = DATA.comisionMoneda||'MXN'; const c = CURRENCIES[moneda]||CURRENCIES.MXN; return c.symbol + Math.round(n).toLocaleString(CONFIG.SEPARADOR||'es-MX') + ' ' + moneda; }
+/* Grupo 1 (#27/#28) — formato de hora y fecha configurables, funciones
+   centrales usadas en TODOS los lugares donde se muestra una fecha/hora
+   al usuario. Las fechas siguen viajando y guardandose siempre en ISO
+   (AAAA-MM-DD) por dentro del sistema — estas funciones son solo la capa
+   de presentacion final. */
+const MESES_CORTOS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+function formatearFecha(fechaISO){
+  if(!fechaISO || fechaISO==='—') return fechaISO||'';
+  const [y,m,d] = fechaISO.split('-');
+  const mesTxt = MESES_CORTOS[Number(m)-1];
+  switch(CONFIG.FORMATO_FECHA){
+    case 'iso-texto': return `${y}-${mesTxt}-${d}`;
+    case 'dmy': return `${d}-${m}-${y}`;
+    case 'dmy-texto': return `${d}-${mesTxt}-${y}`;
+    default: return `${y}-${m}-${d}`;
+  }
+}
+/* Version sin año, para tarjetas compactas (ej. "próximas citas") que ya
+   dan por hecho que es el año en curso. */
+function formatearFechaCorta(fechaISO){
+  if(!fechaISO) return '';
+  const [y,m,d] = fechaISO.split('-');
+  const mesTxt = MESES_CORTOS[Number(m)-1];
+  const usaDMY = CONFIG.FORMATO_FECHA==='dmy' || CONFIG.FORMATO_FECHA==='dmy-texto';
+  const usaTexto = CONFIG.FORMATO_FECHA==='iso-texto' || CONFIG.FORMATO_FECHA==='dmy-texto';
+  const mesOut = usaTexto ? mesTxt : m;
+  return usaDMY ? `${d}-${mesOut}` : `${mesOut}-${d}`;
+}
+function formatearHora(horaHHMM){
+  if(!horaHHMM) return '';
+  if(CONFIG.FORMATO_HORA==='24h') return horaHHMM;
+  let [h,mi] = horaHHMM.split(':').map(Number);
+  const ampm = h>=12 ? 'pm' : 'am';
+  h = h%12; if(h===0) h=12;
+  return `${h}:${String(mi).padStart(2,'0')} ${ampm}`;
+}
 function tratArr(str){ return (str||'').split(',').map(s=>s.trim()).filter(Boolean); }
 function duracionCitaMin(tratamientosStr){
   const nombres = tratArr(tratamientosStr);
@@ -740,9 +791,9 @@ function renderDashboardHTML(){
       <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>Citas de hoy</div><span class="link-btn" data-goto="agendar">Ver agenda</span></div>
       <div class="appt-list" style="flex:1;">
         ${proximasHoy.length
-          ? proximasHoy.map(c=>`<div class="appt"><div class="appt-time">${c.Hora}</div><div class="appt-info"><b>${c.Paciente}</b><span>${tratArr(c.Tratamientos||c.Tratamiento).join(' + ')}</span></div></div>`).join('')
+          ? proximasHoy.map(c=>`<div class="appt"><div class="appt-time">${formatearHora(c.Hora)}</div><div class="appt-info"><b>${c.Paciente}</b><span>${tratArr(c.Tratamientos||c.Tratamiento).join(' + ')}</span></div></div>`).join('')
           : (proximasCitas.length
-            ? `<p class="subtle" style="margin-bottom:8px;">No hay más citas por hoy. Próximas citas:</p>` + proximasCitas.map(c=>`<div class="appt"><div class="appt-time">${c.Fecha.slice(5)}<br>${c.Hora}</div><div class="appt-info"><b>${c.Paciente}</b><span>${tratArr(c.Tratamientos||c.Tratamiento).join(' + ')}</span></div></div>`).join('')
+            ? `<p class="subtle" style="margin-bottom:8px;">No hay más citas por hoy. Próximas citas:</p>` + proximasCitas.map(c=>`<div class="appt"><div class="appt-time">${formatearFechaCorta(c.Fecha)}<br>${formatearHora(c.Hora)}</div><div class="appt-info"><b>${c.Paciente}</b><span>${tratArr(c.Tratamientos||c.Tratamiento).join(' + ')}</span></div></div>`).join('')
             : '<div class="empty">No hay más citas por hoy</div>')}
       </div>
       <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
@@ -1063,7 +1114,7 @@ function mostrarDetallePagosTratamiento(tratamiento, cat, y, m, mesLabelFull, pa
     <p class="subtle" style="margin-bottom:12px;"><b style="color:var(--text);">Pagos registrados:</b> ${pagos.length} &nbsp;·&nbsp; <b style="color:var(--text);">Total cobrado:</b> ${fmtMoney(total)}</p>
     <div class="link-btn" id="btnOrdenPagoTrat" style="display:inline-block;margin-bottom:10px;cursor:pointer;">↕ Ordenar: ${etiquetasOrden[orden]}</div>
     <div class="detail-block-fixed">
-    ${pagosPagina.map(p=>`<div class="pend-row"><span>${p.Paciente} <span class="subtle">· ${p.Fecha}</span></span><b style="color:var(--teal);">${fmtMoney(p.Monto_Pagado)}</b></div>`).join('') || '<div class="empty">Sin movimientos</div>'}
+    ${pagosPagina.map(p=>`<div class="pend-row"><span>${p.Paciente} <span class="subtle">· ${formatearFecha(p.Fecha)}</span></span><b style="color:var(--teal);">${fmtMoney(p.Monto_Pagado)}</b></div>`).join('') || '<div class="empty">Sin movimientos</div>'}
     </div>
     ${pagos.length>porPagina ? `<div class="paginador" style="padding-top:8px;">
       <span class="subtle">${pagos.length} registros</span>
@@ -1120,7 +1171,7 @@ function mostrarDetalleGastosCategoria(cat, y, m, pagina, orden){
     <p class="subtle" style="margin-bottom:12px;">${items.length} gasto${items.length===1?'':'s'} de <b>${cat||'—'}</b> · Total: ${fmtMoney(total)}</p>
     <div class="link-btn" id="btnOrdenGasCat" style="display:inline-block;margin-bottom:10px;cursor:pointer;color:#E0555A;">↕ Ordenar: ${etiquetasOrden[orden]}</div>
     <div class="detail-block-fixed">
-    ${itemsPagina.map(g=>`<div class="pend-row"><span>${g.Concepto} <span class="subtle">· ${g.Fecha}</span></span><b style="color:#E0555A;">${fmtMoney(g.Monto)}</b></div>`).join('') || '<div class="empty">Sin movimientos</div>'}
+    ${itemsPagina.map(g=>`<div class="pend-row"><span>${g.Concepto} <span class="subtle">· ${formatearFecha(g.Fecha)}</span></span><b style="color:#E0555A;">${fmtMoney(g.Monto)}</b></div>`).join('') || '<div class="empty">Sin movimientos</div>'}
     </div>
     ${items.length>porPagina ? `<div class="paginador" style="padding-top:8px;">
       <span class="subtle">${items.length} registros</span>
@@ -1350,7 +1401,7 @@ function fillPacientesTable(filter){
     const trats = tratArr(p.Tratamientos);
     const tratLabel = trats.length===0 ? '—' : (trats.length===1 ? trats[0] : `${trats[0]} <span class="subtle">+${trats.length-1}</span>`);
     const estadoBadge = p.Estado==='Inactivo' ? `<span class="badge inactive">Inactivo</span>` : `<span class="badge ok">Activo</span>`;
-    return `<tr class="clickable" data-pac="${p.ID}"><td>${p.Nombre}</td><td>${p.Telefono}</td><td>${ultimaVisitaEfectiva(p)}</td><td>${tratLabel}</td><td>${estadoBadge}</td><td>${saldo>0?`<span class="badge pend">${fmtMoney(saldo)}</span>`:`<span class="badge ok">Al corriente</span>`}</td></tr>`;
+    return `<tr class="clickable" data-pac="${p.ID}"><td>${p.Nombre}</td><td>${p.Telefono}</td><td>${formatearFecha(ultimaVisitaEfectiva(p))}</td><td>${tratLabel}</td><td>${estadoBadge}</td><td>${saldo>0?`<span class="badge pend">${fmtMoney(saldo)}</span>`:`<span class="badge ok">Al corriente</span>`}</td></tr>`;
   }).join('') || '<tr><td colspan="6" class="empty">Sin resultados</td></tr>';
   tbody.querySelectorAll('tr[data-pac]').forEach(tr=>{ tr.addEventListener('click', ()=> showPacienteDetalle(tr.dataset.pac)); });
   const pagBox = document.getElementById('pacPaginador');
@@ -1365,7 +1416,7 @@ function showPacienteDetalle(pacId){
   const esActivo = p.Estado!=='Inactivo';
   openModal(`
     <h3>${p.Nombre}</h3>
-    <p class="subtle" style="margin-bottom:14px;">${p.Telefono} · Ultima visita: ${ultimaVisitaEfectiva(p)} · ${esActivo?'<span style="color:var(--teal)">Activo</span>':'<span style="color:var(--text-mute)">Inactivo</span>'}</p>
+    <p class="subtle" style="margin-bottom:14px;">${p.Telefono} · Ultima visita: ${formatearFecha(ultimaVisitaEfectiva(p))} · ${esActivo?'<span style="color:var(--teal)">Activo</span>':'<span style="color:var(--text-mute)">Inactivo</span>'}</p>
     <div class="card-title" style="margin-bottom:8px;">Tratamientos asignados</div>
     <div class="chip-row" style="margin-bottom:16px;">${trats.map(t=>`<span class="chip">${t}</span>`).join('') || '<span class="subtle">Sin tratamientos asignados</span>'}</div>
     <div class="card-title" style="margin-bottom:8px;">Saldo</div>
@@ -1468,7 +1519,7 @@ function fillPagosTable(filter){
   // paginador con margin-top:auto que usan sin ningun problema las otras
   // 3 tablas (Pacientes, Tratamientos, Gastos) — bastaba con dejarlo
   // trabajar solo, sin el relleno redundante.
-  tbody.innerHTML = rows.map(p=>`<tr><td>${p.Paciente}</td><td>${p.Tratamiento}</td><td>${p.Fecha}</td><td>${fmtMoney(p.Monto_Total)}</td><td>${fmtMoney(p.Monto_Pagado)}</td><td>${Number(p.Saldo)>0?`<span class="badge pend">${fmtMoney(p.Saldo)}</span>`:`<span class="badge ok">$0</span>`}</td><td><div class="btn sm" data-abonar="${p.ID}" style="${Number(p.Saldo)>0?'':'visibility:hidden;'}">Abonar</div></td></tr>`).join('') || '<tr><td colspan="7" class="empty">Sin resultados</td></tr>';
+  tbody.innerHTML = rows.map(p=>`<tr><td>${p.Paciente}</td><td>${p.Tratamiento}</td><td>${formatearFecha(p.Fecha)}</td><td>${fmtMoney(p.Monto_Total)}</td><td>${fmtMoney(p.Monto_Pagado)}</td><td>${Number(p.Saldo)>0?`<span class="badge pend">${fmtMoney(p.Saldo)}</span>`:`<span class="badge ok">$0</span>`}</td><td><div class="btn sm" data-abonar="${p.ID}" style="${Number(p.Saldo)>0?'':'visibility:hidden;'}">Abonar</div></td></tr>`).join('') || '<tr><td colspan="7" class="empty">Sin resultados</td></tr>';
   tbody.querySelectorAll('[data-abonar]').forEach(btn=>{ btn.addEventListener('click', ()=> openAbonoModal(btn.dataset.abonar, ()=>{ fillPagosTable(document.getElementById('pagoSearch').value); })); });
   const pagBox = document.getElementById('pagPaginador');
   if(pagBox){ pagBox.innerHTML = renderPaginador('pagos', total, totalPaginas); attachPaginadorEvents('pagos', ()=>fillPagosTable(filter)); }
@@ -1481,7 +1532,7 @@ function fillGastosTable(filter){
   let filtrados = [...DATA.gastos].sort((a,b)=>b.Fecha.localeCompare(a.Fecha)).filter(g=>{ const blob = [g.Fecha,g.Concepto,g.Categoria,g.Monto].join(' '); return matches(blob, f); });
   filtrados = ordenar('gastos', filtrados, (g,key)=> key==='Monto' ? Number(g[key]) : g[key]);
   const { pageItems: rows, total, totalPaginas } = paginar('gastos', filtrados);
-  tbody.innerHTML = rows.map(g=>`<tr><td>${g.Fecha}</td><td>${g.Concepto}</td><td>${g.Categoria}</td><td>${fmtMoney(g.Monto)}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">Sin resultados</td></tr>';
+  tbody.innerHTML = rows.map(g=>`<tr><td>${formatearFecha(g.Fecha)}</td><td>${g.Concepto}</td><td>${g.Categoria}</td><td>${fmtMoney(g.Monto)}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">Sin resultados</td></tr>';
   const pagBox = document.getElementById('gastoPaginador');
   if(pagBox){ pagBox.innerHTML = renderPaginador('gastos', total, totalPaginas); attachPaginadorEvents('gastos', ()=>fillGastosTable(filter)); }
   actualizarAlturaTabla('gastoTableBlock', 'gastos', total);
@@ -1503,7 +1554,7 @@ function openAbonoModal(pagoId, onDone, volverInit){
   openModal(`
     <h3>Registrar abono</h3>
     <p class="subtle" style="margin-bottom:2px;">${pago.Paciente} · Saldo actual: ${fmtMoney(pago.Saldo)}</p>
-    <p class="subtle" style="margin-bottom:14px;">${pago.Tratamiento} · Inicio: ${pago.Fecha}</p>
+    <p class="subtle" style="margin-bottom:14px;">${pago.Tratamiento} · Inicio: ${formatearFecha(pago.Fecha)}</p>
     <div class="field" style="margin-bottom:16px;"><label>Monto del abono</label><input id="mAbono" type="number" max="${pago.Saldo}"></div>
     <div class="modal-actions"><div class="btn block" onclick="${volverInit?'volverModal()':'closeModal()'}">Cancelar</div><div class="btn primary block" id="mGuardarAbono">Registrar</div></div>`);
   document.getElementById('mGuardarAbono').addEventListener('click', async ()=>{
@@ -1664,7 +1715,7 @@ function renderCitasListHTML(){
     const acciones = esPasada
       ? `<div style="display:flex;gap:6px;margin-top:6px;"><div class="btn sm" data-reagendar="${c.ID}">Reagendar</div></div>`
       : `<div style="display:flex;gap:6px;margin-top:6px;"><div class="btn sm" data-reagendar="${c.ID}">Reagendar</div><div class="btn sm danger" data-cancelar="${c.ID}">Cancelar</div></div>`;
-    return `<div class="appt"><div class="appt-time">${c.Fecha.slice(5)}<br>${c.Hora}</div><div class="appt-info" style="border-left-color:${color}"><b>${c.Paciente}</b>${etiqueta}<span>${tratArr(c.Tratamientos||c.Tratamiento).join(' + ')} · ${dur} min</span>${acciones}</div></div>`;
+    return `<div class="appt"><div class="appt-time">${formatearFechaCorta(c.Fecha)}<br>${formatearHora(c.Hora)}</div><div class="appt-info" style="border-left-color:${color}"><b>${c.Paciente}</b>${etiqueta}<span>${tratArr(c.Tratamientos||c.Tratamiento).join(' + ')} · ${dur} min</span>${acciones}</div></div>`;
   }).join('') || '<div class="empty">Sin citas</div>';
 }
 /* Vuelve a conectar los botones Reagendar/Cancelar de la lista de Citas —
@@ -1692,7 +1743,7 @@ function attachCitasListHandlers(){
     btn.addEventListener('click', async ()=>{
       const citaId = btn.dataset.cancelar;
       const cita = DATA.citas.find(c=>c.ID===citaId); if(!cita) return;
-      if(!confirm(`¿Cancelar la cita de ${cita.Paciente} el ${cita.Fecha} a las ${cita.Hora}?`)) return;
+      if(!confirm(`¿Cancelar la cita de ${cita.Paciente} el ${formatearFecha(cita.Fecha)} a las ${formatearHora(cita.Hora)}?`)) return;
       if(CONFIG.API_URL){ await apiCall('cancelar_cita', { citaId }, ['citas']); }
       else { cita.Estado = 'Cancelada'; }
       showToast('Cita cancelada'); render();
@@ -1726,6 +1777,28 @@ function renderConfiguracionHTML(){
     <div class="field" style="margin-bottom:12px;"><label>País (prefijo y formato de teléfono)</label>
       <select id="cfgPaisTelefono">${Object.entries(PHONE_COUNTRIES).map(([code,c])=>`<option value="${code}" ${CONFIG.PHONE_COUNTRY===code?'selected':''}>${c.nombre} (+${c.prefijo}, ${c.longitud} dígitos)</option>`).join('')}</select></div>
     <div class="field" style="margin-bottom:12px;"><label>Días sin visita para aparecer en "Pacientes que no han vuelto"</label><input id="cfgDiasSinVisita" type="number" min="1" value="${CONFIG.DIAS_SIN_VISITA}"></div>
+    <div class="field" style="margin-bottom:12px;"><label>Formato de hora</label>
+      <select id="cfgFormatoHora">
+        <option value="24h" ${CONFIG.FORMATO_HORA==='24h'?'selected':''}>24 horas (14:30)</option>
+        <option value="12h" ${CONFIG.FORMATO_HORA==='12h'?'selected':''}>12 horas (2:30 pm)</option>
+      </select></div>
+    <div class="field" style="margin-bottom:12px;"><label>Formato de fecha</label>
+      <select id="cfgFormatoFecha">
+        <option value="iso" ${CONFIG.FORMATO_FECHA==='iso'?'selected':''}>2026-08-13</option>
+        <option value="iso-texto" ${CONFIG.FORMATO_FECHA==='iso-texto'?'selected':''}>2026-Ago-13</option>
+        <option value="dmy" ${CONFIG.FORMATO_FECHA==='dmy'?'selected':''}>13-08-2026</option>
+        <option value="dmy-texto" ${CONFIG.FORMATO_FECHA==='dmy-texto'?'selected':''}>13-Ago-2026</option>
+      </select></div>
+    <div class="field" style="margin-bottom:12px;"><label>Separador de miles y decimales</label>
+      <select id="cfgSeparador">
+        <option value="es-MX" ${CONFIG.SEPARADOR==='es-MX'?'selected':''}>1,234.56 (México/Latam)</option>
+        <option value="es-ES" ${CONFIG.SEPARADOR==='es-ES'?'selected':''}>1.234,56 (España)</option>
+      </select></div>
+    <div class="field" style="margin-bottom:12px;"><label>Decimales en precios</label>
+      <select id="cfgDecimalesPrecio">
+        <option value="false" ${!CONFIG.DECIMALES_PRECIO?'selected':''}>Sin decimales ($650 MXN)</option>
+        <option value="true" ${CONFIG.DECIMALES_PRECIO?'selected':''}>Con decimales ($650.00 MXN)</option>
+      </select></div>
     <div class="field" style="margin-bottom:16px;"><label>ID de cliente</label><input value="${CONFIG.CLIENT_ID}" readonly></div>
     <div class="btn primary" id="btnGuardarConfig">Guardar cambios</div>
     <p style="color:var(--text-mute);font-size:12px;margin-top:14px;">Modo actual: <b style="color:${CONFIG.API_URL?'var(--teal)':'var(--amber)'}">${CONFIG.API_URL ? 'Conectado a datos reales' : 'Demo (datos de ejemplo)'}</b>.</p>
@@ -2006,7 +2079,7 @@ function afterRenderHooks(){
           <h3>Vista previa de importacion (${preview.length} filas)</h3>
           <div class="table-wrap" style="max-height:320px;overflow-y:auto;margin-bottom:14px;">
             <table><thead><tr><th>Paciente</th><th>Tratamientos</th><th>Fecha</th><th>Hora</th><th>Estado</th></tr></thead>
-            <tbody>${preview.map(r=>`<tr><td>${r.nombre}</td><td>${r.trats.join(', ')}</td><td>${r.fecha}</td><td>${r.hora}</td><td>${r.error?`<span class="badge cancel">${r.error}</span>`:`<span class="badge ok">OK</span>`}</td></tr>`).join('')}</tbody></table>
+            <tbody>${preview.map(r=>`<tr><td>${r.nombre}</td><td>${r.trats.join(', ')}</td><td>${formatearFecha(r.fecha)}</td><td>${formatearHora(r.hora)}</td><td>${r.error?`<span class="badge cancel">${r.error}</span>`:`<span class="badge ok">OK</span>`}</td></tr>`).join('')}</tbody></table>
           </div>
           <p class="subtle" style="margin-bottom:10px;">${validRows.length} de ${preview.length} filas se importaran. Las filas con error se omiten.</p>
           <div class="modal-actions"><div class="btn block" onclick="closeModal()">Cancelar</div><div class="btn primary block" id="confirmCsv">Importar ${validRows.length} citas</div></div>`, true);
@@ -2033,10 +2106,19 @@ function afterRenderHooks(){
       CONFIG.CURRENCY = document.getElementById('cfgMoneda').value;
       CONFIG.PHONE_COUNTRY = document.getElementById('cfgPaisTelefono').value;
       CONFIG.DIAS_SIN_VISITA = Number(document.getElementById('cfgDiasSinVisita').value) || 60;
+      // Grupo 1 (#27/#28/#34/#35)
+      CONFIG.FORMATO_HORA = document.getElementById('cfgFormatoHora').value;
+      CONFIG.FORMATO_FECHA = document.getElementById('cfgFormatoFecha').value;
+      CONFIG.SEPARADOR = document.getElementById('cfgSeparador').value;
+      CONFIG.DECIMALES_PRECIO = document.getElementById('cfgDecimalesPrecio').value === 'true';
       if(CONFIG.API_URL){
         await apiCall('set_config', { clave:'Moneda', valor: CONFIG.CURRENCY });
         await apiCall('set_config', { clave:'PaisTelefono', valor: CONFIG.PHONE_COUNTRY });
-        await apiCall('set_config', { clave:'DiasSinVisita', valor: CONFIG.DIAS_SIN_VISITA }, ['config']);
+        await apiCall('set_config', { clave:'DiasSinVisita', valor: CONFIG.DIAS_SIN_VISITA });
+        await apiCall('set_config', { clave:'FormatoHora', valor: CONFIG.FORMATO_HORA });
+        await apiCall('set_config', { clave:'FormatoFecha', valor: CONFIG.FORMATO_FECHA });
+        await apiCall('set_config', { clave:'Separador', valor: CONFIG.SEPARADOR });
+        await apiCall('set_config', { clave:'DecimalesPrecio', valor: CONFIG.DECIMALES_PRECIO }, ['config']);
       }
       showToast('Configuración guardada');
       render();
@@ -2097,7 +2179,7 @@ function showReferidosModal(){
       <div class="referral-stat"><div class="num" style="color:var(--teal);">${pagadosLista.length}</div><div class="lbl">Comisión pagada</div><div class="subtle" style="font-size:11px;margin-top:2px;">${fmtComision(montoPagados)}</div></div>
     </div>
     <div style="max-height:220px;overflow-y:auto;">
-      ${referidos.map(r=>`<div class="referral-row"><span>${r.NombreReferido}<br><span class="subtle">${r.Fecha}</span></span><b style="color:${estadoColor(r.Estado)};font-size:12px;">${r.Estado}</b></div>`).join('') || '<div class="empty">Aun no tienes referidos registrados</div>'}
+      ${referidos.map(r=>`<div class="referral-row"><span>${r.NombreReferido}<br><span class="subtle">${formatearFecha(r.Fecha)}</span></span><b style="color:${estadoColor(r.Estado)};font-size:12px;">${r.Estado}</b></div>`).join('') || '<div class="empty">Aun no tienes referidos registrados</div>'}
     </div>
     <div class="modal-actions"><div class="btn primary block" onclick="closeModal()">Cerrar</div></div>`);
 
@@ -2192,7 +2274,7 @@ function showPendientesModal(){
           openAbonoModal(pagosAbiertos[0].ID, refreshPend, initListaPendientes);
         } else {
           pushModalState(initListaPendientes);
-          openModal(`<h3>Elige el pago a abonar</h3>${pagosAbiertos.map(p=>`<div class="pend-row"><span>${p.Tratamiento} <span class="subtle">· Inicio: ${p.Fecha}</span></span><span style="display:flex;align-items:center;gap:10px;"><b style="color:var(--amber);">${fmtMoney(p.Saldo)}</b><div class="btn sm" data-pick-pago="${p.ID}">Abonar</div></span></div>`).join('')}<div class="modal-actions"><div class="btn block" onclick="volverModal()">Cerrar</div></div>`);
+          openModal(`<h3>Elige el pago a abonar</h3>${pagosAbiertos.map(p=>`<div class="pend-row"><span>${p.Tratamiento} <span class="subtle">· Inicio: ${formatearFecha(p.Fecha)}</span></span><span style="display:flex;align-items:center;gap:10px;"><b style="color:var(--amber);">${fmtMoney(p.Saldo)}</b><div class="btn sm" data-pick-pago="${p.ID}">Abonar</div></span></div>`).join('')}<div class="modal-actions"><div class="btn block" onclick="volverModal()">Cerrar</div></div>`);
           initElegirPago(pagosAbiertos, refreshPend);
         }
       });

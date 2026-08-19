@@ -310,19 +310,32 @@ let LOAD_ERROR = null;
 function emptyShell(){
   return { pacientes:[], tratamientos:[], citas:[], pagos:[], gastos:[], categorias_tratamiento:[], categorias_gasto:[], horario:[], config:[], referidos:[], comisionMoneda:'MXN', comisionMonto:300 };
 }
+/* Ciclo 1 / Ronda 3 (5c) — bug real encontrado: antes, CUALQUIER falla
+   al recargar (una respuesta lenta, un hipo de red, lo que sea) borraba
+   TODA la informacion ya cargada y la reemplazaba con un cascaron vacio
+   (emptyShell) — aunque fuera solo un refresco de rutina en segundo
+   plano. Ahora solo se usa el cascaron vacio si esta es la carga
+   INICIAL (todavia no hay nada cargado); si ya habia datos buenos y
+   un refresco posterior falla, se conservan los datos anteriores tal
+   cual — el usuario sigue viendo la ultima informacion real conocida
+   en vez de puros ceros, y se avisa por separado (ver refreshTimer)
+   que ese refresco en particular no se pudo completar. */
 async function loadData(){
   LOAD_ERROR = null;
   if(!CONFIG.API_URL){ DATA = JSON.parse(JSON.stringify(DEMO_DATA)); return; }
+  const esCargaInicial = !DATA;
   try{
     const res = await fetch(CONFIG.API_URL + '?client=' + encodeURIComponent(CONFIG.CLIENT_ID));
     const json = await res.json();
-    if(json && json.error){ LOAD_ERROR = json.error; DATA = emptyShell(); return; }
-    if(!json || !Array.isArray(json.pacientes)){ LOAD_ERROR = 'La API respondió con un formato inesperado.'; DATA = emptyShell(); return; }
+    if(json && json.error){ LOAD_ERROR = json.error; if(esCargaInicial) DATA = emptyShell(); return false; }
+    if(!json || !Array.isArray(json.pacientes)){ LOAD_ERROR = 'La API respondió con un formato inesperado.'; if(esCargaInicial) DATA = emptyShell(); return false; }
     DATA = json;
+    return true;
   }catch(err){
     console.error('Sin conexion a la API.', err);
     LOAD_ERROR = 'No se pudo conectar con el sistema. Puede ser un problema temporal de conexión a internet — tu información está segura, no se ha perdido nada.';
-    DATA = emptyShell();
+    if(esCargaInicial) DATA = emptyShell();
+    return false;
   }
 }
 async function reintentarConexion(){ showMask('Conectando...'); await loadData(); hideMask(); render(); }
@@ -622,7 +635,13 @@ refreshTimer = setInterval(async ()=>{
   if(SAVING_IN_PROGRESS) return;
   if(ACTIVE_TAB !== 'dashboard' && ACTIVE_TAB !== 'finanzas') return;
   if(Date.now() - LAST_INTERACTION < 5000) return;
-  if(CONFIG.API_URL) await loadData();
+  if(CONFIG.API_URL){
+    const ok = await loadData();
+    // Ronda 3 (5c) — si el refresco de rutina fallo, ya NO se borran los
+    // datos (ver loadData de arriba); solo se avisa discretamente y se
+    // deja la pantalla como estaba, en vez de repintar con nada.
+    if(!ok){ showToast('No se pudo actualizar — mostrando la última información conocida'); return; }
+  }
   if(ACTIVE_TAB === 'finanzas') refrescarFinanzasResumen();
   else render();
 }, 60000);
@@ -1325,7 +1344,7 @@ function renderPacientesHTML(){
   return `
   <div class="toolbar">
     <input class="search" id="pacSearch" placeholder="Buscar por nombre o tratamiento..." value="${SEARCH_STATE.pacientes}">
-    <div class="btn sm" id="btnRecargarPacientes">↻ Recargar</div>
+    <div class="btn" id="btnRecargarPacientes">↻ Recargar</div>
     <div class="btn primary" id="btnAddPaciente">+ Nuevo paciente</div>
   </div>
   <div class="table-wrap tw-fija" id="pacTableBlock">
@@ -1698,7 +1717,7 @@ function renderTratamientosHTML(){
   return `
   <div class="toolbar">
     <input class="search" id="tratSearch" placeholder="Buscar por tratamiento, categoría o precio..." value="${SEARCH_STATE.tratamientos}">
-    <div class="btn sm" id="btnRecargarTratamientos">↻ Recargar</div>
+    <div class="btn" id="btnRecargarTratamientos">↻ Recargar</div>
     <div class="btn primary" id="btnAddTratamiento">+ Nuevo tratamiento</div>
   </div>
   <div class="table-wrap tw-fija" id="tratTableBlock">
@@ -2220,13 +2239,21 @@ function afterRenderHooks(){
       CONFIG.SEPARADOR = document.getElementById('cfgSeparador').value;
       CONFIG.DECIMALES_PRECIO = document.getElementById('cfgDecimalesPrecio').value === 'true';
       if(CONFIG.API_URL){
-        await apiCall('set_config', { clave:'Moneda', valor: CONFIG.CURRENCY });
-        await apiCall('set_config', { clave:'PaisTelefono', valor: CONFIG.PHONE_COUNTRY });
-        await apiCall('set_config', { clave:'DiasSinVisita', valor: CONFIG.DIAS_SIN_VISITA });
-        await apiCall('set_config', { clave:'FormatoHora', valor: CONFIG.FORMATO_HORA });
-        await apiCall('set_config', { clave:'FormatoFecha', valor: CONFIG.FORMATO_FECHA });
-        await apiCall('set_config', { clave:'Separador', valor: CONFIG.SEPARADOR });
-        await apiCall('set_config', { clave:'DecimalesPrecio', valor: CONFIG.DECIMALES_PRECIO }, ['config']);
+        // Ciclo 1 / Ronda 3 (#7/#5f) — causa real de "tardo minutos": esto
+        // eran 7 peticiones SEPARADAS al servidor, una por una, cada una
+        // esperando a que la anterior terminara. Cada peticion a Apps
+        // Script tiene un costo real solo por arrancar (1-3s tipico) —
+        // 7 en fila facilmente se vuelven "minutos". Ahora es 1 sola
+        // peticion con las 7 claves juntas.
+        await apiCall('set_config', [
+          { clave:'Moneda', valor: CONFIG.CURRENCY },
+          { clave:'PaisTelefono', valor: CONFIG.PHONE_COUNTRY },
+          { clave:'DiasSinVisita', valor: CONFIG.DIAS_SIN_VISITA },
+          { clave:'FormatoHora', valor: CONFIG.FORMATO_HORA },
+          { clave:'FormatoFecha', valor: CONFIG.FORMATO_FECHA },
+          { clave:'Separador', valor: CONFIG.SEPARADOR },
+          { clave:'DecimalesPrecio', valor: CONFIG.DECIMALES_PRECIO },
+        ], ['config']);
       }
       showToast('Configuración guardada');
       render();

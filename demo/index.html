@@ -371,8 +371,20 @@ async function syncData(keys){
    guardar -> consultar lo real -> recien ahi mostrar y quitar mascara. En
    modo demo (sin API_URL) no hace nada y el llamador debe generar un ID
    local como respaldo. */
+/* Ciclo 1 / Ronda 2 (#4) — causa real del "no aparecio hasta recargar":
+   condicion de carrera entre este guardado (que hace su propio
+   sync dirigido y correcto) y el temporizador global de refresco
+   automatico. Si el temporizador disparaba una recarga COMPLETA justo
+   antes/durante este guardado, esa recarga reemplazaba TODO el objeto
+   DATA de un jalon — incluyendo lo recien guardado, si la lectura del
+   Sheet arranco una fraccion de segundo antes de que el guardado
+   terminara de escribirse ahi. SAVING_IN_PROGRESS le avisa al
+   temporizador que se salte su ciclo mientras haya un guardado en
+   curso, sin importar en que pestaña este. */
+let SAVING_IN_PROGRESS = false;
 async function apiCall(action, payload, syncKeys){
   if(!CONFIG.API_URL) return null;
+  SAVING_IN_PROGRESS = true;
   showMask('Guardando...');
   try{
     const res = await fetch(CONFIG.API_URL, { method:'POST', body: JSON.stringify({ client:CONFIG.CLIENT_ID, action, payload }) });
@@ -383,7 +395,7 @@ async function apiCall(action, payload, syncKeys){
     }
     return json;
   }catch(err){ console.error('Error de API en '+action, err); showToast('Sin conexion — el cambio quedo solo en este dispositivo'); return null; }
-  finally{ hideMask(); }
+  finally{ hideMask(); SAVING_IN_PROGRESS = false; }
 }
 
 function anyModalOpen(){
@@ -590,33 +602,30 @@ function render(){
   else if(ACTIVE_TAB === 'configuracion') c.innerHTML = renderConfiguracionHTML();
   afterRenderHooks();
 }
-/* Refresco automatico: cada 20s, si hay conexion a la API, vuelve a leer el
-   Sheet real (para que un cambio hecho en otro dispositivo aparezca aqui) y
-   siempre vuelve a pintar (para que "citas de hoy" se actualice con el reloj).
-   Se salta el ciclo si hay una ventana flotante abierta, o si el usuario
-   escribio algo hace menos de 5s (para no borrarle lo que esta tecleando). */
+/* Ciclo 1 / Ronda 2 (5a/5b/5c) — el refresco automatico deja de ser
+   "todas las pestañas menos Agendar/Configuracion" y pasa a ser al reves:
+   SOLO Dashboard y Finanzas lo tienen, y en Finanzas nunca toca las tablas
+   de Pagos/Gastos (que ahora se recargan con su propio boton "Recargar").
+   Pacientes y Tratamientos quedan sin refresco automatico por completo —
+   ahi tambien viven ahora sus propios botones "Recargar". El intervalo
+   sube de 20s a 60s para bajar la carga de peticiones sobre el backend
+   compartido. Se sigue saltando el ciclo si hay una ventana flotante
+   abierta, si el usuario escribio hace menos de 5s, o (#4) si hay un
+   guardado en curso — para nunca pisar informacion recien guardada con
+   una lectura que arranco antes de que ese guardado terminara. */
 let LAST_INTERACTION = 0;
 document.addEventListener('input', ()=>{ LAST_INTERACTION = Date.now(); });
 const SEARCH_STATE = { pacientes:'', tratamientos:'', pagos:'', gastos:'' };
 clearInterval(refreshTimer);
 refreshTimer = setInterval(async ()=>{
   if(anyModalOpen()) return;
-  /* No repintar mientras se esta en Agendar: ahi vive el formulario de
-     nueva cita a medio llenar (se perderia con cada repintado) y la lista
-     de Citas con su propio scroll (se iria hasta arriba). Los datos se
-     siguen refrescando en segundo plano; se pintan en cuanto se cambia de
-     pestaña. */
-  if(ACTIVE_TAB === 'agendar') return;
-  // Ciclo 1 / Ronda 1 (#1) — mismo problema que Agenda: Configuracion tiene
-  // campos a medio llenar que el refresco automatico pisaba con lo que
-  // hubiera en el Sheet, sin que el usuario supiera si su cambio se habia
-  // guardado o no. Los datos se siguen refrescando en segundo plano; se
-  // pintan en cuanto se cambia de pestaña.
-  if(ACTIVE_TAB === 'configuracion') return;
+  if(SAVING_IN_PROGRESS) return;
+  if(ACTIVE_TAB !== 'dashboard' && ACTIVE_TAB !== 'finanzas') return;
   if(Date.now() - LAST_INTERACTION < 5000) return;
   if(CONFIG.API_URL) await loadData();
-  render();
-}, 20000);
+  if(ACTIVE_TAB === 'finanzas') refrescarFinanzasResumen();
+  else render();
+}, 60000);
 
 function toggleCollapse(el){ el.closest('.collapsible').classList.toggle('collapsed'); }
 
@@ -1316,6 +1325,7 @@ function renderPacientesHTML(){
   return `
   <div class="toolbar">
     <input class="search" id="pacSearch" placeholder="Buscar por nombre o tratamiento..." value="${SEARCH_STATE.pacientes}">
+    <div class="btn sm" id="btnRecargarPacientes">↻ Recargar</div>
     <div class="btn primary" id="btnAddPaciente">+ Nuevo paciente</div>
   </div>
   <div class="table-wrap tw-fija" id="pacTableBlock">
@@ -1475,22 +1485,30 @@ function showPacienteDetalle(pacId){
 }
 
 /* ==================== FINANZAS ==================== */
-function renderFinanzasHTML(){
-  const now = new Date(); const mesActual = now.getMonth(); const anioActual = now.getFullYear();
+/* Ciclo 1 / Ronda 2 (5c) — los 4 KPI de arriba se separan en su propia
+   funcion para poder repintarlos solos (junto con las graficas) desde el
+   refresco automatico, sin tocar el resto de la pestaña de Finanzas — en
+   particular, sin tocar las tablas de Pagos/Gastos, que ya no se refrescan
+   solas. */
+function renderFinanzasKpiRowInner(){
+  const now = new Date();
   const pagosMes = DATA.pagos.filter(p=> esMesActual(p.Fecha, now));
   const gastosMes = DATA.gastos.filter(g=> esMesActual(g.Fecha, now));
   const ingresosMes = pagosMes.reduce((s,p)=>s+Number(p.Monto_Pagado),0);
   const pendiente = DATA.pagos.reduce((s,p)=>s+Number(p.Saldo),0);
   const gastosTotal = gastosMes.reduce((s,g)=>s+Number(g.Monto),0);
   const utilidad = ingresosMes - gastosTotal;
-  const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
   return `
-  <div class="kpi-row">
     <div class="kpi"><div class="kpi-label">Ingresos del mes</div><div class="kpi-value">${fmtMoney(ingresosMes)}</div></div>
     <div class="kpi"><div class="kpi-label">Gastos fijos del mes</div><div class="kpi-value" style="color:var(--red)">${fmtMoney(gastosTotal)}</div></div>
     <div class="kpi"><div class="kpi-label">Utilidad neta</div><div class="kpi-value" style="color:${utilidad>=0?'var(--teal)':'var(--red)'}">${fmtMoney(utilidad)}</div></div>
-    <div class="kpi"><div class="kpi-label">Pendiente por cobrar</div><div class="kpi-value" style="color:var(--amber)">${fmtMoney(pendiente)}</div></div>
-  </div>
+    <div class="kpi"><div class="kpi-label">Pendiente por cobrar</div><div class="kpi-value" style="color:var(--amber)">${fmtMoney(pendiente)}</div></div>`;
+}
+function renderFinanzasHTML(){
+  const now = new Date(); const mesActual = now.getMonth(); const anioActual = now.getFullYear();
+  const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  return `
+  <div class="kpi-row" id="finanzasKpiRow">${renderFinanzasKpiRowInner()}</div>
   <div class="card" style="margin-bottom:16px;">
     <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3v18h18M7 15l4-4 3 3 5-6"/></svg>Flujo de caja — ${meses[mesActual]} ${anioActual}</div>
     <p class="subtle" style="margin:-8px 0 10px;">S1-S5 = semanas del mes en curso (dias 1-7, 8-14, 15-21, 22-28, 29-31) — monto exacto de cada semana (no acumulado)</p>
@@ -1519,6 +1537,7 @@ function renderFinanzasHTML(){
     <div class="coll-body">
       <div class="toolbar">
         <input class="search" id="pagoSearch" placeholder="Buscar por fecha, paciente, tratamiento, monto..." value="${SEARCH_STATE.pagos}">
+        <div class="btn sm" id="btnRecargarPagos">↻ Recargar</div>
         <div class="btn primary sm" id="btnAddPago">+ Registrar pago</div>
       </div>
       <div class="table-wrap tw-fija" id="pagTableBlock">
@@ -1533,6 +1552,7 @@ function renderFinanzasHTML(){
     <div class="coll-body">
       <div class="toolbar">
         <input class="search" id="gastoSearch" placeholder="Buscar por fecha, concepto, categoría, monto..." value="${SEARCH_STATE.gastos}">
+        <div class="btn sm" id="btnRecargarGastos">↻ Recargar</div>
         <div class="btn primary sm" id="btnAddGasto">+ Registrar gasto</div>
       </div>
       <div class="table-wrap tw-fija" id="gastoTableBlock">
@@ -1661,12 +1681,24 @@ function drawFinanzasChart(){
       interaction:{mode:'index',intersect:false},
       scales:{x:{stacked:true,grid:{display:false},ticks:{color:'#5B6D7A'}},y:{stacked:true,grid:{color:'#1E2E42'},ticks:{color:'#5B6D7A',callback:v=>'$'+Number(v).toLocaleString('es-MX')}}}}}); }
 }
+/* Ciclo 1 / Ronda 2 (5c) — usada por el refresco automatico de 60s
+   cuando ACTIVE_TAB es 'finanzas': recalcula los 4 KPI y vuelve a
+   dibujar las 4 graficas con los datos ya recien recargados, sin tocar
+   el DOM de las tablas de Pagos/Gastos (que conservan su busqueda,
+   pagina y scroll intactos porque nadie las repinta aqui). */
+function refrescarFinanzasResumen(){
+  const kpiEl = document.getElementById('finanzasKpiRow');
+  if(kpiEl) kpiEl.innerHTML = renderFinanzasKpiRowInner();
+  destruirGraficasActivas();
+  drawFinanzasChart();
+}
 
 /* ==================== TRATAMIENTOS ==================== */
 function renderTratamientosHTML(){
   return `
   <div class="toolbar">
     <input class="search" id="tratSearch" placeholder="Buscar por tratamiento, categoría o precio..." value="${SEARCH_STATE.tratamientos}">
+    <div class="btn sm" id="btnRecargarTratamientos">↻ Recargar</div>
     <div class="btn primary" id="btnAddTratamiento">+ Nuevo tratamiento</div>
   </div>
   <div class="table-wrap tw-fija" id="tratTableBlock">
@@ -1888,6 +1920,15 @@ function afterRenderHooks(){
   if(ACTIVE_TAB === 'pacientes'){
     fillPacientesTable(SEARCH_STATE.pacientes);
     document.getElementById('pacSearch').addEventListener('input', e=>{ SEARCH_STATE.pacientes = e.target.value; PAGINATION.pacientes.page = 1; fillPacientesTable(e.target.value); });
+    // Ciclo 1 / Ronda 2 (5d) — boton "Recargar": consulta SOLO esta hoja
+    // en el Sheet (no toda la carga completa) y repinta SOLO esta tabla,
+    // sin depender del temporizador automatico que ya no cubre esta
+    // pestaña.
+    document.getElementById('btnRecargarPacientes').addEventListener('click', async ()=>{
+      if(CONFIG.API_URL){ showMask('Recargando...'); await syncData(['pacientes']); hideMask(); }
+      fillPacientesTable(SEARCH_STATE.pacientes);
+      showToast('Pacientes actualizado');
+    });
     document.getElementById('btnAddPaciente').addEventListener('click', ()=>{
       let selectedTrats = [];
       openModal(`
@@ -1944,6 +1985,20 @@ function afterRenderHooks(){
     fillPagosTable(SEARCH_STATE.pagos); fillGastosTable(SEARCH_STATE.gastos);
     document.getElementById('pagoSearch').addEventListener('input', e=>{ SEARCH_STATE.pagos = e.target.value; PAGINATION.pagos.page = 1; fillPagosTable(e.target.value); });
     document.getElementById('gastoSearch').addEventListener('input', e=>{ SEARCH_STATE.gastos = e.target.value; PAGINATION.gastos.page = 1; fillGastosTable(e.target.value); });
+    // Ciclo 1 / Ronda 2 (5d) — boton "Recargar": consulta SOLO esta hoja
+    // en el Sheet (no toda la carga completa) y repinta SOLO esta tabla,
+    // sin depender del temporizador automatico que ya no cubre esta
+    // pestaña.
+    document.getElementById('btnRecargarPagos').addEventListener('click', async ()=>{
+      if(CONFIG.API_URL){ showMask('Recargando...'); await syncData(['pagos']); hideMask(); }
+      fillPagosTable(SEARCH_STATE.pagos);
+      showToast('Pagos actualizado');
+    });
+    document.getElementById('btnRecargarGastos').addEventListener('click', async ()=>{
+      if(CONFIG.API_URL){ showMask('Recargando...'); await syncData(['gastos']); hideMask(); }
+      fillGastosTable(SEARCH_STATE.gastos);
+      showToast('Gastos actualizado');
+    });
     document.getElementById('btnAddPago').addEventListener('click', ()=>{
       let selPac = null; let selTrat = null;
       openModal(`
@@ -2022,6 +2077,15 @@ function afterRenderHooks(){
   if(ACTIVE_TAB === 'tratamientos'){
     fillTratamientosTable(SEARCH_STATE.tratamientos);
     document.getElementById('tratSearch').addEventListener('input', e=>{ SEARCH_STATE.tratamientos = e.target.value; PAGINATION.tratamientos.page = 1; fillTratamientosTable(e.target.value); });
+    // Ciclo 1 / Ronda 2 (5d) — boton "Recargar": consulta SOLO esta hoja
+    // en el Sheet (no toda la carga completa) y repinta SOLO esta tabla,
+    // sin depender del temporizador automatico que ya no cubre esta
+    // pestaña.
+    document.getElementById('btnRecargarTratamientos').addEventListener('click', async ()=>{
+      if(CONFIG.API_URL){ showMask('Recargando...'); await syncData(['tratamientos']); hideMask(); }
+      fillTratamientosTable(SEARCH_STATE.tratamientos);
+      showToast('Tratamientos actualizado');
+    });
     document.getElementById('btnAddTratamiento').addEventListener('click', ()=>{
       let categoriaSel = DATA.categorias_tratamiento[0] ? DATA.categorias_tratamiento[0].Categoria : '';
       openModal(`
@@ -2215,7 +2279,7 @@ function showReferidosModal(){
     <div class="divider"></div>
     <div class="card-head" style="margin-bottom:4px;">
       <div class="card-title">Tu historial</div>
-      <span class="link-btn" id="btnActualizarReferidos">↻ Actualizar</span>
+      <span class="link-btn" id="btnActualizarReferidos">↻ Recargar</span>
     </div>
     <div class="referral-stats">
       <div class="referral-stat"><div class="num" style="color:var(--text-mute);">${pendientes}</div><div class="lbl">Pendientes</div></div>
@@ -2243,8 +2307,13 @@ function showReferidosModal(){
   });
   // #57d — refresca solo esta ventana (referidos + los montos de
   // comision), sin cerrar y volver a abrir todo el modal.
+  // Ciclo 1 / Ronda 2 (5e) — antes pedia 'config' y obtenia referidos de
+  // rebote, porque esos datos venian pegados a CUALQUIER respuesta sin
+  // filtro real en Code.gs. Ahora Code.gs solo incluye referidos/comision
+  // en una carga completa o cuando se pide 'referidos' explicitamente —
+  // asi que este boton ahora lo pide por su nombre real.
   document.getElementById('btnActualizarReferidos').addEventListener('click', async ()=>{
-    if(CONFIG.API_URL){ showMask('Actualizando...'); await syncData(['config']); hideMask(); }
+    if(CONFIG.API_URL){ showMask('Recargando...'); await syncData(['referidos']); hideMask(); }
     showReferidosModal();
   });
 }

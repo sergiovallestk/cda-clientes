@@ -442,6 +442,40 @@ function formatearHora(horaHHMM){
   h = h%12; if(h===0) h=12;
   return `${h}:${String(mi).padStart(2,'0')} ${ampm}`;
 }
+/* Ciclo 1 / Ronda 1 (#2/#3) — los inputs <input type="number"> nativos
+   NO dejan que JS controle que caracter usan como separador decimal: eso
+   lo decide el navegador/sistema operativo del usuario, no CONFIG.SEPARADOR
+   — por eso siempre forzaban punto sin importar el formato elegido en la
+   app. Los 4 campos de dinero (Monto de gasto, Precio de tratamiento,
+   Monto pagado, Monto del abono) pasan de type="number" a texto con
+   teclado numerico (inputmode="decimal"), saneados en vivo para aceptar
+   solo digitos y el separador decimal que corresponda. parsearMonto()
+   convierte lo que haya escrito el usuario a un numero real de JS antes
+   de usarlo o enviarlo al backend — asi Code.gs siempre recibe un numero
+   de verdad, sin importar si el usuario tecleo coma o punto, y el Sheet
+   (que guarda numeros puros, no texto con formato) queda bien sin
+   importar el idioma/region que tenga configurado ese Sheet. */
+function separadorDecimal(){ return CONFIG.SEPARADOR==='es-ES' ? ',' : '.'; }
+function parsearMonto(str){
+  if(str===undefined || str===null || str==='') return 0;
+  const limpio = String(str).trim().replace(separadorDecimal(), '.');
+  return Number(limpio) || 0;
+}
+function sanearInputMonto(el){
+  const sep = separadorDecimal();
+  let v = el.value.split('').filter(c => /\d/.test(c) || c===sep).join('');
+  const idx = v.indexOf(sep);
+  if(idx !== -1) v = v.slice(0, idx+1) + v.slice(idx+1).split(sep).join('');
+  el.value = v;
+}
+/* Conecta el saneo en vivo a un input de dinero por su id; se llama una
+   vez por cada campo, justo despues de insertar el modal/formulario en el
+   DOM. */
+function attachSaneoMonto(id){
+  const el = document.getElementById(id);
+  if(!el) return;
+  el.addEventListener('input', ()=> sanearInputMonto(el));
+}
 function tratArr(str){ return (str||'').split(',').map(s=>s.trim()).filter(Boolean); }
 function duracionCitaMin(tratamientosStr){
   const nombres = tratArr(tratamientosStr);
@@ -573,6 +607,12 @@ refreshTimer = setInterval(async ()=>{
      siguen refrescando en segundo plano; se pintan en cuanto se cambia de
      pestaña. */
   if(ACTIVE_TAB === 'agendar') return;
+  // Ciclo 1 / Ronda 1 (#1) — mismo problema que Agenda: Configuracion tiene
+  // campos a medio llenar que el refresco automatico pisaba con lo que
+  // hubiera en el Sheet, sin que el usuario supiera si su cambio se habia
+  // guardado o no. Los datos se siguen refrescando en segundo plano; se
+  // pintan en cuanto se cambia de pestaña.
+  if(ACTIVE_TAB === 'configuracion') return;
   if(Date.now() - LAST_INTERACTION < 5000) return;
   if(CONFIG.API_URL) await loadData();
   render();
@@ -1555,10 +1595,11 @@ function openAbonoModal(pagoId, onDone, volverInit){
     <h3>Registrar abono</h3>
     <p class="subtle" style="margin-bottom:2px;">${pago.Paciente} · Saldo actual: ${fmtMoney(pago.Saldo)}</p>
     <p class="subtle" style="margin-bottom:14px;">${pago.Tratamiento} · Inicio: ${formatearFecha(pago.Fecha)}</p>
-    <div class="field" style="margin-bottom:16px;"><label>Monto del abono</label><input id="mAbono" type="number" max="${pago.Saldo}"></div>
+    <div class="field" style="margin-bottom:16px;"><label>Monto del abono</label><input id="mAbono" type="text" inputmode="decimal" placeholder="0${separadorDecimal()}00"></div>
     <div class="modal-actions"><div class="btn block" onclick="${volverInit?'volverModal()':'closeModal()'}">Cancelar</div><div class="btn primary block" id="mGuardarAbono">Registrar</div></div>`);
+  attachSaneoMonto('mAbono');
   document.getElementById('mGuardarAbono').addEventListener('click', async ()=>{
-    const monto = Number(document.getElementById('mAbono').value)||0;
+    const monto = parsearMonto(document.getElementById('mAbono').value);
     if(monto<=0) return showToast('Ingresa un monto valido');
     if(CONFIG.API_URL){ await apiCall('add_abono', { pagoId: pago.ID, monto }, ['pagos']); }
     else { pago.Monto_Pagado = Number(pago.Monto_Pagado) + monto; pago.Saldo = Number(pago.Monto_Total) - Number(pago.Monto_Pagado); }
@@ -1911,9 +1952,10 @@ function afterRenderHooks(){
         <div class="field" style="margin-bottom:12px;"><label>Tratamiento</label><div class="picker-btn" id="pgTratBtn">Selecciona un tratamiento</div></div>
         <div class="form-grid" style="margin-bottom:16px;">
           <div class="field"><label>Monto total</label><input id="pgTotal" type="text" readonly placeholder="Se llena al elegir tratamiento"></div>
-          <div class="field"><label>Monto pagado</label><input id="pgPagado" type="number" placeholder="0"></div>
+          <div class="field"><label>Monto pagado</label><input id="pgPagado" type="text" inputmode="decimal" placeholder="0"></div>
         </div>
         <div class="modal-actions"><div class="btn block" onclick="closeModal()">Cancelar</div><div class="btn primary block" id="mGuardarPago">Guardar</div></div>`);
+      attachSaneoMonto('pgPagado');
       document.getElementById('pgPacBtn').addEventListener('click', ()=>{
         openPatientPicker((pac)=>{ selPac = pac; document.getElementById('pgPacBtn').textContent = pac.Nombre; }, false);
       });
@@ -1924,7 +1966,7 @@ function afterRenderHooks(){
         const faltanPago = []; if(!selPac) faltanPago.push('Paciente'); if(!selTrat) faltanPago.push('Tratamiento');
         if(faltanPago.length) return showToast('Completa: '+faltanPago.join(', '));
         const total = Number(document.getElementById('pgTotal').dataset.raw)||0;
-        const pagado = Number(document.getElementById('pgPagado').value)||0;
+        const pagado = parsearMonto(document.getElementById('pgPagado').value);
         const existente = DATA.pagos.find(p=>p.Paciente_ID===selPac.ID && p.Tratamiento===selTrat.nombre && Number(p.Saldo)>0);
         if(existente){
           closeModal();
@@ -1954,15 +1996,16 @@ function afterRenderHooks(){
         <div class="field" style="margin-bottom:12px;"><label>Concepto</label><input id="gConcepto"></div>
         <div class="field" style="margin-bottom:12px;"><label>Categoría</label>
           <div class="picker-btn" id="gCatBtn">${categoriaSelGasto}</div></div>
-        <div class="field" style="margin-bottom:16px;"><label>Monto</label><input id="gMonto" type="number"></div>
+        <div class="field" style="margin-bottom:16px;"><label>Monto</label><input id="gMonto" type="text" inputmode="decimal" placeholder="0${separadorDecimal()}00"></div>
         <div class="modal-actions"><div class="btn block" onclick="closeModal()">Cancelar</div><div class="btn primary block" id="mGuardarGasto">Guardar</div></div>`);
+      attachSaneoMonto('gMonto');
       document.getElementById('gCatBtn').addEventListener('click', ()=>{
         openGastoCategoryPicker(categoriaSelGasto, (cat)=>{ categoriaSelGasto = cat; document.getElementById('gCatBtn').textContent = cat; });
       });
       document.getElementById('mGuardarGasto').addEventListener('click', async ()=>{
         const concepto = document.getElementById('gConcepto').value.trim();
         const categoria = categoriaSelGasto;
-        const monto = Number(document.getElementById('gMonto').value)||0;
+        const monto = parsearMonto(document.getElementById('gMonto').value);
         const faltanGasto = []; if(!concepto) faltanGasto.push('Concepto'); if(monto<=0) faltanGasto.push('Monto');
         if(faltanGasto.length) return showToast('Completa: '+faltanGasto.join(', '));
         let id = 'G' + String(DATA.gastos.length+1).padStart(3,'0');
@@ -1985,15 +2028,16 @@ function afterRenderHooks(){
         <h3>Nuevo tratamiento</h3>
         <div class="field" style="margin-bottom:12px;"><label>Nombre</label><input id="mtNombre"></div>
         <div class="field" style="margin-bottom:12px;"><label>Categoría</label><div class="picker-btn" id="mtCatBtn">${categoriaSel}</div></div>
-        <div class="field" style="margin-bottom:12px;"><label>Precio</label><input id="mtPrecio" type="number"></div>
+        <div class="field" style="margin-bottom:12px;"><label>Precio</label><input id="mtPrecio" type="text" inputmode="decimal" placeholder="0${separadorDecimal()}00"></div>
         <div class="field" style="margin-bottom:12px;"><label>Duración aproximada (minutos)</label><input id="mtDuracion" type="number" value="30" min="5" step="5"></div>
         <div class="modal-actions"><div class="btn block" onclick="closeModal()">Cancelar</div><div class="btn primary block" id="mGuardarTratamiento">Guardar</div></div>`);
+      attachSaneoMonto('mtPrecio');
       document.getElementById('mtCatBtn').addEventListener('click', ()=>{
         openCategoryPicker(categoriaSel, (cat)=>{ categoriaSel = cat; document.getElementById('mtCatBtn').textContent = cat; });
       });
       document.getElementById('mGuardarTratamiento').addEventListener('click', async ()=>{
         const nombre = document.getElementById('mtNombre').value.trim();
-        const precio = Number(document.getElementById('mtPrecio').value)||0;
+        const precio = parsearMonto(document.getElementById('mtPrecio').value);
         const duracionMin = Number(document.getElementById('mtDuracion').value)||30;
         const faltanTrat = []; if(!nombre) faltanTrat.push('Nombre'); if(precio<=0) faltanTrat.push('Precio');
         if(faltanTrat.length) return showToast('Completa: '+faltanTrat.join(', '));

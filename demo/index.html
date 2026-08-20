@@ -1349,15 +1349,29 @@ function renderPacientesHTML(){
 }
 /* ============ ORDEN GENERICO (clic en encabezado) — Pacientes, Pagos, Gastos, Tratamientos ============ */
 const SORT_STATE = { pacientes:{key:null,dir:1}, pagos:{key:null,dir:1}, gastos:{key:null,dir:1}, tratamientos:{key:null,dir:1} };
+// Ciclo 1 / Ronda 9 (duda de Sergio) — antes, cuando 2 o mas filas
+// empataban exactamente en la columna elegida, el resultado dependia de
+// una casualidad de implementacion: el sort de JS es estable, y conserva
+// el orden relativo previo entre empatados — que resultaba ser el orden
+// por defecto con el que se armo la tabla (por Ultimo_Pago/Fecha
+// descendente), sin que nadie lo hubiera decidido a proposito. Ahora el
+// desempate es explicito: entre filas empatadas, siempre gana la que se
+// agrego mas reciente (ID mas alto) — asi un registro recien creado
+// siempre aparece primero entre sus empates, sin importar que columna se
+// este ordenando ni en que direccion.
 function ordenar(tbl, items, getVal){
   const st = SORT_STATE[tbl];
   if(!st.key) return items;
   return [...items].sort((a,b)=>{
     const va = getVal(a, st.key), vb = getVal(b, st.key);
-    if(va==null && vb==null) return 0;
-    if(va==null) return 1; if(vb==null) return -1;
-    if(typeof va==='number' && typeof vb==='number') return (va-vb)*st.dir;
-    return String(va).localeCompare(String(vb), 'es', {numeric:true}) * st.dir;
+    let cmp;
+    if(va==null && vb==null) cmp = 0;
+    else if(va==null) cmp = 1;
+    else if(vb==null) cmp = -1;
+    else if(typeof va==='number' && typeof vb==='number') cmp = (va-vb)*st.dir;
+    else cmp = String(va).localeCompare(String(vb), 'es', {numeric:true}) * st.dir;
+    if(cmp !== 0) return cmp;
+    return String(b.ID).localeCompare(String(a.ID), 'es', {numeric:true});
   });
 }
 function thSort(tbl, label, sortKey){

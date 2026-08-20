@@ -437,7 +437,12 @@ function fmtComision(n){ const moneda = DATA.comisionMoneda||'MXN'; const c = CU
    de presentacion final. */
 const MESES_CORTOS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
 function formatearFecha(fechaISO){
-  if(!fechaISO || fechaISO==='—') return fechaISO||'';
+  // Ciclo 1 / Ronda 8 (#17) — estandarizado con el resto del sistema:
+  // sin fecha se muestra '—' (mismo guion que ya usan Ultima_Visita y
+  // Tratamientos), no una celda vacia. Antes esta funcion regresaba
+  // cadena vacia, que fue lo que dejo a "Ultimo pago" en blanco cuando
+  // deberia verse igual que los demas campos sin dato del sistema.
+  if(!fechaISO || fechaISO==='—') return fechaISO||'—';
   const [y,m,d] = fechaISO.split('-');
   const mesTxt = MESES_CORTOS[Number(m)-1];
   switch(CONFIG.FORMATO_FECHA){

@@ -663,7 +663,7 @@ function openTreatmentPickerSingle(onSelect){
     const item = e.target.closest('.picker-item'); if(!item || !item.dataset.nombre) return;
     closePicker(); onSelect({ nombre:item.dataset.nombre, precio:Number(item.dataset.precio) });
   });
-  document.getElementById('pickerSearch').addEventListener('input', e=>{ document.getElementById('pickerList').innerHTML = draw(e.target.value); });
+  document.getElementById('pickerSearch').addEventListener('input', e=>{ document.getElementById('pickerList').innerHTML = draw(e.target.value); refreshScrollHint(document.getElementById('pickerList')); });
   document.getElementById('pickerCancel').addEventListener('click', closePicker);
 }
 
@@ -1600,9 +1600,20 @@ async function guardarPagoNuevo(selPac, selTrat, total, pagado, inicioTrat){
   const hoy = todayStr();
   const inicio = inicioTrat || hoy;
   if(CONFIG.API_URL){
-    await apiCall('add_pago', { inicioTratamiento:inicio, ultimoPago:hoy, pacienteId:selPac.ID, paciente:selPac.Nombre, tratamiento:selTrat.nombre, montoTotal:total, montoPagado:pagado }, ['pagos']);
+    // #13 — 'pacientes' se agrega a syncKeys porque el servidor puede
+    // asignarle el tratamiento al paciente si todavia no lo tenia (ver
+    // addPago en Code.gs) — sin esto, el FE se quedaria con la lista de
+    // tratamientos del paciente desactualizada hasta el proximo refresco.
+    await apiCall('add_pago', { inicioTratamiento:inicio, ultimoPago:hoy, pacienteId:selPac.ID, paciente:selPac.Nombre, tratamiento:selTrat.nombre, montoTotal:total, montoPagado:pagado }, ['pagos','pacientes']);
   } else {
     DATA.pagos.push({ID:id, Inicio_Tratamiento:inicio, Ultimo_Pago:hoy, Paciente_ID:selPac.ID, Paciente:selPac.Nombre, Tratamiento:selTrat.nombre, Monto_Total:total, Monto_Pagado:pagado, Saldo:total-pagado});
+    // #13 (modo demo) — mismo criterio que agregarTratamientosAlPaciente
+    // en Code.gs: solo se agrega si el paciente no lo tenia ya.
+    const pacLocal = DATA.pacientes.find(x=>x.ID===selPac.ID);
+    if(pacLocal){
+      const actuales = tratArr(pacLocal.Tratamientos);
+      if(!actuales.includes(selTrat.nombre)) pacLocal.Tratamientos = [...actuales, selTrat.nombre].join(', ');
+    }
   }
   closeModal(); showToast('Pago registrado'); render();
 }
@@ -1610,28 +1621,50 @@ async function guardarPagoNuevo(selPac, selTrat, total, pagado, inicioTrat){
 function openAbonoModal(pagoId, onDone, volverInit){
   const pago = DATA.pagos.find(p=>p.ID===pagoId); if(!pago) return;
   if(volverInit) pushModalState(volverInit);
+  // Ciclo 1 / Ronda 6 (#12) — 3 renglones: paciente+tratamiento, las 2
+  // fechas juntas, y el saldo aparte al final (mas facil de leer que
+  // todo mezclado en 2 renglones).
   openModal(`
     <h3>Registrar abono</h3>
-    <p class="subtle" style="margin-bottom:2px;">${pago.Paciente} · Saldo actual: ${fmtMoney(pago.Saldo)}</p>
-    <p class="subtle" style="margin-bottom:14px;">${pago.Tratamiento} · Inicio tratamiento: ${formatearFecha(pago.Inicio_Tratamiento)}</p>
+    <p class="subtle" style="margin-bottom:2px;">${pago.Paciente} · ${pago.Tratamiento}</p>
+    <p class="subtle" style="margin-bottom:2px;">Inicio tratamiento: ${formatearFecha(pago.Inicio_Tratamiento)} · Último pago: ${formatearFecha(pago.Ultimo_Pago)}</p>
+    <p class="subtle" style="margin-bottom:14px;">Saldo actual: ${fmtMoney(pago.Saldo)}</p>
     <div class="field" style="margin-bottom:16px;"><label>Monto del abono</label><input id="mAbono" type="text" inputmode="decimal" placeholder="0${separadorDecimal()}00"></div>
     <div class="modal-actions"><div class="btn block" onclick="${volverInit?'volverModal()':'closeModal()'}">Cancelar</div><div class="btn primary block" id="mGuardarAbono">Registrar</div></div>`);
   attachSaneoMonto('mAbono');
   document.getElementById('mGuardarAbono').addEventListener('click', async ()=>{
     const monto = parsearMonto(document.getElementById('mAbono').value);
     if(monto<=0) return showToast('Ingresa un monto valido');
+    // Ciclo 1 / Ronda 6 (#16) — validar contra el saldo ANTES de intentar
+    // la transaccion. Antes, un monto de mas (simple error de captura, sin
+    // que hubiera ningun otro dispositivo de por medio) disparaba el mismo
+    // mensaje de conflicto de concurrencia — confuso, porque nadie mas
+    // habia tocado ese pago. Esto atrapa el caso comun (un solo
+    // dispositivo, monto mal tecleado) con un aviso claro y sin ni
+    // siquiera intentar la transaccion; el rechazo del servidor (#15)
+    // se queda como red de seguridad real para cuando SI hay una carrera
+    // entre 2 dispositivos.
+    if(monto > Number(pago.Saldo)){
+      return showToast(`El abono no puede ser mayor al saldo pendiente (${fmtMoney(pago.Saldo)})`);
+    }
     if(CONFIG.API_URL){
       // Ciclo 1 / Ronda 5 — si otro dispositivo ya completo este pago sin
       // que este dispositivo sincronizara antes, el servidor rechaza el
       // abono en vez de dejar un saldo negativo (ver addAbono en Code.gs).
-      // Se avisa claro y se trae el estado real, en vez de decir
-      // "registrado" sin haberlo hecho.
       const res = await apiCall('add_abono', { pagoId: pago.ID, monto, fecha: todayStr() }, ['pagos']);
       if(res && res.conflict){
         await syncData(['pagos']);
-        showToast(res.mensaje || 'No se pudo registrar — revisa el saldo actual');
         if(ACTIVE_TAB==='dashboard' || ACTIVE_TAB==='finanzas') repintarGraficasConDatosActuales();
-        if(volverInit){ volverModal(); if(onDone) onDone(); } else { closeModal(); if(onDone) onDone(); }
+        if(volverInit){ volverModal(); } else { closeModal(); }
+        // Ciclo 1 / Ronda 6 (#15) — antes esto era un toast que
+        // desaparecia solo en pocos segundos; ahora es una ventana que
+        // se queda hasta que el usuario la cierra, mismo patron que ya
+        // usa el conflicto de "Horario ocupado" al agendar.
+        openModal(`
+          <h3>No se pudo registrar el abono</h3>
+          <p style="font-size:13px;margin-bottom:16px;">${res.mensaje || 'Revisa el saldo actual antes de intentar de nuevo.'}</p>
+          <div class="modal-actions"><div class="btn primary block" onclick="closeModal()">Cerrar</div></div>`);
+        if(onDone) onDone();
         return;
       }
     } else {

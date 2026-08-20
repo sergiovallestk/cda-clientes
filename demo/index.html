@@ -260,6 +260,7 @@
   <div class="nav-item" data-tab="finanzas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>Finanzas</div>
   <div class="nav-item" data-tab="tratamientos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 21V9m8 12V3m8 18v-6"/></svg>Tratamientos</div>
   <div class="nav-item" data-tab="agendar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>Agenda</div>
+  <div class="nav-item" id="navSincronizar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12a9 9 0 0 1-9 9c-2.52 0-4.93-1-6.7-2.8L3 16"/><path d="M3 12a9 9 0 0 1 9-9c2.52 0 4.93 1 6.7 2.8L21 8"/><path d="M3 21v-5h5"/><path d="M21 3v5h-5"/></svg>Sincronizar</div>
   <div class="nav-item" data-tab="configuracion"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9c.2.7.7 1.2 1.5 1.3H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Configuración</div>
 </div>
 
@@ -560,7 +561,21 @@ function setTab(tab){
   document.getElementById('sidebar').classList.remove('open');
   document.getElementById('sidebarOverlay').classList.remove('open');
 }
-document.querySelectorAll('.nav-item').forEach(item=>{ item.addEventListener('click', ()=> setTab(item.dataset.tab)); });
+document.querySelectorAll('.nav-item[data-tab]').forEach(item=>{ item.addEventListener('click', ()=> setTab(item.dataset.tab)); });
+// Ciclo 1 / Ronda 7 (#18) — "Sincronizar" vive en el menu principal, no
+// dentro de Configuracion (misma funcion de siempre, solo cambio de
+// lugar). No navega a ninguna pestaña — abre una confirmacion antes de
+// actuar, para que no se dispare por accidente con un clic de mas.
+document.getElementById('navSincronizar').addEventListener('click', ()=>{
+  openModal(`
+    <h3>Sincronizar con otros dispositivos</h3>
+    <p style="font-size:13px;margin-bottom:16px;">Solo es necesario si alguien más está usando el sistema al mismo tiempo desde otro dispositivo. Tu información ya se guarda automáticamente al momento — esto no afecta si se guardó o no, únicamente trae lo que otros hayan agregado mientras tú tenías el sistema abierto. ¿Deseas continuar?</p>
+    <div class="modal-actions"><div class="btn block" onclick="closeModal()">No</div><div class="btn primary block" id="btnConfirmarSincronizar">Sí</div></div>`);
+  document.getElementById('btnConfirmarSincronizar').addEventListener('click', async ()=>{
+    closeModal();
+    await sincronizarTodo();
+  });
+});
 document.getElementById('hamburgerBtn').addEventListener('click', ()=>{
   const sb = document.getElementById('sidebar'); const ov = document.getElementById('sidebarOverlay');
   sb.classList.toggle('open'); ov.classList.toggle('open');
@@ -1599,14 +1614,20 @@ async function guardarPagoNuevo(selPac, selTrat, total, pagado, inicioTrat){
   let id = 'F' + String(DATA.pagos.length+1).padStart(3,'0');
   const hoy = todayStr();
   const inicio = inicioTrat || hoy;
+  // Ciclo 1 / Ronda 7 (#17) — Ultimo_Pago solo se llena cuando de verdad
+  // entro dinero (montoPagado>0). Un pago dado de alta en $0 (plan de
+  // tratamiento sin cobro todavia, escenario valido) no debe mostrar una
+  // fecha de "ultimo pago" — seria confuso, porque no hubo ningun pago
+  // aun. Se queda vacio hasta el primer abono real.
+  const ultimoPago = pagado>0 ? hoy : '';
   if(CONFIG.API_URL){
     // #13 — 'pacientes' se agrega a syncKeys porque el servidor puede
     // asignarle el tratamiento al paciente si todavia no lo tenia (ver
     // addPago en Code.gs) — sin esto, el FE se quedaria con la lista de
     // tratamientos del paciente desactualizada hasta el proximo refresco.
-    await apiCall('add_pago', { inicioTratamiento:inicio, ultimoPago:hoy, pacienteId:selPac.ID, paciente:selPac.Nombre, tratamiento:selTrat.nombre, montoTotal:total, montoPagado:pagado }, ['pagos','pacientes']);
+    await apiCall('add_pago', { inicioTratamiento:inicio, ultimoPago, pacienteId:selPac.ID, paciente:selPac.Nombre, tratamiento:selTrat.nombre, montoTotal:total, montoPagado:pagado }, ['pagos','pacientes']);
   } else {
-    DATA.pagos.push({ID:id, Inicio_Tratamiento:inicio, Ultimo_Pago:hoy, Paciente_ID:selPac.ID, Paciente:selPac.Nombre, Tratamiento:selTrat.nombre, Monto_Total:total, Monto_Pagado:pagado, Saldo:total-pagado});
+    DATA.pagos.push({ID:id, Inicio_Tratamiento:inicio, Ultimo_Pago:ultimoPago, Paciente_ID:selPac.ID, Paciente:selPac.Nombre, Tratamiento:selTrat.nombre, Monto_Total:total, Monto_Pagado:pagado, Saldo:total-pagado});
     // #13 (modo demo) — mismo criterio que agregarTratamientosAlPaciente
     // en Code.gs: solo se agrega si el paciente no lo tenia ya.
     const pacLocal = DATA.pacientes.find(x=>x.ID===selPac.ID);
@@ -1627,7 +1648,8 @@ function openAbonoModal(pagoId, onDone, volverInit){
   openModal(`
     <h3>Registrar abono</h3>
     <p class="subtle" style="margin-bottom:2px;">${pago.Paciente} · ${pago.Tratamiento}</p>
-    <p class="subtle" style="margin-bottom:2px;">Inicio tratamiento: ${formatearFecha(pago.Inicio_Tratamiento)} · Último pago: ${formatearFecha(pago.Ultimo_Pago)}</p>
+    <p class="subtle" style="margin-bottom:2px;">Inicio tratamiento: ${formatearFecha(pago.Inicio_Tratamiento)}</p>
+    <p class="subtle" style="margin-bottom:2px;">Último pago: ${formatearFecha(pago.Ultimo_Pago)}</p>
     <p class="subtle" style="margin-bottom:14px;">Saldo actual: ${fmtMoney(pago.Saldo)}</p>
     <div class="field" style="margin-bottom:16px;"><label>Monto del abono</label><input id="mAbono" type="text" inputmode="decimal" placeholder="0${separadorDecimal()}00"></div>
     <div class="modal-actions"><div class="btn block" onclick="${volverInit?'volverModal()':'closeModal()'}">Cancelar</div><div class="btn primary block" id="mGuardarAbono">Registrar</div></div>`);
@@ -1745,6 +1767,20 @@ function repintarGraficasConDatosActuales(){
   drawFinanzasChart();
   const kpiEl = document.getElementById('finanzasKpiRow');
   if(kpiEl) kpiEl.innerHTML = renderFinanzasKpiRowInner();
+}
+// Ciclo 1 / Ronda 4, movida al menu principal en Ronda 7 (#18) — unica
+// forma de traer todo de nuevo del servidor fuera de un guardado propio:
+// para el escenario de otro dispositivo usando el sistema al mismo
+// tiempo. Compartida entre el item "Sincronizar" del menu.
+async function sincronizarTodo(){
+  if(CONFIG.API_URL){
+    showMask('Sincronizando...');
+    const ok = await loadData();
+    hideMask();
+    if(!ok){ showToast('No se pudo sincronizar — tu información local sigue intacta'); return; }
+  }
+  render();
+  showToast('Sincronizado');
 }
 
 /* ==================== TRATAMIENTOS ==================== */
@@ -1954,11 +1990,6 @@ function renderConfiguracionHTML(){
       }).join('')}
     </div>
     <div class="btn primary" id="btnGuardarHorario" style="margin-top:12px;">Guardar horario</div>
-  </div>
-  <div class="card config-card" style="margin-bottom:16px;">
-    <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12a9 9 0 0 1-9 9c-2.52 0-4.93-1-6.7-2.8L3 16"/><path d="M3 12a9 9 0 0 1 9-9c2.52 0 4.93 1 6.7 2.8L21 8"/><path d="M3 21v-5h5"/><path d="M21 3v5h-5"/></svg>Sincronizar con otros dispositivos</div>
-    <p class="subtle" style="margin-bottom:12px;">Solo es necesario si alguien más está usando el sistema al mismo tiempo desde otro dispositivo. Tu información ya se guarda automáticamente al momento — esto no afecta si se guardó o no, únicamente trae lo que otros hayan agregado mientras tú tenías el sistema abierto.</p>
-    <div class="btn primary" id="btnSincronizarTodo">↻ Sincronizar ahora</div>
   </div>
   <div class="referral-teaser" id="referralTeaser">
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -2266,19 +2297,6 @@ function afterRenderHooks(){
       }
       showToast('Configuración guardada');
       render();
-    });
-    // Ciclo 1 / Ronda 4 — unica forma de traer todo de nuevo del
-    // servidor fuera de un guardado propio: para el escenario de otro
-    // dispositivo usando el sistema al mismo tiempo.
-    document.getElementById('btnSincronizarTodo').addEventListener('click', async ()=>{
-      if(CONFIG.API_URL){
-        showMask('Sincronizando...');
-        const ok = await loadData();
-        hideMask();
-        if(!ok){ showToast('No se pudo sincronizar — tu información local sigue intacta'); return; }
-      }
-      render();
-      showToast('Sincronizado');
     });
     document.getElementById('referralTeaser').addEventListener('click', showReferidosModal);
     document.querySelectorAll('.day-block').forEach(block=>{

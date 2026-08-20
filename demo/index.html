@@ -962,7 +962,7 @@ function calcularUltimos6Meses(){
   const now = new Date();
   const meses = [];
   for(let i=5;i>=0;i--){ const d = new Date(now.getFullYear(), now.getMonth()-i, 1); meses.push({y:d.getFullYear(), m:d.getMonth()+1, label:d.toLocaleDateString('es-MX',{month:'short'}).replace('.','')}); }
-  const ingresos = meses.map(({y,m})=> DATA.pagos.filter(p=>{ const f=ymd(p.Fecha); return f.y===y && f.m===m; }).reduce((s,p)=>s+Number(p.Monto_Pagado),0));
+  const ingresos = meses.map(({y,m})=> DATA.pagos.filter(p=>{ const f=ymd(p.Ultimo_Pago); return f.y===y && f.m===m; }).reduce((s,p)=>s+Number(p.Monto_Pagado),0));
   const gastos = meses.map(({y,m})=> DATA.gastos.filter(g=>{ const f=ymd(g.Fecha); return f.y===y && f.m===m; }).reduce((s,g)=>s+Number(g.Monto),0));
   return { labels: meses.map(x=>x.label), ingresos, gastos };
 }
@@ -1002,12 +1002,12 @@ function calcularIngresosPorCategoriaMeses(){
   const catDeTratamiento = {}; DATA.tratamientos.forEach(t=>{ catDeTratamiento[t.Nombre] = t.Categoria; });
   // #59 — top 3 calculado solo con estos mismos 6 meses (ver nota arriba).
   const totalPorCat = {};
-  DATA.pagos.forEach(p=>{ const f=ymd(p.Fecha); if(!meses.some(mm=>mm.y===f.y && mm.m===f.m)) return; const cat = catDeTratamiento[p.Tratamiento]||'Otros'; totalPorCat[cat] = (totalPorCat[cat]||0) + Number(p.Monto_Pagado); });
+  DATA.pagos.forEach(p=>{ const f=ymd(p.Ultimo_Pago); if(!meses.some(mm=>mm.y===f.y && mm.m===f.m)) return; const cat = catDeTratamiento[p.Tratamiento]||'Otros'; totalPorCat[cat] = (totalPorCat[cat]||0) + Number(p.Monto_Pagado); });
   const topCats = Object.entries(totalPorCat).sort((a,b)=>b[1]-a[1]).slice(0,3).map(e=>e[0]);
   const paleta = ['#2FD8B0','#1B6E5C','#3A4E60'];
   const datasets = topCats.map((cat,i)=>({
     label: cat,
-    data: meses.map(({y,m})=> DATA.pagos.filter(p=>{ const f=ymd(p.Fecha); return f.y===y && f.m===m && (catDeTratamiento[p.Tratamiento]||'Otros')===cat; }).reduce((s,p)=>s+Number(p.Monto_Pagado),0)),
+    data: meses.map(({y,m})=> DATA.pagos.filter(p=>{ const f=ymd(p.Ultimo_Pago); return f.y===y && f.m===m && (catDeTratamiento[p.Tratamiento]||'Otros')===cat; }).reduce((s,p)=>s+Number(p.Monto_Pagado),0)),
     backgroundColor: paleta[i%paleta.length],
   }));
   return { labels: meses.map(x=>x.label), datasets, meses, topCats };
@@ -1061,7 +1061,7 @@ function chipCategoria(t, cat, colorFondo, colorBorde){
 function mostrarDetalleIngresosCategoria(cat, y, m, pagina){
   pagina = pagina || 1;
   const catDeTratamiento = {}; DATA.tratamientos.forEach(t=>{ catDeTratamiento[t.Nombre] = t.Categoria; });
-  const todasDelMes = DATA.pagos.filter(p=>{ const f=ymd(p.Fecha); return f.y===y && f.m===m; });
+  const todasDelMes = DATA.pagos.filter(p=>{ const f=ymd(p.Ultimo_Pago); return f.y===y && f.m===m; });
   const todasCats = calcularTodasCategoriasDelMes(todasDelMes, 'Monto_Pagado', p=>catDeTratamiento[p.Tratamiento]||'Otros');
   const top3Mes = todasCats.slice(0,3);
   const otrasCats = todasCats.slice(3);
@@ -1134,16 +1134,16 @@ function mostrarDetalleIngresosCategoria(cat, y, m, pagina){
 function mostrarDetallePagosTratamiento(tratamiento, cat, y, m, mesLabelFull, pagina, orden){
   pagina = pagina || 1;
   orden = orden || 'fecha_desc';
-  let pagos = DATA.pagos.filter(p=>{ const f=ymd(p.Fecha); return f.y===y && f.m===m && p.Tratamiento===tratamiento && Number(p.Monto_Pagado)>0; });
+  let pagos = DATA.pagos.filter(p=>{ const f=ymd(p.Ultimo_Pago); return f.y===y && f.m===m && p.Tratamiento===tratamiento && Number(p.Monto_Pagado)>0; });
   // #67c — cada orden es espejo exacto de su opuesto: mismo criterio de
   // desempate, solo invertido, para que "antiguo" sea el espejo perfecto
   // de "reciente" (y "menor" de "mayor"), sin depender del orden en que
   // ya venian los datos antes de ordenar.
   const comparadores = {
-    fecha_desc: (a,b)=> b.Fecha.localeCompare(a.Fecha) || Number(b.Monto_Pagado)-Number(a.Monto_Pagado) || String(b.ID).localeCompare(String(a.ID)),
-    fecha_asc: (a,b)=> a.Fecha.localeCompare(b.Fecha) || Number(a.Monto_Pagado)-Number(b.Monto_Pagado) || String(a.ID).localeCompare(String(b.ID)),
-    monto_desc: (a,b)=> Number(b.Monto_Pagado)-Number(a.Monto_Pagado) || b.Fecha.localeCompare(a.Fecha) || String(b.ID).localeCompare(String(a.ID)),
-    monto_asc: (a,b)=> Number(a.Monto_Pagado)-Number(b.Monto_Pagado) || a.Fecha.localeCompare(b.Fecha) || String(a.ID).localeCompare(String(b.ID)),
+    fecha_desc: (a,b)=> b.Ultimo_Pago.localeCompare(a.Ultimo_Pago) || Number(b.Monto_Pagado)-Number(a.Monto_Pagado) || String(b.ID).localeCompare(String(a.ID)),
+    fecha_asc: (a,b)=> a.Ultimo_Pago.localeCompare(b.Ultimo_Pago) || Number(a.Monto_Pagado)-Number(b.Monto_Pagado) || String(a.ID).localeCompare(String(b.ID)),
+    monto_desc: (a,b)=> Number(b.Monto_Pagado)-Number(a.Monto_Pagado) || b.Ultimo_Pago.localeCompare(a.Ultimo_Pago) || String(b.ID).localeCompare(String(a.ID)),
+    monto_asc: (a,b)=> Number(a.Monto_Pagado)-Number(b.Monto_Pagado) || a.Ultimo_Pago.localeCompare(b.Ultimo_Pago) || String(a.ID).localeCompare(String(b.ID)),
   };
   const etiquetasOrden = { fecha_desc:'Más reciente primero', fecha_asc:'Más antiguo primero', monto_desc:'Monto mayor primero', monto_asc:'Monto menor primero' };
   const siguienteOrden = { fecha_desc:'fecha_asc', fecha_asc:'monto_desc', monto_desc:'monto_asc', monto_asc:'fecha_desc' };
@@ -1158,7 +1158,7 @@ function mostrarDetallePagosTratamiento(tratamiento, cat, y, m, mesLabelFull, pa
     <p class="subtle" style="margin-bottom:12px;"><b style="color:var(--text);">Pagos registrados:</b> ${pagos.length} &nbsp;·&nbsp; <b style="color:var(--text);">Total cobrado:</b> ${fmtMoney(total)}</p>
     <div class="link-btn" id="btnOrdenPagoTrat" style="display:inline-block;margin-bottom:10px;cursor:pointer;">↕ Ordenar: ${etiquetasOrden[orden]}</div>
     <div class="detail-block-fixed">
-    ${pagosPagina.map(p=>`<div class="pend-row"><span>${p.Paciente} <span class="subtle">· ${formatearFecha(p.Fecha)}</span></span><b style="color:var(--teal);">${fmtMoney(p.Monto_Pagado)}</b></div>`).join('') || '<div class="empty">Sin movimientos</div>'}
+    ${pagosPagina.map(p=>`<div class="pend-row"><span>${p.Paciente} <span class="subtle">· ${formatearFecha(p.Ultimo_Pago)}</span></span><b style="color:var(--teal);">${fmtMoney(p.Monto_Pagado)}</b></div>`).join('') || '<div class="empty">Sin movimientos</div>'}
     </div>
     ${pagos.length>porPagina ? `<div class="paginador" style="padding-top:8px;">
       <span class="subtle">${pagos.length} registros</span>
@@ -1295,7 +1295,7 @@ function drawDashboardCharts(){
   // julio en S1 se sumaba junto con uno de agosto en S1 — por eso el
   // dashboard mostraba mas dinero que la grafica de Finanzas (que si
   // filtra al mes en curso). Ahora ambas usan la misma regla.
-  DATA.pagos.forEach(p=>{ if(!esMesActual(p.Fecha, now)) return; const w='S'+Math.ceil(diaDelMes(p.Fecha)/7); byWeek[w]=(byWeek[w]||0)+Number(p.Monto_Pagado); });
+  DATA.pagos.forEach(p=>{ if(!esMesActual(p.Ultimo_Pago, now)) return; const w='S'+Math.ceil(diaDelMes(p.Ultimo_Pago)/7); byWeek[w]=(byWeek[w]||0)+Number(p.Monto_Pagado); });
   const weeks=['S1','S2','S3','S4','S5'];
   const cashEl = document.getElementById('cashChart');
   if(cashEl){ let running=0; const cum=weeks.map(w=>{running+=byWeek[w]||0;return running;});
@@ -1486,7 +1486,7 @@ function showPacienteDetalle(pacId){
    solas. */
 function renderFinanzasKpiRowInner(){
   const now = new Date();
-  const pagosMes = DATA.pagos.filter(p=> esMesActual(p.Fecha, now));
+  const pagosMes = DATA.pagos.filter(p=> esMesActual(p.Ultimo_Pago, now));
   const gastosMes = DATA.gastos.filter(g=> esMesActual(g.Fecha, now));
   const ingresosMes = pagosMes.reduce((s,p)=>s+Number(p.Monto_Pagado),0);
   const pendiente = DATA.pagos.reduce((s,p)=>s+Number(p.Saldo),0);
@@ -1534,7 +1534,7 @@ function renderFinanzasHTML(){
         <div class="btn primary sm" id="btnAddPago">+ Registrar pago</div>
       </div>
       <div class="table-wrap tw-fija" id="pagTableBlock">
-        <table><thead><tr>${thSort('pagos','Paciente','Paciente')}${thSort('pagos','Tratamiento','Tratamiento')}${thSort('pagos','Fecha inicio','Fecha')}${thSort('pagos','Total','Monto_Total')}${thSort('pagos','Pagado','Monto_Pagado')}${thSort('pagos','Saldo','Saldo')}<th></th></tr></thead><tbody id="pagosTbody"></tbody></table>
+        <table><thead><tr>${thSort('pagos','Paciente','Paciente')}${thSort('pagos','Tratamiento','Tratamiento')}${thSort('pagos','Inicio Tratamiento','Inicio_Tratamiento')}${thSort('pagos','Último pago','Ultimo_Pago')}${thSort('pagos','Total','Monto_Total')}${thSort('pagos','Pagado','Monto_Pagado')}${thSort('pagos','Saldo','Saldo')}<th></th></tr></thead><tbody id="pagosTbody"></tbody></table>
         <div id="pagPaginador"></div>
       </div>
     </div>
@@ -1557,8 +1557,8 @@ function renderFinanzasHTML(){
 function fillPagosTable(filter){
   const tbody = document.getElementById('pagosTbody'); if(!tbody) return;
   const f = filter||'';
-  let filtrados = [...DATA.pagos].sort((a,b)=>b.Fecha.localeCompare(a.Fecha)).filter(p=>{
-    const blob = [p.Fecha,p.Paciente,p.Tratamiento,p.Monto_Total,p.Monto_Pagado,p.Saldo].join(' ');
+  let filtrados = [...DATA.pagos].sort((a,b)=>b.Ultimo_Pago.localeCompare(a.Ultimo_Pago)).filter(p=>{
+    const blob = [p.Inicio_Tratamiento,p.Ultimo_Pago,p.Paciente,p.Tratamiento,p.Monto_Total,p.Monto_Pagado,p.Saldo].join(' ');
     return matches(blob, f);
   });
   filtrados = ordenar('pagos', filtrados, (p,key)=> key==='Monto_Total'||key==='Monto_Pagado'||key==='Saldo' ? Number(p[key]) : p[key]);
@@ -1571,7 +1571,7 @@ function fillPagosTable(filter){
   // paginador con margin-top:auto que usan sin ningun problema las otras
   // 3 tablas (Pacientes, Tratamientos, Gastos) — bastaba con dejarlo
   // trabajar solo, sin el relleno redundante.
-  tbody.innerHTML = rows.map(p=>`<tr><td>${p.Paciente}</td><td>${p.Tratamiento}</td><td>${formatearFecha(p.Fecha)}</td><td>${fmtMoney(p.Monto_Total)}</td><td>${fmtMoney(p.Monto_Pagado)}</td><td>${Number(p.Saldo)>0?`<span class="badge pend">${fmtMoney(p.Saldo)}</span>`:`<span class="badge ok">$0</span>`}</td><td><div class="btn sm" data-abonar="${p.ID}" style="${Number(p.Saldo)>0?'':'visibility:hidden;'}">Abonar</div></td></tr>`).join('') || '<tr><td colspan="7" class="empty">Sin resultados</td></tr>';
+  tbody.innerHTML = rows.map(p=>`<tr><td>${p.Paciente}</td><td>${p.Tratamiento}</td><td>${formatearFecha(p.Inicio_Tratamiento)}</td><td>${formatearFecha(p.Ultimo_Pago)}</td><td>${fmtMoney(p.Monto_Total)}</td><td>${fmtMoney(p.Monto_Pagado)}</td><td>${Number(p.Saldo)>0?`<span class="badge pend">${fmtMoney(p.Saldo)}</span>`:`<span class="badge ok">$0</span>`}</td><td><div class="btn sm" data-abonar="${p.ID}" style="${Number(p.Saldo)>0?'':'visibility:hidden;'}">Abonar</div></td></tr>`).join('') || '<tr><td colspan="8" class="empty">Sin resultados</td></tr>';
   tbody.querySelectorAll('[data-abonar]').forEach(btn=>{ btn.addEventListener('click', ()=> openAbonoModal(btn.dataset.abonar, ()=>{ fillPagosTable(document.getElementById('pagoSearch').value); })); });
   const pagBox = document.getElementById('pagPaginador');
   if(pagBox){ pagBox.innerHTML = renderPaginador('pagos', total, totalPaginas); attachPaginadorEvents('pagos', ()=>fillPagosTable(filter)); }
@@ -1590,12 +1590,19 @@ function fillGastosTable(filter){
   actualizarAlturaTabla('gastoTableBlock', 'gastos', total);
   refreshSortArrows('gastos'); attachSortHeaders('gastos', ()=>fillGastosTable(filter));
 }
-async function guardarPagoNuevo(selPac, selTrat, total, pagado){
+// Ciclo 1 / Ronda 5 (#9/#10/#11) — 2 fechas separadas: inicioTrat (editable,
+// puede ser anterior a hoy) y ultimoPago (fecha del pago mas reciente, la
+// que usan las graficas financieras). Al crear el registro, ultimoPago
+// siempre es hoy (es cuando el dinero realmente entro); inicioTrat puede
+// ser distinto si el doctor indica que el tratamiento empezo antes.
+async function guardarPagoNuevo(selPac, selTrat, total, pagado, inicioTrat){
   let id = 'F' + String(DATA.pagos.length+1).padStart(3,'0');
+  const hoy = todayStr();
+  const inicio = inicioTrat || hoy;
   if(CONFIG.API_URL){
-    await apiCall('add_pago', { fecha:todayStr(), pacienteId:selPac.ID, paciente:selPac.Nombre, tratamiento:selTrat.nombre, montoTotal:total, montoPagado:pagado }, ['pagos']);
+    await apiCall('add_pago', { inicioTratamiento:inicio, ultimoPago:hoy, pacienteId:selPac.ID, paciente:selPac.Nombre, tratamiento:selTrat.nombre, montoTotal:total, montoPagado:pagado }, ['pagos']);
   } else {
-    DATA.pagos.push({ID:id, Fecha:todayStr(), Paciente_ID:selPac.ID, Paciente:selPac.Nombre, Tratamiento:selTrat.nombre, Monto_Total:total, Monto_Pagado:pagado, Saldo:total-pagado});
+    DATA.pagos.push({ID:id, Inicio_Tratamiento:inicio, Ultimo_Pago:hoy, Paciente_ID:selPac.ID, Paciente:selPac.Nombre, Tratamiento:selTrat.nombre, Monto_Total:total, Monto_Pagado:pagado, Saldo:total-pagado});
   }
   closeModal(); showToast('Pago registrado'); render();
 }
@@ -1606,15 +1613,31 @@ function openAbonoModal(pagoId, onDone, volverInit){
   openModal(`
     <h3>Registrar abono</h3>
     <p class="subtle" style="margin-bottom:2px;">${pago.Paciente} · Saldo actual: ${fmtMoney(pago.Saldo)}</p>
-    <p class="subtle" style="margin-bottom:14px;">${pago.Tratamiento} · Inicio: ${formatearFecha(pago.Fecha)}</p>
+    <p class="subtle" style="margin-bottom:14px;">${pago.Tratamiento} · Inicio tratamiento: ${formatearFecha(pago.Inicio_Tratamiento)}</p>
     <div class="field" style="margin-bottom:16px;"><label>Monto del abono</label><input id="mAbono" type="text" inputmode="decimal" placeholder="0${separadorDecimal()}00"></div>
     <div class="modal-actions"><div class="btn block" onclick="${volverInit?'volverModal()':'closeModal()'}">Cancelar</div><div class="btn primary block" id="mGuardarAbono">Registrar</div></div>`);
   attachSaneoMonto('mAbono');
   document.getElementById('mGuardarAbono').addEventListener('click', async ()=>{
     const monto = parsearMonto(document.getElementById('mAbono').value);
     if(monto<=0) return showToast('Ingresa un monto valido');
-    if(CONFIG.API_URL){ await apiCall('add_abono', { pagoId: pago.ID, monto }, ['pagos']); }
-    else { pago.Monto_Pagado = Number(pago.Monto_Pagado) + monto; pago.Saldo = Number(pago.Monto_Total) - Number(pago.Monto_Pagado); }
+    if(CONFIG.API_URL){
+      // Ciclo 1 / Ronda 5 — si otro dispositivo ya completo este pago sin
+      // que este dispositivo sincronizara antes, el servidor rechaza el
+      // abono en vez de dejar un saldo negativo (ver addAbono en Code.gs).
+      // Se avisa claro y se trae el estado real, en vez de decir
+      // "registrado" sin haberlo hecho.
+      const res = await apiCall('add_abono', { pagoId: pago.ID, monto, fecha: todayStr() }, ['pagos']);
+      if(res && res.conflict){
+        await syncData(['pagos']);
+        showToast(res.mensaje || 'No se pudo registrar — revisa el saldo actual');
+        if(ACTIVE_TAB==='dashboard' || ACTIVE_TAB==='finanzas') repintarGraficasConDatosActuales();
+        if(volverInit){ volverModal(); if(onDone) onDone(); } else { closeModal(); if(onDone) onDone(); }
+        return;
+      }
+    } else {
+      pago.Monto_Pagado = Number(pago.Monto_Pagado) + monto; pago.Saldo = Number(pago.Monto_Total) - Number(pago.Monto_Pagado);
+      pago.Ultimo_Pago = todayStr();
+    }
     showToast('Abono registrado');
     if(ACTIVE_TAB==='dashboard' || ACTIVE_TAB==='finanzas') render();
     if(volverInit){ volverModal(); if(onDone) onDone(); } else { closeModal(); if(onDone) onDone(); }
@@ -1624,7 +1647,7 @@ function drawFinanzasChart(){
   const el = document.getElementById('finCashChart'); if(!el) return;
   const now = new Date();
   const byWeek = {};
-  DATA.pagos.forEach(p=>{ if(!esMesActual(p.Fecha, now)) return; const w='S'+Math.ceil(diaDelMes(p.Fecha)/7); byWeek[w]=(byWeek[w]||0)+Number(p.Monto_Pagado); });
+  DATA.pagos.forEach(p=>{ if(!esMesActual(p.Ultimo_Pago, now)) return; const w='S'+Math.ceil(diaDelMes(p.Ultimo_Pago)/7); byWeek[w]=(byWeek[w]||0)+Number(p.Monto_Pagado); });
   const weeks=['S1','S2','S3','S4','S5'];
   nuevoChart(el,{type:'bar',data:{labels:weeks,datasets:[{data:weeks.map(w=>byWeek[w]||0),backgroundColor:'#2FD8B0',borderRadius:4,barThickness:28}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false,callbacks:{label:c=>fmtMoney(c.raw)}}},interaction:{mode:'index',intersect:false},scales:{x:{grid:{display:false},ticks:{color:'#5B6D7A'}},y:{grid:{color:'#1E2E42'},ticks:{color:'#5B6D7A',callback:v=>'$'+Number(v).toLocaleString('es-MX')}}}}});
   const igEl = document.getElementById('ingresosGastos6mChart');
@@ -1984,6 +2007,7 @@ function afterRenderHooks(){
         <h3>Registrar pago</h3>
         <div class="field" style="margin-bottom:12px;"><label>Paciente</label><div class="picker-btn" id="pgPacBtn">Selecciona un paciente</div></div>
         <div class="field" style="margin-bottom:12px;"><label>Tratamiento</label><div class="picker-btn" id="pgTratBtn">Selecciona un tratamiento</div></div>
+        <div class="field" style="margin-bottom:12px;"><label>Inicio del tratamiento <span class="subtle">(si empezó antes de hoy, indícalo aquí)</span></label><input id="pgInicioTrat" type="date" value="${todayStr()}" max="${todayStr()}"></div>
         <div class="form-grid" style="margin-bottom:16px;">
           <div class="field"><label>Monto total</label><input id="pgTotal" type="text" readonly placeholder="Se llena al elegir tratamiento"></div>
           <div class="field"><label>Monto pagado</label><input id="pgPagado" type="text" inputmode="decimal" placeholder="0"></div>
@@ -2001,6 +2025,7 @@ function afterRenderHooks(){
         if(faltanPago.length) return showToast('Completa: '+faltanPago.join(', '));
         const total = Number(document.getElementById('pgTotal').dataset.raw)||0;
         const pagado = parsearMonto(document.getElementById('pgPagado').value);
+        const inicioTrat = document.getElementById('pgInicioTrat').value || todayStr();
         const existente = DATA.pagos.find(p=>p.Paciente_ID===selPac.ID && p.Tratamiento===selTrat.nombre && Number(p.Saldo)>0);
         if(existente){
           closeModal();
@@ -2016,11 +2041,11 @@ function afterRenderHooks(){
             openAbonoModal(existente.ID, ()=>{ fillPagosTable(SEARCH_STATE.pagos); });
           });
           document.getElementById('btnCrearNuevo').addEventListener('click', async ()=>{
-            closeModal(); await guardarPagoNuevo(selPac, selTrat, total, pagado);
+            closeModal(); await guardarPagoNuevo(selPac, selTrat, total, pagado, inicioTrat);
           });
           return;
         }
-        await guardarPagoNuevo(selPac, selTrat, total, pagado);
+        await guardarPagoNuevo(selPac, selTrat, total, pagado, inicioTrat);
       });
     });
     document.getElementById('btnAddGasto').addEventListener('click', ()=>{
@@ -2378,7 +2403,7 @@ function showPendientesModal(){
           openAbonoModal(pagosAbiertos[0].ID, refreshPend, initListaPendientes);
         } else {
           pushModalState(initListaPendientes);
-          openModal(`<h3>Elige el pago a abonar</h3>${pagosAbiertos.map(p=>`<div class="pend-row"><span>${p.Tratamiento} <span class="subtle">· Inicio: ${formatearFecha(p.Fecha)}</span></span><span style="display:flex;align-items:center;gap:10px;"><b style="color:var(--amber);">${fmtMoney(p.Saldo)}</b><div class="btn sm" data-pick-pago="${p.ID}">Abonar</div></span></div>`).join('')}<div class="modal-actions"><div class="btn block" onclick="volverModal()">Cerrar</div></div>`);
+          openModal(`<h3>Elige el pago a abonar</h3>${pagosAbiertos.map(p=>`<div class="pend-row"><span>${p.Tratamiento} <span class="subtle">· Inicio: ${formatearFecha(p.Inicio_Tratamiento)}</span></span><span style="display:flex;align-items:center;gap:10px;"><b style="color:var(--amber);">${fmtMoney(p.Saldo)}</b><div class="btn sm" data-pick-pago="${p.ID}">Abonar</div></span></div>`).join('')}<div class="modal-actions"><div class="btn block" onclick="volverModal()">Cerrar</div></div>`);
           initElegirPago(pagosAbiertos, refreshPend);
         }
       });

@@ -155,6 +155,11 @@
   .picker-list-wrap.scroll-more::after{content:'';position:absolute;left:0;right:6px;bottom:0;height:26px;background:linear-gradient(to bottom, rgba(16,28,44,0), var(--panel) 80%);pointer-events:none;border-radius:0 0 10px 10px;}
   .picker-list{max-height:280px;overflow-y:auto;display:flex;flex-direction:column;gap:2px;}
   .picker-item{display:flex;align-items:center;gap:10px;padding:9px 8px;border-radius:8px;cursor:pointer;font-size:13px;}
+  /* Ciclo 2 (Grupo 2) — renglon de categoria con iconos de editar/eliminar
+     al lado, usado en los selectores de categoria de tratamiento y gasto. */
+  .picker-item-row{display:flex;align-items:center;}
+  .cat-icon{cursor:pointer;padding:6px 8px;font-size:13px;color:var(--text-dim);border-radius:6px;}
+  .cat-icon:hover{background:var(--border);}
   .picker-item:hover{background:#132135;}
   .blocking-mask{position:fixed;inset:0;background:rgba(11,20,32,.72);z-index:200;display:none;align-items:center;justify-content:center;flex-direction:column;gap:14px;}
   .blocking-mask.show{display:flex;}
@@ -645,10 +650,15 @@ const SEARCH_STATE = { pacientes:'', tratamientos:'', pagos:'', gastos:'' };
 function toggleCollapse(el){ el.closest('.collapsible').classList.toggle('collapsed'); }
 
 /* ============ SELECTOR MULTIPLE DE TRATAMIENTOS ============ */
+// Ciclo 2 (Grupo 2) — este selector muestra el CATALOGO COMPLETO para
+// elegir algo nuevo, asi que excluye tratamientos Inactivos (ya no
+// deben poder elegirse para citas/pagos nuevos). El selector "acotado"
+// (solo lo que el paciente ya tiene asignado) no filtra por esto — ver
+// openTreatmentPickerScoped/openTreatmentPickerSingleScoped mas abajo.
 function openTreatmentPicker(preselected, onConfirm){
   const selected = new Set(preselected||[]);
   function draw(filter){
-    const items = DATA.tratamientos.filter(t=>matches(t.Nombre, filter||''));
+    const items = DATA.tratamientos.filter(t=>t.Activo!=='Inactivo' && matches(t.Nombre, filter||''));
     return items.map(t=>`<label class="picker-item"><input type="checkbox" value="${t.Nombre}" ${selected.has(t.Nombre)?'checked':''}><span>${t.Nombre} <span class="subtle">· ${t.Categoria} · ${fmtMoney(t.Precio_MXN)}</span></span></label>`).join('') || '<div class="empty">Sin resultados</div>';
   }
   document.getElementById('pickerBody').innerHTML = `
@@ -668,7 +678,7 @@ function openTreatmentPicker(preselected, onConfirm){
 /* ============ SELECTOR UNICO DE TRATAMIENTO (para Registrar pago) ============ */
 function openTreatmentPickerSingle(onSelect){
   function draw(filter){
-    const items = DATA.tratamientos.filter(t=>matches(t.Nombre, filter||''));
+    const items = DATA.tratamientos.filter(t=>t.Activo!=='Inactivo' && matches(t.Nombre, filter||''));
     return items.map(t=>`<div class="picker-item" data-nombre="${t.Nombre}" data-precio="${t.Precio_MXN}">${t.Nombre} <span class="subtle">· ${t.Categoria} · ${fmtMoney(t.Precio_MXN)}</span></div>`).join('') || '<div class="empty">Sin resultados</div>';
   }
   document.getElementById('pickerBody').innerHTML = `
@@ -767,15 +777,57 @@ function openPatientPicker(onSelect, activeOnly){
 }
 
 /* ============ SELECTOR/CATALOGO DE CATEGORIA (agregable) ============ */
+// Ciclo 2 (Grupo 2) — generico para las 2 listas de categorias (usado
+// por openCategoryPicker y openGastoCategoryPicker): renombrar una
+// categoria via un mini-modal, y eliminarla solo si no tiene
+// dependencias (el servidor valida esto de verdad; aqui solo se checa
+// localmente para dar un aviso rapido antes de intentar la peticion).
+function abrirRenombrarCategoria(nombreActual, esGasto, onRenombrado){
+  closePicker();
+  openModal(`
+    <h3>Renombrar categoría</h3>
+    <div class="field" style="margin-bottom:16px;"><label>Nombre</label><input id="rcNombre" value="${nombreActual}"></div>
+    <div class="modal-actions"><div class="btn block" onclick="closeModal()">Cancelar</div><div class="btn primary block" id="rcGuardar">Guardar</div></div>`);
+  document.getElementById('rcGuardar').addEventListener('click', async ()=>{
+    const nuevoNombre = document.getElementById('rcNombre').value.trim();
+    if(!nuevoNombre) return showToast('Completa: Nombre');
+    if(nuevoNombre === nombreActual){ showToast('Sin cambios que guardar'); closeModal(); return; }
+    const lista = esGasto ? DATA.categorias_gasto : DATA.categorias_tratamiento;
+    if(lista.some(c=>normalize(c.Categoria)===normalize(nuevoNombre))) return showToast('Ya existe una categoría con ese nombre');
+    const accion = esGasto ? 'edit_categoria_gasto' : 'edit_categoria';
+    const syncKey = esGasto ? 'categorias_gasto' : 'categorias_tratamiento';
+    if(CONFIG.API_URL){ await apiCall(accion, { nombreActual, nombreNuevo: nuevoNombre }, [syncKey]); }
+    else { const c = lista.find(x=>x.Categoria===nombreActual); if(c) c.Categoria = nuevoNombre; }
+    closeModal(); showToast('Categoría renombrada'); onRenombrado(nuevoNombre);
+  });
+}
+async function eliminarCategoria(nombre, esGasto, onEliminado){
+  const listaDependiente = esGasto ? DATA.gastos : DATA.tratamientos;
+  const enUso = listaDependiente.some(x=>x.Categoria===nombre);
+  if(enUso){ showToast(`Esta categoría tiene ${esGasto?'gastos':'tratamientos'} asignados y no se puede eliminar`); return; }
+  if(!confirm(`¿Eliminar la categoría "${nombre}"?`)) return;
+  const lista = esGasto ? DATA.categorias_gasto : DATA.categorias_tratamiento;
+  const accion = esGasto ? 'delete_categoria_gasto' : 'delete_categoria';
+  const syncKey = esGasto ? 'categorias_gasto' : 'categorias_tratamiento';
+  if(CONFIG.API_URL){
+    const res = await apiCall(accion, { categoria: nombre }, [syncKey]);
+    if(res && res.error){ showToast(res.error); return; }
+  } else {
+    const idx = lista.findIndex(c=>c.Categoria===nombre);
+    if(idx !== -1) lista.splice(idx, 1);
+  }
+  showToast('Categoría eliminada'); onEliminado();
+}
 function openCategoryPicker(current, onSelect){
   function draw(filter){
     const items = DATA.categorias_tratamiento.filter(c=>matches(c.Categoria, filter||''));
-    let html = items.map(c=>`<div class="picker-item" data-cat="${c.Categoria}">${c.Categoria}</div>`).join('');
+    let html = items.map(c=>`<div class="picker-item-row"><div class="picker-item" data-cat="${c.Categoria}" style="flex:1;">${c.Categoria}</div><span class="cat-icon" data-editcat="${c.Categoria}" title="Renombrar">✎</span><span class="cat-icon" data-delcat="${c.Categoria}" title="Eliminar" style="color:var(--red);">✕</span></div>`).join('');
     if(filter && !DATA.categorias_tratamiento.some(c=>normalize(c.Categoria)===normalize(filter))){
       html += `<div class="picker-item" style="color:var(--teal);" data-newcat="${filter}">+ Agregar "${filter}" como nueva categoria</div>`;
     }
     return html || '<div class="empty">Sin resultados</div>';
   }
+  const refrescar = ()=>{ document.getElementById('pickerList').innerHTML = draw(document.getElementById('pickerSearch').value); refreshScrollHint(document.getElementById('pickerList')); };
   document.getElementById('pickerBody').innerHTML = `
     <h3>Categoría de tratamiento</h3>
     <input class="search picker-search" style="max-width:100%;" id="pickerSearch" placeholder="Buscar o crear categoria...">
@@ -785,6 +837,8 @@ function openCategoryPicker(current, onSelect){
   const list = document.getElementById('pickerList');
   refreshScrollHint(list);
   list.addEventListener('click', async e=>{
+    if(e.target.closest('[data-editcat]')){ abrirRenombrarCategoria(e.target.closest('[data-editcat]').dataset.editcat, false, ()=> openCategoryPicker(current, onSelect)); return; }
+    if(e.target.closest('[data-delcat]')){ await eliminarCategoria(e.target.closest('[data-delcat]').dataset.delcat, false, refrescar); return; }
     const item = e.target.closest('.picker-item'); if(!item) return;
     if(item.dataset.newcat){
       const nuevaCategoria = item.dataset.newcat;
@@ -794,19 +848,20 @@ function openCategoryPicker(current, onSelect){
     }
     else if(item.dataset.cat){ closePicker(); onSelect(item.dataset.cat); }
   });
-  document.getElementById('pickerSearch').addEventListener('input', e=>{ document.getElementById('pickerList').innerHTML = draw(e.target.value); refreshScrollHint(document.getElementById('pickerList')); });
+  document.getElementById('pickerSearch').addEventListener('input', refrescar);
   document.getElementById('pickerCancel').addEventListener('click', closePicker);
 }
 
 function openGastoCategoryPicker(current, onSelect){
   function draw(filter){
     const items = DATA.categorias_gasto.filter(c=>matches(c.Categoria, filter||''));
-    let html = items.map(c=>`<div class="picker-item" data-cat="${c.Categoria}">${c.Categoria}</div>`).join('');
+    let html = items.map(c=>`<div class="picker-item-row"><div class="picker-item" data-cat="${c.Categoria}" style="flex:1;">${c.Categoria}</div><span class="cat-icon" data-editcat="${c.Categoria}" title="Renombrar">✎</span><span class="cat-icon" data-delcat="${c.Categoria}" title="Eliminar" style="color:var(--red);">✕</span></div>`).join('');
     if(filter && !DATA.categorias_gasto.some(c=>normalize(c.Categoria)===normalize(filter))){
       html += `<div class="picker-item" style="color:var(--teal);" data-newcat="${filter}">+ Agregar "${filter}" como nueva categoria</div>`;
     }
     return html || '<div class="empty">Sin resultados</div>';
   }
+  const refrescar = ()=>{ document.getElementById('pickerList').innerHTML = draw(document.getElementById('pickerSearch').value); refreshScrollHint(document.getElementById('pickerList')); };
   document.getElementById('pickerBody').innerHTML = `
     <h3>Categoría de gasto</h3>
     <input class="search picker-search" style="max-width:100%;" id="pickerSearch" placeholder="Buscar o crear categoria...">
@@ -816,6 +871,8 @@ function openGastoCategoryPicker(current, onSelect){
   const list = document.getElementById('pickerList');
   refreshScrollHint(list);
   list.addEventListener('click', async e=>{
+    if(e.target.closest('[data-editcat]')){ abrirRenombrarCategoria(e.target.closest('[data-editcat]').dataset.editcat, true, ()=> openGastoCategoryPicker(current, onSelect)); return; }
+    if(e.target.closest('[data-delcat]')){ await eliminarCategoria(e.target.closest('[data-delcat]').dataset.delcat, true, refrescar); return; }
     const item = e.target.closest('.picker-item'); if(!item) return;
     if(item.dataset.newcat){
       const nuevaCategoria = item.dataset.newcat;
@@ -825,7 +882,7 @@ function openGastoCategoryPicker(current, onSelect){
     }
     else if(item.dataset.cat){ closePicker(); onSelect(item.dataset.cat); }
   });
-  document.getElementById('pickerSearch').addEventListener('input', e=>{ document.getElementById('pickerList').innerHTML = draw(e.target.value); refreshScrollHint(document.getElementById('pickerList')); });
+  document.getElementById('pickerSearch').addEventListener('input', refrescar);
   document.getElementById('pickerCancel').addEventListener('click', closePicker);
 }
 
@@ -1019,15 +1076,17 @@ function calcularIngresosPorCategoriaMeses(){
   const now = new Date();
   const meses = [];
   for(let i=5;i>=0;i--){ const d = new Date(now.getFullYear(), now.getMonth()-i, 1); meses.push({y:d.getFullYear(), m:d.getMonth()+1, label:d.toLocaleDateString('es-MX',{month:'short'}).replace('.','')}); }
-  const catDeTratamiento = {}; DATA.tratamientos.forEach(t=>{ catDeTratamiento[t.Nombre] = t.Categoria; });
+  // Ciclo 2 (Grupo 2) — ya no se busca la categoria en vivo en el
+  // catalogo: cada pago trae su propia categoria congelada desde que se
+  // creo (Categoria), protegida de cambios posteriores en Tratamientos.
   // #59 — top 3 calculado solo con estos mismos 6 meses (ver nota arriba).
   const totalPorCat = {};
-  DATA.pagos.forEach(p=>{ const f=ymd(p.Ultimo_Pago); if(!meses.some(mm=>mm.y===f.y && mm.m===f.m)) return; const cat = catDeTratamiento[p.Tratamiento]||'Otros'; totalPorCat[cat] = (totalPorCat[cat]||0) + Number(p.Monto_Pagado); });
+  DATA.pagos.forEach(p=>{ const f=ymd(p.Ultimo_Pago); if(!meses.some(mm=>mm.y===f.y && mm.m===f.m)) return; const cat = p.Categoria||'Otros'; totalPorCat[cat] = (totalPorCat[cat]||0) + Number(p.Monto_Pagado); });
   const topCats = Object.entries(totalPorCat).sort((a,b)=>b[1]-a[1]).slice(0,3).map(e=>e[0]);
   const paleta = ['#2FD8B0','#1B6E5C','#3A4E60'];
   const datasets = topCats.map((cat,i)=>({
     label: cat,
-    data: meses.map(({y,m})=> DATA.pagos.filter(p=>{ const f=ymd(p.Ultimo_Pago); return f.y===y && f.m===m && (catDeTratamiento[p.Tratamiento]||'Otros')===cat; }).reduce((s,p)=>s+Number(p.Monto_Pagado),0)),
+    data: meses.map(({y,m})=> DATA.pagos.filter(p=>{ const f=ymd(p.Ultimo_Pago); return f.y===y && f.m===m && (p.Categoria||'Otros')===cat; }).reduce((s,p)=>s+Number(p.Monto_Pagado),0)),
     backgroundColor: paleta[i%paleta.length],
   }));
   return { labels: meses.map(x=>x.label), datasets, meses, topCats };
@@ -1080,9 +1139,9 @@ function chipCategoria(t, cat, colorFondo, colorBorde){
    como lista de movimientos individuales. */
 function mostrarDetalleIngresosCategoria(cat, y, m, pagina){
   pagina = pagina || 1;
-  const catDeTratamiento = {}; DATA.tratamientos.forEach(t=>{ catDeTratamiento[t.Nombre] = t.Categoria; });
+  // Ciclo 2 (Grupo 2) — misma categoria congelada por pago, ya no en vivo.
   const todasDelMes = DATA.pagos.filter(p=>{ const f=ymd(p.Ultimo_Pago); return f.y===y && f.m===m; });
-  const todasCats = calcularTodasCategoriasDelMes(todasDelMes, 'Monto_Pagado', p=>catDeTratamiento[p.Tratamiento]||'Otros');
+  const todasCats = calcularTodasCategoriasDelMes(todasDelMes, 'Monto_Pagado', p=>p.Categoria||'Otros');
   const top3Mes = todasCats.slice(0,3);
   const otrasCats = todasCats.slice(3);
   if(!cat) cat = top3Mes.length ? top3Mes[0].cat : null;
@@ -1090,7 +1149,7 @@ function mostrarDetalleIngresosCategoria(cat, y, m, pagina){
   // #67b — los renglones con $0 pagado son cuentas pendientes, no ingreso
   // todavia — no cuentan como "pago" en esta vista (ni aqui ni en el
   // desglose por pago individual que abre cada tratamiento).
-  const items = cat ? todasDelMes.filter(p=>(catDeTratamiento[p.Tratamiento]||'Otros')===cat && Number(p.Monto_Pagado)>0) : [];
+  const items = cat ? todasDelMes.filter(p=>(p.Categoria||'Otros')===cat && Number(p.Monto_Pagado)>0) : [];
   const porTratamiento = {};
   items.forEach(p=>{ if(!porTratamiento[p.Tratamiento]) porTratamiento[p.Tratamiento] = { cantidad:0, total:0 }; porTratamiento[p.Tratamiento].cantidad++; porTratamiento[p.Tratamiento].total += Number(p.Monto_Pagado); });
   const filas = Object.entries(porTratamiento).sort((a,b)=>b[1].total-a[1].total);
@@ -1500,9 +1559,11 @@ function showPacienteDetalle(pacId){
     <div class="card-title" style="margin-bottom:8px;">Saldo</div>
     <div style="font-size:20px;font-weight:700;color:${saldo>0?'var(--amber)':'var(--teal)'}">${fmtMoney(saldo)}</div>
     <div class="modal-actions">
+      <div class="btn block" id="btnEditarPaciente">Editar</div>
       <div class="btn block" id="btnToggleEstado">${esActivo?'Marcar como inactivo':'Reactivar paciente'}</div>
       <div class="btn primary block" onclick="closeModal()">Cerrar</div>
     </div>`);
+  document.getElementById('btnEditarPaciente').addEventListener('click', ()=> abrirEdicionPaciente(p));
   document.getElementById('btnToggleEstado').addEventListener('click', async ()=>{
     if(esActivo && saldo>0){ if(!confirm(`${p.Nombre} tiene un saldo pendiente de ${fmtMoney(saldo)}. ¿Marcarlo como inactivo de todas formas?`)) return; }
     const nuevoEstado = esActivo ? 'Inactivo' : 'Activo';
@@ -1511,7 +1572,47 @@ function showPacienteDetalle(pacId){
     closeModal(); showToast(esActivo?'Paciente marcado como inactivo':'Paciente reactivado'); render();
   });
 }
+// Ciclo 2 (Grupo 2) — edicion de Paciente: Nombre, Telefono, Tratamientos.
+// Nunca elimina (Pacientes solo usa Activo/Inactivo). Compara contra los
+// valores originales al guardar y solo manda al servidor los campos que
+// de verdad cambiaron — si no cambio nada, ni siquiera se manda peticion.
+function abrirEdicionPaciente(p){
+  let selectedTrats = tratArr(p.Tratamientos);
+  const original = { Nombre: p.Nombre, Telefono: String(p.Telefono), Tratamientos: selectedTrats.join(', ') };
+  pushModalState(()=> showPacienteDetalle(p.ID));
+  openModal(`
+    <h3>Editar paciente</h3>
+    <div class="field" style="margin-bottom:12px;"><label>Nombre completo</label><input id="epNombre" value="${p.Nombre}"></div>
+    <div class="field" style="margin-bottom:12px;"><label>Teléfono <span class="subtle">(sin prefijo, solo ${telefonoInfo().longitud} dígitos)</span></label><input id="epTelefono" type="tel" inputmode="numeric" maxlength="${telefonoInfo().longitud}" value="${p.Telefono}"></div>
+    <div class="field" style="margin-bottom:16px;"><label>Tratamientos</label><div class="picker-btn" id="epTratBtn">${selectedTrats.length?selectedTrats.join(', '):'Selecciona uno o varios tratamientos'}</div></div>
+    <div class="modal-actions"><div class="btn block" onclick="volverModal()">Cancelar</div><div class="btn primary block" id="epGuardar">Guardar</div></div>`);
+  document.getElementById('epTelefono').addEventListener('input', e=> sanearInputMonto(e.target));
+  document.getElementById('epTratBtn').addEventListener('click', ()=>{
+    openTreatmentPicker(selectedTrats, (sel)=>{ selectedTrats = sel; document.getElementById('epTratBtn').textContent = selectedTrats.length?selectedTrats.join(', '):'Selecciona uno o varios tratamientos'; });
+  });
+  document.getElementById('epGuardar').addEventListener('click', async ()=>{
+    const nombre = document.getElementById('epNombre').value.trim();
+    const tel = document.getElementById('epTelefono').value.trim();
+    const infoTel = telefonoInfo();
+    const faltan = []; if(!nombre) faltan.push('Nombre completo'); if(!tel) faltan.push('Teléfono');
+    if(faltan.length) return showToast('Completa: '+faltan.join(', '));
+    if(!/^\d+$/.test(tel) || tel.length!==infoTel.longitud) return showToast(`El teléfono debe tener exactamente ${infoTel.longitud} dígitos (sin prefijo)`);
+    const actual = { Nombre: nombre, Telefono: tel, Tratamientos: selectedTrats.join(', ') };
+    const cambios = {};
+    Object.keys(actual).forEach(k=>{ if(actual[k] !== original[k]) cambios[k] = actual[k]; });
+    if(Object.keys(cambios).length === 0){ showToast('Sin cambios que guardar'); volverModal(); return; }
+    if(CONFIG.API_URL){ await apiCall('edit_paciente', { pacienteId: p.ID, cambios }, ['pacientes']); }
+    else { Object.assign(p, cambios); }
+    showToast('Paciente actualizado'); closeModal(); render();
+  });
+}
 
+/* ==================== FINANZAS ==================== */
+/* Ciclo 1 / Ronda 2 (5c) — los 4 KPI de arriba se separan en su propia
+   funcion para poder repintarlos solos (junto con las graficas) desde el
+   refresco automatico, sin tocar el resto de la pestaña de Finanzas — en
+   particular, sin tocar las tablas de Pagos/Gastos, que ya no se refrescan
+   solas. */
 /* ==================== FINANZAS ==================== */
 /* Ciclo 1 / Ronda 2 (5c) — los 4 KPI de arriba se separan en su propia
    funcion para poder repintarlos solos (junto con las graficas) desde el
@@ -1605,8 +1706,12 @@ function fillPagosTable(filter){
   // paginador con margin-top:auto que usan sin ningun problema las otras
   // 3 tablas (Pacientes, Tratamientos, Gastos) — bastaba con dejarlo
   // trabajar solo, sin el relleno redundante.
-  tbody.innerHTML = rows.map(p=>`<tr><td>${p.Paciente}</td><td>${p.Tratamiento}</td><td>${formatearFecha(p.Inicio_Tratamiento)}</td><td>${formatearFecha(p.Ultimo_Pago)}</td><td>${fmtMoney(p.Monto_Total)}</td><td>${fmtMoney(p.Monto_Pagado)}</td><td>${Number(p.Saldo)>0?`<span class="badge pend">${fmtMoney(p.Saldo)}</span>`:`<span class="badge ok">$0</span>`}</td><td><div class="btn sm" data-abonar="${p.ID}" style="${Number(p.Saldo)>0?'':'visibility:hidden;'}">Abonar</div></td></tr>`).join('') || '<tr><td colspan="8" class="empty">Sin resultados</td></tr>';
+  // Ciclo 2 (Grupo 2) — boton "Eliminar" solo aparece si Monto_Pagado es
+  // 0 (nunca se le ha abonado nada) — en cuanto tiene cualquier abono, el
+  // registro se vuelve permanente y este boton deja de mostrarse.
+  tbody.innerHTML = rows.map(p=>`<tr><td>${p.Paciente}</td><td>${p.Tratamiento}</td><td>${formatearFecha(p.Inicio_Tratamiento)}</td><td>${formatearFecha(p.Ultimo_Pago)}</td><td>${fmtMoney(p.Monto_Total)}</td><td>${fmtMoney(p.Monto_Pagado)}</td><td>${Number(p.Saldo)>0?`<span class="badge pend">${fmtMoney(p.Saldo)}</span>`:`<span class="badge ok">$0</span>`}</td><td style="display:flex;gap:6px;"><div class="btn sm" data-abonar="${p.ID}" style="${Number(p.Saldo)>0?'':'visibility:hidden;'}">Abonar</div>${Number(p.Monto_Pagado)===0?`<div class="btn sm" data-eliminar-pago="${p.ID}" style="color:var(--red);border-color:var(--red);">Eliminar</div>`:''}</td></tr>`).join('') || '<tr><td colspan="8" class="empty">Sin resultados</td></tr>';
   tbody.querySelectorAll('[data-abonar]').forEach(btn=>{ btn.addEventListener('click', ()=> openAbonoModal(btn.dataset.abonar, ()=>{ fillPagosTable(document.getElementById('pagoSearch').value); })); });
+  tbody.querySelectorAll('[data-eliminar-pago]').forEach(btn=>{ btn.addEventListener('click', ()=> confirmarEliminarPago(btn.dataset.eliminarPago)); });
   const pagBox = document.getElementById('pagPaginador');
   if(pagBox){ pagBox.innerHTML = renderPaginador('pagos', total, totalPaginas); attachPaginadorEvents('pagos', ()=>fillPagosTable(filter)); }
   actualizarAlturaTabla('pagTableBlock', 'pagos', total, 54); // #66 — alto de fila real medido (49-53px) + margen
@@ -1618,11 +1723,66 @@ function fillGastosTable(filter){
   let filtrados = [...DATA.gastos].sort((a,b)=>b.Fecha.localeCompare(a.Fecha)).filter(g=>{ const blob = [g.Fecha,g.Concepto,g.Categoria,g.Monto].join(' '); return matches(blob, f); });
   filtrados = ordenar('gastos', filtrados, (g,key)=> key==='Monto' ? Number(g[key]) : g[key]);
   const { pageItems: rows, total, totalPaginas } = paginar('gastos', filtrados);
-  tbody.innerHTML = rows.map(g=>`<tr><td>${formatearFecha(g.Fecha)}</td><td>${g.Concepto}</td><td>${g.Categoria}</td><td>${fmtMoney(g.Monto)}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">Sin resultados</td></tr>';
+  // Ciclo 2 (Grupo 2) — cada fila es clickeable, igual que Pacientes,
+  // para abrir el detalle/edicion de ese gasto.
+  tbody.innerHTML = rows.map(g=>`<tr class="clickable" data-gasto="${g.ID}"><td>${formatearFecha(g.Fecha)}</td><td>${g.Concepto}</td><td>${g.Categoria}</td><td>${fmtMoney(g.Monto)}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">Sin resultados</td></tr>';
+  tbody.querySelectorAll('[data-gasto]').forEach(tr=>{ tr.addEventListener('click', ()=> abrirEdicionGasto(tr.dataset.gasto)); });
   const pagBox = document.getElementById('gastoPaginador');
   if(pagBox){ pagBox.innerHTML = renderPaginador('gastos', total, totalPaginas); attachPaginadorEvents('gastos', ()=>fillGastosTable(filter)); }
   actualizarAlturaTabla('gastoTableBlock', 'gastos', total);
   refreshSortArrows('gastos'); attachSortHeaders('gastos', ()=>fillGastosTable(filter));
+}
+// Ciclo 2 (Grupo 2) — edicion de Gasto: Concepto, Categoria, Monto. Nunca
+// se elimina — mismo patron de "solo mandar lo que cambio" que Pacientes.
+// Ciclo 2 (Grupo 2) — un pago solo se puede eliminar si nunca se le
+// abono nada (Monto_Pagado === 0). El servidor tambien lo valida
+// (defensa por si el dato local quedo desactualizado), pero se checa
+// aqui primero para dar el aviso correcto sin ni siquiera intentar la
+// peticion si ya no aplica.
+function confirmarEliminarPago(pagoId){
+  const p = DATA.pagos.find(x=>x.ID===pagoId); if(!p) return;
+  if(Number(p.Monto_Pagado) > 0){ showToast('Este pago ya tiene abonos y no se puede eliminar'); return; }
+  if(!confirm(`¿Eliminar el registro de ${p.Tratamiento} de ${p.Paciente}? Esta acción no se puede deshacer.`)) return;
+  eliminarPago(pagoId);
+}
+async function eliminarPago(pagoId){
+  if(CONFIG.API_URL){
+    const res = await apiCall('delete_pago', { pagoId }, ['pagos']);
+    if(res && res.error){ showToast(res.error); return; }
+  } else {
+    const idx = DATA.pagos.findIndex(x=>x.ID===pagoId);
+    if(idx !== -1) DATA.pagos.splice(idx, 1);
+  }
+  showToast('Pago eliminado'); render();
+}
+function abrirEdicionGasto(gastoId){
+  const g = DATA.gastos.find(x=>x.ID===gastoId); if(!g) return;
+  let categoriaSel = g.Categoria;
+  const original = { Concepto: g.Concepto, Categoria: g.Categoria, Monto: Number(g.Monto) };
+  openModal(`
+    <h3>Editar gasto</h3>
+    <div class="field" style="margin-bottom:12px;"><label>Concepto</label><input id="egConcepto" value="${g.Concepto}"></div>
+    <div class="field" style="margin-bottom:12px;"><label>Categoría</label>
+      <div class="picker-btn" id="egCatBtn">${categoriaSel}</div></div>
+    <div class="field" style="margin-bottom:16px;"><label>Monto</label><input id="egMonto" type="text" inputmode="decimal" value="${String(g.Monto).replace('.', separadorDecimal())}"></div>
+    <div class="modal-actions"><div class="btn block" onclick="closeModal()">Cancelar</div><div class="btn primary block" id="egGuardar">Guardar</div></div>`);
+  attachSaneoMonto('egMonto');
+  document.getElementById('egCatBtn').addEventListener('click', ()=>{
+    openGastoCategoryPicker(categoriaSel, (cat)=>{ categoriaSel = cat; document.getElementById('egCatBtn').textContent = cat; });
+  });
+  document.getElementById('egGuardar').addEventListener('click', async ()=>{
+    const concepto = document.getElementById('egConcepto').value.trim();
+    const monto = parsearMonto(document.getElementById('egMonto').value);
+    const faltan = []; if(!concepto) faltan.push('Concepto'); if(monto<=0) faltan.push('Monto');
+    if(faltan.length) return showToast('Completa: '+faltan.join(', '));
+    const actual = { Concepto: concepto, Categoria: categoriaSel, Monto: monto };
+    const cambios = {};
+    Object.keys(actual).forEach(k=>{ if(actual[k] !== original[k]) cambios[k] = actual[k]; });
+    if(Object.keys(cambios).length === 0){ showToast('Sin cambios que guardar'); closeModal(); return; }
+    if(CONFIG.API_URL){ await apiCall('edit_gasto', { gastoId: g.ID, cambios }, ['gastos']); }
+    else { Object.assign(g, cambios); }
+    showToast('Gasto actualizado'); closeModal(); render();
+  });
 }
 // Ciclo 1 / Ronda 5 (#9/#10/#11) — 2 fechas separadas: inicioTrat (editable,
 // puede ser anterior a hoy) y ultimoPago (fecha del pago mas reciente, la
@@ -1639,14 +1799,20 @@ async function guardarPagoNuevo(selPac, selTrat, total, pagado, inicioTrat){
   // fecha de "ultimo pago" — seria confuso, porque no hubo ningun pago
   // aun. Se queda vacio hasta el primer abono real.
   const ultimoPago = pagado>0 ? hoy : '';
+  // Ciclo 2 (Grupo 2) — Categoria queda congelada con la que tiene el
+  // tratamiento AHORA MISMO en el catalogo. De aqui en adelante, aunque
+  // el tratamiento cambie de categoria despues, este pago conserva la
+  // que le correspondia al momento de crearse.
+  const tratCatalogo = DATA.tratamientos.find(t=>t.Nombre===selTrat.nombre);
+  const categoria = tratCatalogo ? tratCatalogo.Categoria : 'Otros';
   if(CONFIG.API_URL){
     // #13 — 'pacientes' se agrega a syncKeys porque el servidor puede
     // asignarle el tratamiento al paciente si todavia no lo tenia (ver
     // addPago en Code.gs) — sin esto, el FE se quedaria con la lista de
     // tratamientos del paciente desactualizada hasta el proximo refresco.
-    await apiCall('add_pago', { inicioTratamiento:inicio, ultimoPago, pacienteId:selPac.ID, paciente:selPac.Nombre, tratamiento:selTrat.nombre, montoTotal:total, montoPagado:pagado }, ['pagos','pacientes']);
+    await apiCall('add_pago', { inicioTratamiento:inicio, ultimoPago, pacienteId:selPac.ID, paciente:selPac.Nombre, tratamiento:selTrat.nombre, categoria, montoTotal:total, montoPagado:pagado }, ['pagos','pacientes']);
   } else {
-    DATA.pagos.push({ID:id, Inicio_Tratamiento:inicio, Ultimo_Pago:ultimoPago, Paciente_ID:selPac.ID, Paciente:selPac.Nombre, Tratamiento:selTrat.nombre, Monto_Total:total, Monto_Pagado:pagado, Saldo:total-pagado});
+    DATA.pagos.push({ID:id, Inicio_Tratamiento:inicio, Ultimo_Pago:ultimoPago, Paciente_ID:selPac.ID, Paciente:selPac.Nombre, Tratamiento:selTrat.nombre, Categoria:categoria, Monto_Total:total, Monto_Pagado:pagado, Saldo:total-pagado});
     // #13 (modo demo) — mismo criterio que agregarTratamientosAlPaciente
     // en Code.gs: solo se agrega si el paciente no lo tenia ya.
     const pacLocal = DATA.pacientes.find(x=>x.ID===selPac.ID);
@@ -1820,11 +1986,63 @@ function fillTratamientosTable(filter){
   let filtrados = DATA.tratamientos.filter(t=>{ const blob = [t.Nombre,t.Categoria,t.Precio_MXN].join(' '); return matches(blob, f); });
   filtrados = ordenar('tratamientos', filtrados, (t,key)=> key==='Precio_MXN'||key==='Duracion_Min' ? Number(t[key]||0) : t[key]);
   const { pageItems: rows, total, totalPaginas } = paginar('tratamientos', filtrados);
-  tbody.innerHTML = rows.map(t=>`<tr><td>${t.Nombre}</td><td>${t.Categoria}</td><td>${fmtMoney(t.Precio_MXN)}</td><td>${t.Duracion_Min||30} min</td></tr>`).join('') || '<tr><td colspan="4" class="empty">Sin resultados</td></tr>';
+  // Ciclo 2 (Grupo 2) — fila clickeable para editar; badge de estado
+  // igual que Pacientes.
+  tbody.innerHTML = rows.map(t=>`<tr class="clickable" data-trat="${t.ID}"><td>${t.Nombre}</td><td>${t.Categoria}</td><td>${fmtMoney(t.Precio_MXN)}</td><td>${t.Duracion_Min||30} min</td><td>${t.Activo==='Inactivo'?'<span class="badge inactive">Inactivo</span>':'<span class="badge ok">Activo</span>'}</td></tr>`).join('') || '<tr><td colspan="5" class="empty">Sin resultados</td></tr>';
+  tbody.querySelectorAll('[data-trat]').forEach(tr=>{ tr.addEventListener('click', ()=> abrirEdicionTratamiento(tr.dataset.trat)); });
   const pagBox = document.getElementById('tratPaginador');
   if(pagBox){ pagBox.innerHTML = renderPaginador('tratamientos', total, totalPaginas); attachPaginadorEvents('tratamientos', ()=>fillTratamientosTable(filter)); }
   actualizarAlturaTabla('tratTableBlock', 'tratamientos', total);
   refreshSortArrows('tratamientos'); attachSortHeaders('tratamientos', ()=>fillTratamientosTable(filter));
+}
+// Ciclo 2 (Grupo 2) — edicion de Tratamiento: Nombre, Categoria, Precio,
+// Duracion, mas el toggle Activo/Inactivo. Nunca se elimina — los pagos
+// y citas historicos ya quedaron protegidos con su propia fotografia
+// congelada (Categoria en Pagos, Duracion_Min en Citas), asi que editar
+// aqui es 100% seguro para los datos ya existentes.
+function abrirEdicionTratamiento(tratId){
+  const t = DATA.tratamientos.find(x=>x.ID===tratId); if(!t) return;
+  let categoriaSel = t.Categoria;
+  const esActivo = t.Activo!=='Inactivo';
+  const original = { Nombre: t.Nombre, Categoria: t.Categoria, Precio_MXN: Number(t.Precio_MXN), Duracion_Min: Number(t.Duracion_Min||30) };
+  openModal(`
+    <h3>Editar tratamiento</h3>
+    <div class="field" style="margin-bottom:12px;"><label>Nombre</label><input id="etNombre" value="${t.Nombre}"></div>
+    <div class="field" style="margin-bottom:12px;"><label>Categoría</label><div class="picker-btn" id="etCatBtn">${categoriaSel}</div></div>
+    <div class="form-grid" style="margin-bottom:16px;">
+      <div class="field"><label>Precio</label><input id="etPrecio" type="text" inputmode="decimal" value="${String(t.Precio_MXN).replace('.', separadorDecimal())}"></div>
+      <div class="field"><label>Duración (minutos)</label><input id="etDuracion" type="number" min="5" step="5" value="${t.Duracion_Min||30}"></div>
+    </div>
+    <p class="subtle" style="margin-bottom:16px;">Estado: ${esActivo?'<span style="color:var(--teal)">Activo</span>':'<span style="color:var(--text-mute)">Inactivo</span>'} <span class="subtle">— un tratamiento inactivo deja de poder elegirse para citas o pagos nuevos, pero no afecta lo que ya existe.</span></p>
+    <div class="modal-actions">
+      <div class="btn block" id="etToggleActivo">${esActivo?'Marcar como inactivo':'Reactivar tratamiento'}</div>
+      <div class="btn primary block" id="etGuardar">Guardar</div>
+    </div>
+    <div class="modal-actions" style="margin-top:8px;"><div class="btn block" onclick="closeModal()">Cerrar sin guardar</div></div>`);
+  attachSaneoMonto('etPrecio');
+  document.getElementById('etCatBtn').addEventListener('click', ()=>{
+    openCategoryPicker(categoriaSel, (cat)=>{ categoriaSel = cat; document.getElementById('etCatBtn').textContent = cat; });
+  });
+  document.getElementById('etToggleActivo').addEventListener('click', async ()=>{
+    const nuevoEstado = esActivo ? 'Inactivo' : 'Activo';
+    if(CONFIG.API_URL){ await apiCall('edit_tratamiento', { tratamientoId: t.ID, cambios: { Activo: nuevoEstado } }, ['tratamientos']); }
+    else { t.Activo = nuevoEstado; }
+    closeModal(); showToast(esActivo?'Tratamiento marcado como inactivo':'Tratamiento reactivado'); render();
+  });
+  document.getElementById('etGuardar').addEventListener('click', async ()=>{
+    const nombre = document.getElementById('etNombre').value.trim();
+    const precio = parsearMonto(document.getElementById('etPrecio').value);
+    const duracion = Number(document.getElementById('etDuracion').value)||30;
+    const faltan = []; if(!nombre) faltan.push('Nombre'); if(precio<=0) faltan.push('Precio');
+    if(faltan.length) return showToast('Completa: '+faltan.join(', '));
+    const actual = { Nombre: nombre, Categoria: categoriaSel, Precio_MXN: precio, Duracion_Min: duracion };
+    const cambios = {};
+    Object.keys(actual).forEach(k=>{ if(actual[k] !== original[k]) cambios[k] = actual[k]; });
+    if(Object.keys(cambios).length === 0){ showToast('Sin cambios que guardar'); closeModal(); return; }
+    if(CONFIG.API_URL){ await apiCall('edit_tratamiento', { tratamientoId: t.ID, cambios }, ['tratamientos']); }
+    else { Object.assign(t, cambios); }
+    showToast('Tratamiento actualizado'); closeModal(); render();
+  });
 }
 
 /* ==================== AGENDA ==================== */
@@ -1882,21 +2100,33 @@ Maria Ramirez Cruz,Corona dental,2026-08-11,11:00</div>
    en su propia funcion para poder refrescarla sola (boton "Actualizar
    agenda") sin repintar todo el tab, que borraria el formulario de "Nueva
    cita" a medio llenar. */
+// Ciclo 2 (Grupo 2) — antes esta lista excluia las citas Canceladas por
+// completo (desaparecian sin dejar rastro, como si nunca hubieran
+// existido). Ahora se muestran con su propio badge, para que el doctor
+// pueda ver el detalle completo de su dia. Los demas widgets/conteos del
+// sistema (citas de hoy, citas esta semana, tratamientos mas solicitados,
+// etc.) siguen excluyendolas — ahi si no deben contar como carga de
+// trabajo real; solo esta lista cambio.
 function renderCitasListHTML(){
   const hoy = todayStr();
-  const citasOrdenadas = [...DATA.citas].filter(c=>c.Estado!=='Cancelada').sort((a,b)=>(a.Fecha+a.Hora).localeCompare(b.Fecha+b.Hora));
+  const citasOrdenadas = [...DATA.citas].sort((a,b)=>(a.Fecha+a.Hora).localeCompare(b.Fecha+b.Hora));
   return citasOrdenadas.map(c=>{
-    const dur = duracionCitaMin(c.Tratamientos||c.Tratamiento);
+    // Duracion_Min congelada al agendar (Ciclo 2); si una cita vieja no
+    // la tiene todavia (antes de que existiera esta columna), se calcula
+    // en vivo como respaldo — nunca deberia pasar tras el relleno inicial.
+    const dur = c.Duracion_Min || duracionCitaMin(c.Tratamientos||c.Tratamiento);
     const finCita = new Date(c.Fecha+'T'+c.Hora+':00').getTime() + dur*60000;
     const esHoy = c.Fecha===hoy;
     const yaConcluida = finCita <= Date.now();
-    const esPasada = (c.Fecha < hoy) || (esHoy && yaConcluida);
-    const etiqueta = (esHoy && yaConcluida) ? '<br><span class="subtle">· Concluida hoy</span><br>' : '';
-    const color = esPasada ? 'var(--text-mute)' : (esHoy ? 'var(--amber)' : 'var(--teal)');
-    const acciones = esPasada
+    const esCancelada = c.Estado==='Cancelada';
+    const esPasada = !esCancelada && ((c.Fecha < hoy) || (esHoy && yaConcluida));
+    const etiqueta = esCancelada ? '<br><span class="subtle" style="color:var(--red);">· Cancelada</span><br>' : ((esHoy && yaConcluida) ? '<br><span class="subtle">· Concluida hoy</span><br>' : '');
+    const color = esCancelada ? 'var(--red)' : (esPasada ? 'var(--text-mute)' : (esHoy ? 'var(--amber)' : 'var(--teal)'));
+    const acciones = esCancelada ? ''
+      : esPasada
       ? `<div style="display:flex;gap:6px;margin-top:6px;"><div class="btn sm" data-reagendar="${c.ID}">Reagendar</div></div>`
       : `<div style="display:flex;gap:6px;margin-top:6px;"><div class="btn sm" data-reagendar="${c.ID}">Reagendar</div><div class="btn sm danger" data-cancelar="${c.ID}">Cancelar</div></div>`;
-    return `<div class="appt"><div class="appt-time">${formatearFechaCorta(c.Fecha)}<br>${formatearHora(c.Hora)}</div><div class="appt-info" style="border-left-color:${color}"><b>${c.Paciente}</b>${etiqueta}<span>${tratArr(c.Tratamientos||c.Tratamiento).join(' + ')} · ${dur} min</span>${acciones}</div></div>`;
+    return `<div class="appt" style="${esCancelada?'opacity:.6;':''}"><div class="appt-time">${formatearFechaCorta(c.Fecha)}<br>${formatearHora(c.Hora)}</div><div class="appt-info" style="border-left-color:${color}"><b>${c.Paciente}</b>${etiqueta}<span>${tratArr(c.Tratamientos||c.Tratamiento).join(' + ')} · ${dur} min</span>${acciones}</div></div>`;
   }).join('') || '<div class="empty">Sin citas</div>';
 }
 /* Vuelve a conectar los botones Reagendar/Cancelar de la lista de Citas —
@@ -2084,18 +2314,23 @@ function afterRenderHooks(){
     fillPagosTable(SEARCH_STATE.pagos); fillGastosTable(SEARCH_STATE.gastos);
     document.getElementById('pagoSearch').addEventListener('input', e=>{ SEARCH_STATE.pagos = e.target.value; PAGINATION.pagos.page = 1; fillPagosTable(e.target.value); });
     document.getElementById('gastoSearch').addEventListener('input', e=>{ SEARCH_STATE.gastos = e.target.value; PAGINATION.gastos.page = 1; fillGastosTable(e.target.value); });
-    document.getElementById('btnAddPago').addEventListener('click', ()=>{
-      let selPac = null; let selTrat = null;
+    // Ciclo 2 (Grupo 2) — misma reestructuracion que Gastos: funcion
+    // reutilizable con prefill, para poder reabrir el formulario ya
+    // lleno desde el boton "Modificar" de la confirmacion.
+    function abrirModalRegistrarPago(prefill){
+      let selPac = (prefill && prefill.selPac) || null;
+      let selTrat = (prefill && prefill.selTrat) || null;
       openModal(`
         <h3>Registrar pago</h3>
-        <div class="field" style="margin-bottom:12px;"><label>Paciente</label><div class="picker-btn" id="pgPacBtn">Selecciona un paciente</div></div>
-        <div class="field" style="margin-bottom:12px;"><label>Tratamiento</label><div class="picker-btn" id="pgTratBtn">Selecciona un tratamiento</div></div>
-        <div class="field" style="margin-bottom:12px;"><label>Inicio del tratamiento <span class="subtle">(si empezó antes de hoy, indícalo aquí)</span></label><input id="pgInicioTrat" type="date" value="${todayStr()}" max="${todayStr()}"></div>
+        <div class="field" style="margin-bottom:12px;"><label>Paciente</label><div class="picker-btn" id="pgPacBtn">${selPac?selPac.Nombre:'Selecciona un paciente'}</div></div>
+        <div class="field" style="margin-bottom:12px;"><label>Tratamiento</label><div class="picker-btn" id="pgTratBtn">${selTrat?selTrat.nombre:'Selecciona un tratamiento'}</div></div>
+        <div class="field" style="margin-bottom:12px;"><label>Inicio del tratamiento <span class="subtle">(si empezó antes de hoy, indícalo aquí)</span></label><input id="pgInicioTrat" type="date" value="${(prefill&&prefill.inicioTrat)||todayStr()}" max="${todayStr()}"></div>
         <div class="form-grid" style="margin-bottom:16px;">
-          <div class="field"><label>Monto total</label><input id="pgTotal" type="text" readonly placeholder="Se llena al elegir tratamiento"></div>
-          <div class="field"><label>Monto pagado</label><input id="pgPagado" type="text" inputmode="decimal" placeholder="0"></div>
+          <div class="field"><label>Monto total</label><input id="pgTotal" type="text" readonly placeholder="Se llena al elegir tratamiento" value="${selTrat?fmtMoney(selTrat.precio):''}"></div>
+          <div class="field"><label>Monto pagado</label><input id="pgPagado" type="text" inputmode="decimal" placeholder="0" value="${prefill&&prefill.pagado?prefill.pagado:''}"></div>
         </div>
         <div class="modal-actions"><div class="btn block" onclick="closeModal()">Cancelar</div><div class="btn primary block" id="mGuardarPago">Guardar</div></div>`);
+      if(selTrat) document.getElementById('pgTotal').dataset.raw = selTrat.precio;
       attachSaneoMonto('pgPagado');
       document.getElementById('pgPacBtn').addEventListener('click', ()=>{
         openPatientPicker((pac)=>{ selPac = pac; document.getElementById('pgPacBtn').textContent = pac.Nombre; }, false);
@@ -2103,7 +2338,7 @@ function afterRenderHooks(){
       document.getElementById('pgTratBtn').addEventListener('click', ()=>{
         openTreatmentPickerSingleScoped(selPac, (t)=>{ selTrat = t; document.getElementById('pgTratBtn').textContent = t.nombre; document.getElementById('pgTotal').value = fmtMoney(t.precio); document.getElementById('pgTotal').dataset.raw = t.precio; });
       });
-      document.getElementById('mGuardarPago').addEventListener('click', async ()=>{
+      document.getElementById('mGuardarPago').addEventListener('click', ()=>{
         const faltanPago = []; if(!selPac) faltanPago.push('Paciente'); if(!selTrat) faltanPago.push('Tratamiento');
         if(faltanPago.length) return showToast('Completa: '+faltanPago.join(', '));
         const total = Number(document.getElementById('pgTotal').dataset.raw)||0;
@@ -2123,42 +2358,83 @@ function afterRenderHooks(){
             closeModal();
             openAbonoModal(existente.ID, ()=>{ fillPagosTable(SEARCH_STATE.pagos); });
           });
-          document.getElementById('btnCrearNuevo').addEventListener('click', async ()=>{
-            closeModal(); await guardarPagoNuevo(selPac, selTrat, total, pagado, inicioTrat);
+          document.getElementById('btnCrearNuevo').addEventListener('click', ()=>{
+            confirmarYGuardarPago(selPac, selTrat, total, pagado, inicioTrat);
           });
           return;
         }
+        confirmarYGuardarPago(selPac, selTrat, total, pagado, inicioTrat);
+      });
+    }
+    // Ciclo 2 (Grupo 2) — confirmacion antes de guardar: un pago solo se
+    // puede eliminar despues si nadie le ha abonado nada, asi que se
+    // avisa antes de que sea (casi siempre) permanente. "Modificar"
+    // reabre el formulario ya lleno con lo mismo que se habia
+    // seleccionado/escrito.
+    function confirmarYGuardarPago(selPac, selTrat, total, pagado, inicioTrat){
+      closeModal();
+      openModal(`
+        <h3>¿Confirmas este pago?</h3>
+        <p style="font-size:13px;margin-bottom:6px;">Paciente: <b>${selPac.Nombre}</b></p>
+        <p style="font-size:13px;margin-bottom:6px;">Tratamiento: <b>${selTrat.nombre}</b></p>
+        <p style="font-size:13px;margin-bottom:6px;">Total: <b>${fmtMoney(total)}</b> · Pagado: <b>${fmtMoney(pagado)}</b></p>
+        <p style="font-size:13px;margin-bottom:16px;">Una vez guardado, este registro no podrá eliminarse del sistema — solo podrás corregirlo mediante abonos adicionales. Revisa bien los datos antes de continuar.</p>
+        <div class="modal-actions"><div class="btn block" id="pgModificar">Modificar</div><div class="btn primary block" id="pgConfirmar">Confirmar y guardar</div></div>`);
+      document.getElementById('pgModificar').addEventListener('click', ()=> abrirModalRegistrarPago({selPac, selTrat, inicioTrat, pagado}));
+      document.getElementById('pgConfirmar').addEventListener('click', async ()=>{
         await guardarPagoNuevo(selPac, selTrat, total, pagado, inicioTrat);
       });
-    });
-    document.getElementById('btnAddGasto').addEventListener('click', ()=>{
-      let categoriaSelGasto = DATA.categorias_gasto[0] ? DATA.categorias_gasto[0].Categoria : '';
+    }
+    document.getElementById('btnAddPago').addEventListener('click', ()=> abrirModalRegistrarPago(null));
+    // Ciclo 2 (Grupo 2) — el formulario se armo como funcion reutilizable
+    // (en vez de un listener inline de un solo uso) para poder reabrirlo
+    // pre-llenado desde el boton "Modificar" de la confirmacion, sin
+    // depender de restaurar HTML crudo con listeners muertos.
+    function abrirModalRegistrarGasto(prefill){
+      let categoriaSelGasto = (prefill && prefill.categoria) || (DATA.categorias_gasto[0] ? DATA.categorias_gasto[0].Categoria : '');
       openModal(`
         <h3>Registrar gasto</h3>
-        <div class="field" style="margin-bottom:12px;"><label>Concepto</label><input id="gConcepto"></div>
+        <div class="field" style="margin-bottom:12px;"><label>Concepto</label><input id="gConcepto" value="${prefill?prefill.concepto:''}"></div>
         <div class="field" style="margin-bottom:12px;"><label>Categoría</label>
           <div class="picker-btn" id="gCatBtn">${categoriaSelGasto}</div></div>
-        <div class="field" style="margin-bottom:16px;"><label>Monto</label><input id="gMonto" type="text" inputmode="decimal" placeholder="0${separadorDecimal()}00"></div>
+        <div class="field" style="margin-bottom:16px;"><label>Monto</label><input id="gMonto" type="text" inputmode="decimal" placeholder="0${separadorDecimal()}00" value="${prefill?String(prefill.monto).replace('.', separadorDecimal()):''}"></div>
         <div class="modal-actions"><div class="btn block" onclick="closeModal()">Cancelar</div><div class="btn primary block" id="mGuardarGasto">Guardar</div></div>`);
       attachSaneoMonto('gMonto');
       document.getElementById('gCatBtn').addEventListener('click', ()=>{
         openGastoCategoryPicker(categoriaSelGasto, (cat)=>{ categoriaSelGasto = cat; document.getElementById('gCatBtn').textContent = cat; });
       });
-      document.getElementById('mGuardarGasto').addEventListener('click', async ()=>{
+      document.getElementById('mGuardarGasto').addEventListener('click', ()=>{
         const concepto = document.getElementById('gConcepto').value.trim();
         const categoria = categoriaSelGasto;
         const monto = parsearMonto(document.getElementById('gMonto').value);
         const faltanGasto = []; if(!concepto) faltanGasto.push('Concepto'); if(monto<=0) faltanGasto.push('Monto');
         if(faltanGasto.length) return showToast('Completa: '+faltanGasto.join(', '));
-        let id = 'G' + String(DATA.gastos.length+1).padStart(3,'0');
-        if(CONFIG.API_URL){
-          await apiCall('add_gasto', { fecha:todayStr(), concepto, categoria, monto }, ['gastos']);
-        } else {
-          DATA.gastos.push({ID:id, Fecha:todayStr(), Concepto:concepto, Categoria:categoria, Monto:monto});
-        }
-        closeModal(); showToast('Gasto registrado'); render();
+        // Ciclo 2 (Grupo 2) — confirmacion antes de guardar: Gastos nunca
+        // se puede eliminar despues, asi que se avisa claro antes de que
+        // sea permanente. "Modificar" reabre el formulario ya lleno con
+        // lo mismo que se habia escrito (no restaura HTML crudo, vuelve a
+        // armar el modal desde cero con los valores como prefill — asi
+        // los botones quedan con sus eventos funcionando de verdad).
+        openModal(`
+          <h3>¿Confirmas este gasto?</h3>
+          <p style="font-size:13px;margin-bottom:6px;">Concepto: <b>${concepto}</b></p>
+          <p style="font-size:13px;margin-bottom:6px;">Categoría: <b>${categoria}</b></p>
+          <p style="font-size:13px;margin-bottom:16px;">Monto: <b>${fmtMoney(monto)}</b></p>
+          <p style="font-size:13px;margin-bottom:16px;">Una vez guardado, este registro no podrá eliminarse del sistema — solo podrás corregirlo editando sus datos. Revisa bien antes de continuar.</p>
+          <div class="modal-actions"><div class="btn block" id="gModificar">Modificar</div><div class="btn primary block" id="gConfirmar">Confirmar y guardar</div></div>`);
+        document.getElementById('gModificar').addEventListener('click', ()=> abrirModalRegistrarGasto({concepto, categoria, monto}));
+        document.getElementById('gConfirmar').addEventListener('click', async ()=>{
+          let id = 'G' + String(DATA.gastos.length+1).padStart(3,'0');
+          if(CONFIG.API_URL){
+            await apiCall('add_gasto', { fecha:todayStr(), concepto, categoria, monto }, ['gastos']);
+          } else {
+            DATA.gastos.push({ID:id, Fecha:todayStr(), Concepto:concepto, Categoria:categoria, Monto:monto});
+          }
+          closeModal(); showToast('Gasto registrado'); render();
+        });
       });
-    });
+    }
+    document.getElementById('btnAddGasto').addEventListener('click', ()=> abrirModalRegistrarGasto(null));
   }
 
   if(ACTIVE_TAB === 'tratamientos'){
@@ -2418,7 +2694,11 @@ async function guardarCitaNueva(pac, trats, fecha, hora, forzar){
     }
     showToast(res ? 'Cita creada y agregada a Google Calendar' : 'Cita guardada localmente (sin conexion)');
   } else {
-    DATA.citas.push({ID:id, Fecha:fecha, Hora:hora, Paciente_ID:pac.ID, Paciente:pac.Nombre, Tratamientos:trats.join(', '), Estado:'Confirmada'});
+    // Ciclo 2 (Grupo 2) — Duracion_Min queda congelada con lo que dura
+    // el tratamiento AHORA MISMO en el catalogo, igual que hace el
+    // servidor. Si el tratamiento cambia de duracion despues, esta cita
+    // ya agendada no se ve afectada.
+    DATA.citas.push({ID:id, Fecha:fecha, Hora:hora, Paciente_ID:pac.ID, Paciente:pac.Nombre, Tratamientos:trats.join(', '), Duracion_Min:duracionCitaMin(trats.join(', ')), Estado:'Confirmada'});
     showToast('Cita agendada (modo demo)');
   }
   render();

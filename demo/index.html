@@ -559,6 +559,20 @@ function todayStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.get
    Trabajamos siempre con los numeros del texto tal cual, nunca con new Date(str). */
 function ymd(fechaStr){ const p = String(fechaStr||'').split('-').map(Number); return { y:p[0]||0, m:p[1]||0, d:p[2]||0 }; }
 function diaDelMes(fechaStr){ return ymd(fechaStr).d; }
+// Ciclo 2 / Ronda 2 (#6 de Citas) — rango exacto de dias del bloque S1-S5
+// al que pertenece una fecha, para mostrarlo junto al numero de "Citas
+// esta semana" y que quede claro que dias cubre exactamente (el ultimo
+// bloque de cada mes se recorta al ultimo dia real del mes, no siempre
+// llega a "29-31").
+function rangoSemanaBloque(fechaStr){
+  const f = ymd(fechaStr);
+  const bloque = Math.ceil(f.d/7);
+  const diaIni = (bloque-1)*7 + 1;
+  const ultimoDiaMes = new Date(f.y, f.m, 0).getDate();
+  const diaFin = Math.min(bloque*7, ultimoDiaMes);
+  const mesTxt = MESES_CORTOS[f.m-1];
+  return `${String(diaIni).padStart(2,'0')}-${mesTxt} al ${String(diaFin).padStart(2,'0')}-${mesTxt}`;
+}
 function esMesActual(fechaStr, ref){ const a=ymd(fechaStr); const r=ref||new Date(); return a.y===r.getFullYear() && a.m===(r.getMonth()+1); }
 function nowHM(){ const d=new Date(); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
 
@@ -782,41 +796,61 @@ function openPatientPicker(onSelect, activeOnly){
 // categoria via un mini-modal, y eliminarla solo si no tiene
 // dependencias (el servidor valida esto de verdad; aqui solo se checa
 // localmente para dar un aviso rapido antes de intentar la peticion).
-function abrirRenombrarCategoria(nombreActual, esGasto, onRenombrado){
-  closePicker();
-  openModal(`
+// Ciclo 2 / Ronda 2 (#5 de Categorias) — bug real corregido: antes,
+// renombrar/eliminar usaba openModal() (la MISMA ventana que ya estaba
+// mostrando "Editar tratamiento" o "Registrar gasto" detras del
+// selector), lo que SOBRESCRIBIA ese contenido por completo — al
+// cancelar no habia adonde volver y todo se cerraba de golpe. Ahora
+// renombrar/eliminar se dibujan DENTRO de la misma ventana del selector
+// de categoria (pickerBody, una ventana distinta a la del modal
+// principal) — el modal padre (Editar tratamiento/Registrar gasto)
+// nunca se toca en todo el proceso, asi que jamas hay nada que
+// restaurar ni por qué perderse.
+function abrirRenombrarCategoria(nombreActual, esGasto, onVolver){
+  document.getElementById('pickerBody').innerHTML = `
     <h3>Renombrar categoría</h3>
     <div class="field" style="margin-bottom:16px;"><label>Nombre</label><input id="rcNombre" value="${nombreActual}"></div>
-    <div class="modal-actions"><div class="btn block" onclick="closeModal()">Cancelar</div><div class="btn primary block" id="rcGuardar">Guardar</div></div>`);
+    <div class="modal-actions"><div class="btn block" id="rcCancelar">Cancelar</div><div class="btn primary block" id="rcGuardar">Guardar</div></div>`;
+  document.getElementById('rcCancelar').addEventListener('click', onVolver);
   document.getElementById('rcGuardar').addEventListener('click', async ()=>{
     const nuevoNombre = document.getElementById('rcNombre').value.trim();
     if(!nuevoNombre) return showToast('Completa: Nombre');
-    if(nuevoNombre === nombreActual){ showToast('Sin cambios que guardar'); closeModal(); return; }
+    if(nuevoNombre === nombreActual){ showToast('Sin cambios que guardar'); onVolver(); return; }
     const lista = esGasto ? DATA.categorias_gasto : DATA.categorias_tratamiento;
     if(lista.some(c=>normalize(c.Categoria)===normalize(nuevoNombre))) return showToast('Ya existe una categoría con ese nombre');
     const accion = esGasto ? 'edit_categoria_gasto' : 'edit_categoria';
     const syncKey = esGasto ? 'categorias_gasto' : 'categorias_tratamiento';
     if(CONFIG.API_URL){ await apiCall(accion, { nombreActual, nombreNuevo: nuevoNombre }, [syncKey]); }
     else { const c = lista.find(x=>x.Categoria===nombreActual); if(c) c.Categoria = nuevoNombre; }
-    closeModal(); showToast('Categoría renombrada'); onRenombrado(nuevoNombre);
+    showToast('Categoría renombrada'); onVolver();
   });
 }
-async function eliminarCategoria(nombre, esGasto, onEliminado){
+// Mismo criterio que arriba: la confirmacion de eliminar se dibuja
+// dentro de pickerBody en vez de usar el confirm() nativo del navegador
+// (#5 de Pagos aplicado tambien aqui, para estandarizar) — nunca toca el
+// modal padre.
+function eliminarCategoria(nombre, esGasto, onVolver){
   const listaDependiente = esGasto ? DATA.gastos : DATA.tratamientos;
   const enUso = listaDependiente.some(x=>x.Categoria===nombre);
   if(enUso){ showToast(`Esta categoría tiene ${esGasto?'gastos':'tratamientos'} asignados y no se puede eliminar`); return; }
-  if(!confirm(`¿Eliminar la categoría "${nombre}"?`)) return;
-  const lista = esGasto ? DATA.categorias_gasto : DATA.categorias_tratamiento;
-  const accion = esGasto ? 'delete_categoria_gasto' : 'delete_categoria';
-  const syncKey = esGasto ? 'categorias_gasto' : 'categorias_tratamiento';
-  if(CONFIG.API_URL){
-    const res = await apiCall(accion, { categoria: nombre }, [syncKey]);
-    if(res && res.error){ showToast(res.error); return; }
-  } else {
-    const idx = lista.findIndex(c=>c.Categoria===nombre);
-    if(idx !== -1) lista.splice(idx, 1);
-  }
-  showToast('Categoría eliminada'); onEliminado();
+  document.getElementById('pickerBody').innerHTML = `
+    <h3>¿Eliminar esta categoría?</h3>
+    <p style="font-size:13px;margin-bottom:16px;">"${nombre}" — esta acción no se puede deshacer.</p>
+    <div class="modal-actions"><div class="btn block" id="dcCancelar">Cancelar</div><div class="btn primary block" id="dcConfirmar" style="background:var(--red);">Eliminar</div></div>`;
+  document.getElementById('dcCancelar').addEventListener('click', onVolver);
+  document.getElementById('dcConfirmar').addEventListener('click', async ()=>{
+    const lista = esGasto ? DATA.categorias_gasto : DATA.categorias_tratamiento;
+    const accion = esGasto ? 'delete_categoria_gasto' : 'delete_categoria';
+    const syncKey = esGasto ? 'categorias_gasto' : 'categorias_tratamiento';
+    if(CONFIG.API_URL){
+      const res = await apiCall(accion, { categoria: nombre }, [syncKey]);
+      if(res && res.error){ showToast(res.error); onVolver(); return; }
+    } else {
+      const idx = lista.findIndex(c=>c.Categoria===nombre);
+      if(idx !== -1) lista.splice(idx, 1);
+    }
+    showToast('Categoría eliminada'); onVolver();
+  });
 }
 function openCategoryPicker(current, onSelect){
   function draw(filter){
@@ -838,7 +872,7 @@ function openCategoryPicker(current, onSelect){
   refreshScrollHint(list);
   list.addEventListener('click', async e=>{
     if(e.target.closest('[data-editcat]')){ abrirRenombrarCategoria(e.target.closest('[data-editcat]').dataset.editcat, false, ()=> openCategoryPicker(current, onSelect)); return; }
-    if(e.target.closest('[data-delcat]')){ await eliminarCategoria(e.target.closest('[data-delcat]').dataset.delcat, false, refrescar); return; }
+    if(e.target.closest('[data-delcat]')){ eliminarCategoria(e.target.closest('[data-delcat]').dataset.delcat, false, ()=> openCategoryPicker(current, onSelect)); return; }
     const item = e.target.closest('.picker-item'); if(!item) return;
     if(item.dataset.newcat){
       const nuevaCategoria = item.dataset.newcat;
@@ -872,7 +906,7 @@ function openGastoCategoryPicker(current, onSelect){
   refreshScrollHint(list);
   list.addEventListener('click', async e=>{
     if(e.target.closest('[data-editcat]')){ abrirRenombrarCategoria(e.target.closest('[data-editcat]').dataset.editcat, true, ()=> openGastoCategoryPicker(current, onSelect)); return; }
-    if(e.target.closest('[data-delcat]')){ await eliminarCategoria(e.target.closest('[data-delcat]').dataset.delcat, true, refrescar); return; }
+    if(e.target.closest('[data-delcat]')){ eliminarCategoria(e.target.closest('[data-delcat]').dataset.delcat, true, ()=> openGastoCategoryPicker(current, onSelect)); return; }
     const item = e.target.closest('.picker-item'); if(!item) return;
     if(item.dataset.newcat){
       const nuevaCategoria = item.dataset.newcat;
@@ -918,7 +952,7 @@ function renderDashboardHTML(){
             : '<div class="empty">No hay más citas por hoy</div>')}
       </div>
       <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
-        <span class="subtle">Citas esta semana (${semanaActual})</span><b style="color:var(--teal);font-size:15px;">${citasEstaSemana}</b>
+        <span class="subtle">Citas esta semana (${semanaActual} · ${rangoSemanaBloque(hoy)})</span><b style="color:var(--teal);font-size:15px;">${citasEstaSemana}</b>
       </div>
     </div>
     <div class="card" style="display:flex;flex-direction:column;overflow:visible;">
@@ -953,7 +987,7 @@ function renderDashboardHTML(){
         <span class="subtle">Ingresos del mes:</span><b style="font-size:15px;color:var(--teal);">${fmtMoney(ingresosMes)}</b>
       </div>
       <div class="cash-chart-wrap" style="height:160px;"><canvas id="cashChart"></canvas></div>
-      <p class="subtle" style="margin-top:8px;">Acumulado semana con semana — para el detalle exacto de cada semana, ve a Finanzas</p>
+      <p class="subtle" style="margin-top:8px;">Acumulado semana con semana (S1-S5 = días 1-7, 8-14, 15-21, 22-28, 29-31 del mes en curso) — para el detalle exacto, ve a Finanzas</p>
     </div>
     <div class="card clickable-card" id="pendienteCard" style="display:flex;flex-direction:column;">
       <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>Pendiente por cobrar</div>
@@ -964,7 +998,7 @@ function renderDashboardHTML(){
   </div>
   <div class="card" style="margin-top:16px;">
     <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/></svg>Pacientes nuevos vs. recurrentes</div></div>
-    <p class="subtle" style="margin:-4px 0 6px;">Por semana del mes en curso — un paciente cuenta una sola vez por semana</p>
+    <p class="subtle" style="margin:-4px 0 6px;">Por semana del mes en curso (S1-S5 = días 1-7, 8-14, 15-21, 22-28, 29-31) — un paciente cuenta una sola vez por semana</p>
     <div class="mini-chart-wrap" style="height:160px;"><canvas id="nuevosRecurrentesChart"></canvas></div>
   </div>`;
 }
@@ -1669,7 +1703,7 @@ function renderFinanzasHTML(){
         <div class="btn primary sm" id="btnAddPago">+ Registrar pago</div>
       </div>
       <div class="table-wrap tw-fija" id="pagTableBlock">
-        <table><thead><tr>${thSort('pagos','Paciente','Paciente')}${thSort('pagos','Tratamiento','Tratamiento')}${thSort('pagos','Inicio Tratamiento','Inicio_Tratamiento')}${thSort('pagos','Último pago','Ultimo_Pago')}${thSort('pagos','Total','Monto_Total')}${thSort('pagos','Pagado','Monto_Pagado')}${thSort('pagos','Saldo','Saldo')}<th></th></tr></thead><tbody id="pagosTbody"></tbody></table>
+        <table><thead><tr>${thSort('pagos','Paciente','Paciente')}${thSort('pagos','Tratamiento','Tratamiento')}${thSort('pagos','Categoría','Categoria')}${thSort('pagos','Inicio Tratamiento','Inicio_Tratamiento')}${thSort('pagos','Último pago','Ultimo_Pago')}${thSort('pagos','Total','Monto_Total')}${thSort('pagos','Pagado','Monto_Pagado')}${thSort('pagos','Saldo','Saldo')}<th></th></tr></thead><tbody id="pagosTbody"></tbody></table>
         <div id="pagPaginador"></div>
       </div>
     </div>
@@ -1693,7 +1727,7 @@ function fillPagosTable(filter){
   const tbody = document.getElementById('pagosTbody'); if(!tbody) return;
   const f = filter||'';
   let filtrados = [...DATA.pagos].sort((a,b)=>b.Ultimo_Pago.localeCompare(a.Ultimo_Pago)).filter(p=>{
-    const blob = [p.Inicio_Tratamiento,p.Ultimo_Pago,p.Paciente,p.Tratamiento,p.Monto_Total,p.Monto_Pagado,p.Saldo].join(' ');
+    const blob = [p.Inicio_Tratamiento,p.Ultimo_Pago,p.Paciente,p.Tratamiento,p.Categoria,p.Monto_Total,p.Monto_Pagado,p.Saldo].join(' ');
     return matches(blob, f);
   });
   filtrados = ordenar('pagos', filtrados, (p,key)=> key==='Monto_Total'||key==='Monto_Pagado'||key==='Saldo' ? Number(p[key]) : p[key]);
@@ -1709,7 +1743,14 @@ function fillPagosTable(filter){
   // Ciclo 2 (Grupo 2) — boton "Eliminar" solo aparece si Monto_Pagado es
   // 0 (nunca se le ha abonado nada) — en cuanto tiene cualquier abono, el
   // registro se vuelve permanente y este boton deja de mostrarse.
-  tbody.innerHTML = rows.map(p=>`<tr><td>${p.Paciente}</td><td>${p.Tratamiento}</td><td>${formatearFecha(p.Inicio_Tratamiento)}</td><td>${formatearFecha(p.Ultimo_Pago)}</td><td>${fmtMoney(p.Monto_Total)}</td><td>${fmtMoney(p.Monto_Pagado)}</td><td>${Number(p.Saldo)>0?`<span class="badge pend">${fmtMoney(p.Saldo)}</span>`:`<span class="badge ok">$0</span>`}</td><td style="display:flex;gap:6px;"><div class="btn sm" data-abonar="${p.ID}" style="${Number(p.Saldo)>0?'':'visibility:hidden;'}">Abonar</div>${Number(p.Monto_Pagado)===0?`<div class="btn sm" data-eliminar-pago="${p.ID}" style="color:var(--red);border-color:var(--red);">Eliminar</div>`:''}</td></tr>`).join('') || '<tr><td colspan="8" class="empty">Sin resultados</td></tr>';
+  // Ciclo 2 / Ronda 2 (#4 de Pagos) — el boton "Eliminar" YA NO se agrega
+  // condicionalmente (eso hacia que unas filas tuvieran 1 boton y otras 2,
+  // con anchos/altos distintos — reintroducia el mismo bug de "la tabla
+  // se achica/agranda" que ya se habia resuelto en el Ciclo 1). Ahora
+  // los 2 botones SIEMPRE se renderizan, y el que no aplica queda oculto
+  // con visibility:hidden (ocupa el mismo espacio, sin verse) — mismo
+  // patron que ya usaba "Abonar" para el caso de saldo en $0.
+  tbody.innerHTML = rows.map(p=>`<tr><td>${p.Paciente}</td><td>${p.Tratamiento}</td><td>${p.Categoria||'Otros'}</td><td>${formatearFecha(p.Inicio_Tratamiento)}</td><td>${formatearFecha(p.Ultimo_Pago)}</td><td>${fmtMoney(p.Monto_Total)}</td><td>${fmtMoney(p.Monto_Pagado)}</td><td>${Number(p.Saldo)>0?`<span class="badge pend">${fmtMoney(p.Saldo)}</span>`:`<span class="badge ok">$0</span>`}</td><td style="display:flex;gap:6px;"><div class="btn sm" data-abonar="${p.ID}" style="${Number(p.Saldo)>0?'':'visibility:hidden;'}">Abonar</div><div class="btn sm" data-eliminar-pago="${p.ID}" style="color:var(--red);border-color:var(--red);${Number(p.Monto_Pagado)===0?'':'visibility:hidden;'}">Eliminar</div></td></tr>`).join('') || '<tr><td colspan="9" class="empty">Sin resultados</td></tr>';
   tbody.querySelectorAll('[data-abonar]').forEach(btn=>{ btn.addEventListener('click', ()=> openAbonoModal(btn.dataset.abonar, ()=>{ fillPagosTable(document.getElementById('pagoSearch').value); })); });
   tbody.querySelectorAll('[data-eliminar-pago]').forEach(btn=>{ btn.addEventListener('click', ()=> confirmarEliminarPago(btn.dataset.eliminarPago)); });
   const pagBox = document.getElementById('pagPaginador');
@@ -1739,11 +1780,17 @@ function fillGastosTable(filter){
 // (defensa por si el dato local quedo desactualizado), pero se checa
 // aqui primero para dar el aviso correcto sin ni siquiera intentar la
 // peticion si ya no aplica.
+// Ciclo 2 / Ronda 2 (#5 de Pagos) — ventana propia en vez del alert()
+// nativo del navegador, para que se vea consistente con el resto del
+// sistema (mismo patron que "Horario ocupado" al agendar).
 function confirmarEliminarPago(pagoId){
   const p = DATA.pagos.find(x=>x.ID===pagoId); if(!p) return;
   if(Number(p.Monto_Pagado) > 0){ showToast('Este pago ya tiene abonos y no se puede eliminar'); return; }
-  if(!confirm(`¿Eliminar el registro de ${p.Tratamiento} de ${p.Paciente}? Esta acción no se puede deshacer.`)) return;
-  eliminarPago(pagoId);
+  openModal(`
+    <h3>¿Eliminar este pago?</h3>
+    <p style="font-size:13px;margin-bottom:16px;">${p.Tratamiento} de <b>${p.Paciente}</b>. Esta acción no se puede deshacer.</p>
+    <div class="modal-actions"><div class="btn block" onclick="closeModal()">Cancelar</div><div class="btn primary block" id="btnConfirmarEliminarPago" style="background:var(--red);">Eliminar</div></div>`);
+  document.getElementById('btnConfirmarEliminarPago').addEventListener('click', ()=>{ closeModal(); eliminarPago(pagoId); });
 }
 async function eliminarPago(pagoId){
   if(CONFIG.API_URL){
@@ -2344,19 +2391,27 @@ function afterRenderHooks(){
         const total = Number(document.getElementById('pgTotal').dataset.raw)||0;
         const pagado = parsearMonto(document.getElementById('pgPagado').value);
         const inicioTrat = document.getElementById('pgInicioTrat').value || todayStr();
-        const existente = DATA.pagos.find(p=>p.Paciente_ID===selPac.ID && p.Tratamiento===selTrat.nombre && Number(p.Saldo)>0);
-        if(existente){
+        // Ciclo 2 / Ronda 2 (#9 de Pagos) — antes se usaba .find() (se
+        // quedaba con el PRIMER pago abierto que encontrara para ese
+        // tratamiento, ignorando si habia mas de uno). Ahora se buscan
+        // TODOS los abiertos y, si hay mas de uno, se deja elegir a cual
+        // abonar en vez de asumir cual es.
+        const existentes = DATA.pagos.filter(p=>p.Paciente_ID===selPac.ID && p.Tratamiento===selTrat.nombre && Number(p.Saldo)>0);
+        if(existentes.length){
           closeModal();
+          const listaHtml = existentes.map(p=>`<div class="pend-row"><span>Inicio: ${formatearFecha(p.Inicio_Tratamiento)} <span class="subtle">· Saldo: ${fmtMoney(p.Saldo)}</span></span><div class="btn sm" data-abonar-existente="${p.ID}">Abonar</div></div>`).join('');
           openModal(`
-            <h3>Ya existe un pago pendiente</h3>
-            <p style="font-size:13px;margin-bottom:14px;">${selPac.Nombre} ya tiene un registro de <b>${selTrat.nombre}</b> con saldo de ${fmtMoney(existente.Saldo)}. ¿Quieres abonar a ese registro en vez de crear uno nuevo?</p>
+            <h3>${existentes.length>1?'Ya existen pagos pendientes':'Ya existe un pago pendiente'}</h3>
+            <p style="font-size:13px;margin-bottom:14px;">${selPac.Nombre} ya tiene ${existentes.length>1?`${existentes.length} registros de`:'un registro de'} <b>${selTrat.nombre}</b> con saldo pendiente. ¿Quieres abonar a ${existentes.length>1?'alguno de los existentes':'ese registro'} en vez de crear uno nuevo?</p>
+            <div style="margin-bottom:16px;">${listaHtml}</div>
             <div class="modal-actions">
               <div class="btn block" id="btnCrearNuevo">Crear registro nuevo de todas formas</div>
-              <div class="btn primary block" id="btnAbonarExistente">Abonar al existente</div>
             </div>`);
-          document.getElementById('btnAbonarExistente').addEventListener('click', ()=>{
-            closeModal();
-            openAbonoModal(existente.ID, ()=>{ fillPagosTable(SEARCH_STATE.pagos); });
+          document.querySelectorAll('[data-abonar-existente]').forEach(btn=>{
+            btn.addEventListener('click', ()=>{
+              closeModal();
+              openAbonoModal(btn.dataset.abonarExistente, ()=>{ fillPagosTable(SEARCH_STATE.pagos); });
+            });
           });
           document.getElementById('btnCrearNuevo').addEventListener('click', ()=>{
             confirmarYGuardarPago(selPac, selTrat, total, pagado, inicioTrat);
@@ -2496,8 +2551,8 @@ function afterRenderHooks(){
         <h3>Confirmar cita</h3>
         <div class="summary-row"><span>Paciente</span><span>${selectedPac.Nombre}</span></div>
         <div class="summary-row"><span>Tratamientos</span><span>${selectedTrats.join(', ')}</span></div>
-        <div class="summary-row"><span>Fecha</span><span>${fecha}</span></div>
-        <div class="summary-row"><span>Hora</span><span>${hora}</span></div>
+        <div class="summary-row"><span>Fecha</span><span>${formatearFecha(fecha)}</span></div>
+        <div class="summary-row"><span>Hora</span><span>${formatearHora(hora)}</span></div>
         <div class="modal-actions"><div class="btn block" onclick="closeModal()">Corregir</div><div class="btn primary block" id="confirmCita">Confirmar y agendar</div></div>`);
       document.getElementById('confirmCita').addEventListener('click', ()=>{
         closeModal();

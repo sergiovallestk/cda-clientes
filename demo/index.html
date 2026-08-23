@@ -110,11 +110,15 @@
      contenido necesita, con el minimo por tabla como piso para activar
      scroll horizontal (ya preparado en .table-wrap) unicamente cuando
      de verdad hace falta, sin forzar mas ancho del necesario. */
-  table{width:auto;border-collapse:collapse;font-size:13px;}
-  #pacTableBlock table{min-width:900px;}
-  #pagTableBlock table{min-width:1250px;}
-  #gastoTableBlock table{min-width:700px;}
-  #tratTableBlock table{min-width:800px;}
+  /* Ciclo 2 / Ronda 6 (#10 de Pagos) — se revirtio el ancho minimo
+     forzado en Pacientes/Gastos/Tratamientos (habia quedado peor que
+     antes: una caja angosta flotando dentro de un panel ancho). Esas 3
+     tablas vuelven a llenar el 100% del contenedor, como estaban
+     originalmente. SOLO Pagos conserva su ancho minimo — es la unica
+     con suficientes columnas (9) para de verdad necesitar scroll
+     horizontal en pantallas normales. */
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  #pagTableBlock table{width:auto;min-width:1250px;}
   thead th{text-align:left;color:var(--text-dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:0.4px;padding:10px 12px;border-bottom:1px solid var(--border);white-space:nowrap;}
   /* Ciclo 2 / Ronda 4 (#4 de Pagos) — altura MINIMA (no fija) por celda,
      para eliminar variaciones de contenido sin arriesgar que el texto se
@@ -141,9 +145,23 @@
      la parte de adentro (.table-scroll, la tabla en si) tiene scroll
      horizontal — el paginador se queda siempre fijo, fuera de esa zona
      que se desplaza. */
-  .table-card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:6px 8px 8px;}
+  /* Ciclo 2 / Ronda 6 — display:flex + margin-top:auto en el paginador:
+     sin esto, cuando una pagina tiene menos filas que otra (ej. la
+     ultima pagina), el paginador quedaba pegado justo despues de la
+     tabla, mas arriba dentro del espacio reservado, en vez de siempre
+     en el fondo — eso hacia que su posicion en pantalla brincara al
+     cambiar de pagina (mismo bug que ya se habia resuelto en el Ciclo 1
+     con este mismo mecanismo, perdido sin querer al reestructurar para
+     unificar tabla+paginador visualmente). */
+  .table-card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:6px 8px 8px;display:flex;flex-direction:column;}
+  .table-card > div[id$="Paginador"]{margin-top:auto;}
   .table-scroll{overflow-x:auto;}
-  .table-card > div[id$="Paginador"]{margin-top:6px;padding-top:8px;border-top:1px solid var(--border);}
+  /* Ciclo 2 / Ronda 6 — se quito el border-top de aqui: la ultima fila
+     de la tabla ya trae su propio border-bottom, asi que con los 2
+     bordes pegados se veian 2 rayas en vez de una sola division limpia.
+     margin-top:auto ya quedo definido arriba, junto con el flex del
+     contenedor padre — aqui solo el relleno interno que le da aire. */
+  .table-card > div[id$="Paginador"]{padding-top:8px;}
   /* #64 (corregido de nuevo) — reservar altura minima en el contenedor NO
      ancla el paginador al fondo por si solo — el espacio de mas queda
      despues del paginador, no entre la tabla y el, asi que el paginador
@@ -1568,12 +1586,13 @@ function actualizarAlturaTabla(blockId, key, total, altoFila){
   if(!el) return;
   if(total===0){ el.style.minHeight = ''; return; }
   const filas = Math.min(PAGINATION[key].size, total);
-  // Ciclo 2 / Ronda 5 (#10 de Pagos) — el "+50" de abajo era espacio
-  // reservado para el paginador, que en su momento vivia DENTRO de este
-  // mismo contenedor. Desde que se saco de ahi (Ronda 4, #11), ese
-  // espacio ya no hace falta aqui — sumarlo seguia dejando un hueco
-  // vacio de 50px sin ningun proposito real.
-  el.style.minHeight = (42 + filas*(altoFila||45)) + 'px';
+  // Ciclo 2 / Ronda 6 — el paginador volvio a vivir DENTRO de este mismo
+  // contenedor (Ronda 5, #11 — para unificarlo visualmente con la tabla),
+  // asi que su altura real (52px, medida en navegador) tiene que volver
+  // a contarse aqui. Sin esto, el contenedor no reservaba espacio
+  // suficiente y el bug de "la pagina brinca al cambiar de pagina" (ya
+  // resuelto en el Ciclo 1) volvio a aparecer.
+  el.style.minHeight = (42 + filas*(altoFila||45) + 52) + 'px';
 }
 function attachPaginadorEvents(key, refillFn){
   document.querySelectorAll(`.pag-size[data-pag-key="${key}"]`).forEach(sel=>{
@@ -2460,10 +2479,18 @@ function afterRenderHooks(){
             if(pagina>totalPaginas) pagina = totalPaginas;
             const existentesPagina = existentes.slice((pagina-1)*porPagina, pagina*porPagina);
             const listaHtml = existentesPagina.map(p=>`<div class="pend-row"><span>Inicio: ${formatearFecha(p.Inicio_Tratamiento)} <span class="subtle">· Saldo: ${fmtMoney(p.Saldo)}</span></span><div class="btn sm" data-abonar-existente="${p.ID}">Abonar</div></div>`).join('');
+            // Ciclo 2 / Ronda 6 (#12 de Pagos) — 2 correcciones: (1) la
+            // ventana regresa a su tamaño normal (el ancho no era el
+            // problema real). (2) el contenedor de la lista reserva
+            // espacio fijo para "porPagina" renglones (5), sin importar
+            // cuantos haya de verdad en la pagina actual — asi pasar de
+            // una pagina con 5 a una con 1 ya no hace que toda la ventana
+            // cambie de tamaño de golpe. Mismo principio que ya usan las
+            // tablas principales (actualizarAlturaTabla).
             openModal(`
               <h3>${existentes.length>1?'Ya existen pagos pendientes':'Ya existe un pago pendiente'}</h3>
               <p style="font-size:13px;margin-bottom:14px;">${selPac.Nombre} ya tiene ${existentes.length>1?`${existentes.length} registros de`:'un registro de'} <b>${selTrat.nombre}</b> con saldo pendiente. ¿Quieres abonar a ${existentes.length>1?'alguno de los existentes':'ese registro'} en vez de crear uno nuevo?</p>
-              <div style="margin-bottom:16px;">${listaHtml}</div>
+              <div style="margin-bottom:16px;min-height:${porPagina*45}px;">${listaHtml}</div>
               ${existentes.length>porPagina ? `<div class="paginador" style="padding-top:8px;margin-bottom:16px;">
                 <span class="subtle">${existentes.length} registros</span>
                 <div class="paginador-controles">
@@ -2474,7 +2501,7 @@ function afterRenderHooks(){
               </div>` : ''}
               <div class="modal-actions">
                 <div class="btn block" id="btnCrearNuevo">Crear registro nuevo de todas formas</div>
-              </div>`, true);
+              </div>`);
             // openAbonoModal ya hace su propio pushModalState(volverInit)
             // internamente — no hace falta (y seria un duplicado en la
             // pila) llamarlo tambien aqui.

@@ -117,10 +117,15 @@
   #tratTableBlock table{min-width:800px;}
   thead th{text-align:left;color:var(--text-dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:0.4px;padding:10px 12px;border-bottom:1px solid var(--border);white-space:nowrap;}
   /* Ciclo 2 / Ronda 4 (#4 de Pagos) — altura MINIMA (no fija) por celda,
-     para eliminar la pequeña variacion de 4px entre filas sin arriesgar
-     que el texto se recorte si alguien usa un tamaño de letra mas grande
-     (accesibilidad): si el contenido necesita mas espacio, la fila
-     crece; nunca se fuerza a un valor exacto que pueda quedar corto. */
+     para eliminar variaciones de contenido sin arriesgar que el texto se
+     recorte si alguien usa un tamaño de letra mas grande (accesibilidad):
+     si el contenido necesita mas espacio, la fila crece; nunca se fuerza
+     a un valor exacto que pueda quedar corto. Se investigo forzar un
+     valor fijo (incluso exagerado, 100px) para intentar eliminar un
+     residuo de 1px entre filas — el residuo persistio igual, confirmando
+     que es un detalle de redondeo de bordes del navegador entre filas
+     consecutivas de una tabla HTML, no algo que el CSS pueda controlar.
+     Se abandono ese camino (min-height sigue siendo lo correcto). */
   tbody td{padding:11px 12px;border-bottom:1px solid var(--border);min-height:53px;box-sizing:border-box;}
   tbody tr.clickable{cursor:pointer;}
   tbody tr:hover{background:#132135;}
@@ -130,6 +135,15 @@
   .badge.cancel{background:#2A1614;color:var(--red);}
   .badge.inactive{background:#241a1a;color:var(--text-mute);}
   .table-wrap{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:6px 8px;overflow-x:auto;}
+  /* Ciclo 2 / Ronda 5 (#11 de Pagos) — la tabla y su paginador ahora
+     viven dentro de un mismo contenedor visual (borde + fondo), para
+     que se lean como una sola pieza en vez de 2 elementos sueltos. Solo
+     la parte de adentro (.table-scroll, la tabla en si) tiene scroll
+     horizontal — el paginador se queda siempre fijo, fuera de esa zona
+     que se desplaza. */
+  .table-card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:6px 8px 8px;}
+  .table-scroll{overflow-x:auto;}
+  .table-card > div[id$="Paginador"]{margin-top:6px;padding-top:8px;border-top:1px solid var(--border);}
   /* #64 (corregido de nuevo) — reservar altura minima en el contenedor NO
      ancla el paginador al fondo por si solo — el espacio de mas queda
      despues del paginador, no entre la tabla y el, asi que el paginador
@@ -243,10 +257,10 @@
   .paginador{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;padding:12px 4px 2px;}
   .paginador-controles{display:flex;align-items:center;gap:8px;}
   .paginador select.pag-size{background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:6px 8px;color:var(--text);font-size:12.5px;}
-  .modal, .picker-list, .appt-list, .table-wrap, #horarioRows{ scrollbar-width:thin; scrollbar-color:var(--border) transparent; }
-  .modal::-webkit-scrollbar, .picker-list::-webkit-scrollbar, .appt-list::-webkit-scrollbar, .table-wrap::-webkit-scrollbar{ width:7px; height:7px; }
-  .modal::-webkit-scrollbar-thumb, .picker-list::-webkit-scrollbar-thumb, .appt-list::-webkit-scrollbar-thumb, .table-wrap::-webkit-scrollbar-thumb{ background:var(--border); border-radius:4px; }
-  .modal::-webkit-scrollbar-track, .picker-list::-webkit-scrollbar-track, .appt-list::-webkit-scrollbar-track, .table-wrap::-webkit-scrollbar-track{ background:transparent; }
+  .modal, .picker-list, .appt-list, .table-wrap, .table-scroll, #horarioRows{ scrollbar-width:thin; scrollbar-color:var(--border) transparent; }
+  .modal::-webkit-scrollbar, .picker-list::-webkit-scrollbar, .appt-list::-webkit-scrollbar, .table-wrap::-webkit-scrollbar, .table-scroll::-webkit-scrollbar{ width:7px; height:7px; }
+  .modal::-webkit-scrollbar-thumb, .picker-list::-webkit-scrollbar-thumb, .appt-list::-webkit-scrollbar-thumb, .table-wrap::-webkit-scrollbar-thumb, .table-scroll::-webkit-scrollbar-thumb{ background:var(--border); border-radius:4px; }
+  .modal::-webkit-scrollbar-track, .picker-list::-webkit-scrollbar-track, .appt-list::-webkit-scrollbar-track, .table-wrap::-webkit-scrollbar-track, .table-scroll::-webkit-scrollbar-track{ background:transparent; }
 
   @media (max-width:900px){
     .hamburger{display:flex;}
@@ -1458,10 +1472,10 @@ function renderPacientesHTML(){
     <input class="search" id="pacSearch" placeholder="Buscar por nombre o tratamiento..." value="${SEARCH_STATE.pacientes}">
     <div class="btn primary" id="btnAddPaciente">+ Nuevo paciente</div>
   </div>
-  <div class="table-wrap" id="pacTableBlock">
-    <table><thead><tr>${thSort('pacientes','Paciente','Nombre')}${thSort('pacientes','Telefono','Telefono')}${thSort('pacientes','Ultima visita','Ultima_Visita')}${thSort('pacientes','Tratamientos','Tratamientos')}${thSort('pacientes','Estado','Estado')}${thSort('pacientes','Saldo','Saldo')}</tr></thead><tbody id="pacTbody"></tbody></table>
-  </div>
-  <div id="pacPaginador"></div>`;
+  <div class="table-card" id="pacTableBlock">
+    <div class="table-scroll"><table><thead><tr>${thSort('pacientes','Paciente','Nombre')}${thSort('pacientes','Telefono','Telefono')}${thSort('pacientes','Ultima visita','Ultima_Visita')}${thSort('pacientes','Tratamientos','Tratamientos')}${thSort('pacientes','Estado','Estado')}${thSort('pacientes','Saldo','Saldo')}</tr></thead><tbody id="pacTbody"></tbody></table></div>
+    <div id="pacPaginador"></div>
+  </div>`;
 }
 /* ============ ORDEN GENERICO (clic en encabezado) — Pacientes, Pagos, Gastos, Tratamientos ============ */
 const SORT_STATE = { pacientes:{key:null,dir:1}, pagos:{key:null,dir:1}, gastos:{key:null,dir:1}, tratamientos:{key:null,dir:1} };
@@ -1554,7 +1568,12 @@ function actualizarAlturaTabla(blockId, key, total, altoFila){
   if(!el) return;
   if(total===0){ el.style.minHeight = ''; return; }
   const filas = Math.min(PAGINATION[key].size, total);
-  el.style.minHeight = (42 + filas*(altoFila||45) + 50) + 'px';
+  // Ciclo 2 / Ronda 5 (#10 de Pagos) — el "+50" de abajo era espacio
+  // reservado para el paginador, que en su momento vivia DENTRO de este
+  // mismo contenedor. Desde que se saco de ahi (Ronda 4, #11), ese
+  // espacio ya no hace falta aqui — sumarlo seguia dejando un hueco
+  // vacio de 50px sin ningun proposito real.
+  el.style.minHeight = (42 + filas*(altoFila||45)) + 'px';
 }
 function attachPaginadorEvents(key, refillFn){
   document.querySelectorAll(`.pag-size[data-pag-key="${key}"]`).forEach(sel=>{
@@ -1725,10 +1744,10 @@ function renderFinanzasHTML(){
         <input class="search" id="pagoSearch" placeholder="Buscar por fecha, paciente, tratamiento, monto..." value="${SEARCH_STATE.pagos}">
         <div class="btn primary sm" id="btnAddPago">+ Registrar pago</div>
       </div>
-      <div class="table-wrap" id="pagTableBlock">
-        <table><thead><tr>${thSort('pagos','Paciente','Paciente')}${thSort('pagos','Tratamiento','Tratamiento')}${thSort('pagos','Categoría','Categoria')}${thSort('pagos','Inicio Tratamiento','Inicio_Tratamiento')}${thSort('pagos','Último pago','Ultimo_Pago')}${thSort('pagos','Total','Monto_Total')}${thSort('pagos','Pagado','Monto_Pagado')}${thSort('pagos','Saldo','Saldo')}<th></th></tr></thead><tbody id="pagosTbody"></tbody></table>
+      <div class="table-card" id="pagTableBlock">
+        <div class="table-scroll"><table><thead><tr>${thSort('pagos','Paciente','Paciente')}${thSort('pagos','Tratamiento','Tratamiento')}${thSort('pagos','Categoría','Categoria')}${thSort('pagos','Inicio Tratamiento','Inicio_Tratamiento')}${thSort('pagos','Último pago','Ultimo_Pago')}${thSort('pagos','Total','Monto_Total')}${thSort('pagos','Pagado','Monto_Pagado')}${thSort('pagos','Saldo','Saldo')}<th></th></tr></thead><tbody id="pagosTbody"></tbody></table></div>
+        <div id="pagPaginador"></div>
       </div>
-      <div id="pagPaginador"></div>
     </div>
   </div>
 
@@ -1739,10 +1758,10 @@ function renderFinanzasHTML(){
         <input class="search" id="gastoSearch" placeholder="Buscar por fecha, concepto, categoría, monto..." value="${SEARCH_STATE.gastos}">
         <div class="btn primary sm" id="btnAddGasto">+ Registrar gasto</div>
       </div>
-      <div class="table-wrap" id="gastoTableBlock">
-        <table><thead><tr>${thSort('gastos','Fecha','Fecha')}${thSort('gastos','Concepto','Concepto')}${thSort('gastos','Categoría','Categoria')}${thSort('gastos','Monto','Monto')}</tr></thead><tbody id="gastosTbody"></tbody></table>
+      <div class="table-card" id="gastoTableBlock">
+        <div class="table-scroll"><table><thead><tr>${thSort('gastos','Fecha','Fecha')}${thSort('gastos','Concepto','Concepto')}${thSort('gastos','Categoría','Categoria')}${thSort('gastos','Monto','Monto')}</tr></thead><tbody id="gastosTbody"></tbody></table></div>
+        <div id="gastoPaginador"></div>
       </div>
-      <div id="gastoPaginador"></div>
     </div>
   </div>`;
 }
@@ -2045,10 +2064,10 @@ function renderTratamientosHTML(){
     <input class="search" id="tratSearch" placeholder="Buscar por tratamiento, categoría o precio..." value="${SEARCH_STATE.tratamientos}">
     <div class="btn primary" id="btnAddTratamiento">+ Nuevo tratamiento</div>
   </div>
-  <div class="table-wrap" id="tratTableBlock">
-    <table><thead><tr>${thSort('tratamientos','Tratamiento','Nombre')}${thSort('tratamientos','Categoría','Categoria')}${thSort('tratamientos','Precio','Precio_MXN')}${thSort('tratamientos','Duración','Duracion_Min')}${thSort('tratamientos','Estado','Estado')}</tr></thead><tbody id="tratTbody"></tbody></table>
-  </div>
-  <div id="tratPaginador"></div>`;
+  <div class="table-card" id="tratTableBlock">
+    <div class="table-scroll"><table><thead><tr>${thSort('tratamientos','Tratamiento','Nombre')}${thSort('tratamientos','Categoría','Categoria')}${thSort('tratamientos','Precio','Precio_MXN')}${thSort('tratamientos','Duración','Duracion_Min')}${thSort('tratamientos','Estado','Estado')}</tr></thead><tbody id="tratTbody"></tbody></table></div>
+    <div id="tratPaginador"></div>
+  </div>`;
 }
 function fillTratamientosTable(filter){
   const tbody = document.getElementById('tratTbody'); if(!tbody) return;
@@ -2455,7 +2474,7 @@ function afterRenderHooks(){
               </div>` : ''}
               <div class="modal-actions">
                 <div class="btn block" id="btnCrearNuevo">Crear registro nuevo de todas formas</div>
-              </div>`);
+              </div>`, true);
             // openAbonoModal ya hace su propio pushModalState(volverInit)
             // internamente — no hace falta (y seria un duplicado en la
             // pila) llamarlo tambien aqui.

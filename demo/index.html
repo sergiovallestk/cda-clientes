@@ -100,19 +100,28 @@
   .toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:10px;flex-wrap:wrap;}
   .search{flex:1;min-width:160px;max-width:320px;background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-size:13px;}
   .search::placeholder{color:var(--text-mute);}
-  /* Ciclo 2 / Ronda 3 (#4 de Pagos) — causa real del "texto en 2 lineas
-     que desalinea las filas": la tabla siempre se ajustaba al 100% del
-     contenedor sin importar cuantas columnas tuviera, asi que con mas
-     columnas (Pagos ya tiene 9) el texto se comprimia y se partia en 2
-     lineas en vez de desbordar — .table-wrap YA tenia overflow-x:auto,
-     pero nunca se activaba porque la tabla nunca superaba el 100%. Con
-     un ancho minimo, las columnas ya no se comprimen mas alla de lo
-     legible: en pantallas angostas aparece scroll horizontal (para esta
-     tabla y para cualquier otra con muchas columnas), en vez de romper
-     la altura uniforme de las filas. Aplica a las 4 tablas por igual. */
-  table{width:100%;min-width:1250px;border-collapse:collapse;font-size:13px;}
+  /* Ciclo 2 / Ronda 3 (#4 de Pagos), corregido en Ronda 4 (#10) — cada
+     tabla necesita su PROPIO ancho minimo segun su cantidad real de
+     columnas, no un solo valor generico. Ademas, width:100% obligaba a
+     CUALQUIER tabla a estirarse a rellenar todo el contenedor
+     disponible incluso en pantallas anchas donde le sobraba espacio
+     (la queja original de Gastos: columna Concepto con espacios
+     exagerados) — width:auto deja que la tabla mida solo lo que su
+     contenido necesita, con el minimo por tabla como piso para activar
+     scroll horizontal (ya preparado en .table-wrap) unicamente cuando
+     de verdad hace falta, sin forzar mas ancho del necesario. */
+  table{width:auto;border-collapse:collapse;font-size:13px;}
+  #pacTableBlock table{min-width:900px;}
+  #pagTableBlock table{min-width:1250px;}
+  #gastoTableBlock table{min-width:700px;}
+  #tratTableBlock table{min-width:800px;}
   thead th{text-align:left;color:var(--text-dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:0.4px;padding:10px 12px;border-bottom:1px solid var(--border);white-space:nowrap;}
-  tbody td{padding:11px 12px;border-bottom:1px solid var(--border);}
+  /* Ciclo 2 / Ronda 4 (#4 de Pagos) — altura MINIMA (no fija) por celda,
+     para eliminar la pequeña variacion de 4px entre filas sin arriesgar
+     que el texto se recorte si alguien usa un tamaño de letra mas grande
+     (accesibilidad): si el contenido necesita mas espacio, la fila
+     crece; nunca se fuerza a un valor exacto que pueda quedar corto. */
+  tbody td{padding:11px 12px;border-bottom:1px solid var(--border);min-height:53px;box-sizing:border-box;}
   tbody tr.clickable{cursor:pointer;}
   tbody tr:hover{background:#132135;}
   .badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap;}
@@ -127,8 +136,12 @@
      seguia "subiendo" en paginas con menos filas. Con flex-column +
      margin-top:auto en el paginador, este queda pegado al fondo siempre,
      sin importar cuantas filas haya arriba. */
-  .table-wrap.tw-fija{display:flex;flex-direction:column;}
-  .table-wrap.tw-fija > div[id$="Paginador"]{margin-top:auto;padding-top:8px;}
+  /* Ciclo 2 / Ronda 4 (#11 de Pagos) — el paginador ya NO vive dentro del
+     contenedor con scroll horizontal (antes se desplazaba junto con la
+     tabla, obligando a regresar hasta el principio solo para cambiar de
+     pagina — muy incomodo en movil). Ahora es un hermano fuera de ese
+     contenedor, siempre visible sin necesidad de scroll. */
+  div[id$="Paginador"]{margin-top:8px;}
 
   .collapsible .coll-header{display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px 2px;margin-bottom:10px;}
   /* #69 — sin esto, una seccion colapsable pegaba directo con la siguiente (ej. "Gastos fijos" quedaba justo donde terminara la tabla de Pagos, sea cual fuera su alto, sin ninguna separacion visual entre ambas). Se agrega margen solo entre colapsables consecutivos (no antes del primero, que ya tiene su propio espacio con las graficas de arriba). */
@@ -682,7 +695,7 @@ function toggleCollapse(el){ el.closest('.collapsible').classList.toggle('collap
 function openTreatmentPicker(preselected, onConfirm){
   const selected = new Set(preselected||[]);
   function draw(filter){
-    const items = DATA.tratamientos.filter(t=>t.Activo!=='Inactivo' && matches(t.Nombre, filter||''));
+    const items = DATA.tratamientos.filter(t=>t.Estado!=='Inactivo' && matches(t.Nombre, filter||''));
     return items.map(t=>`<label class="picker-item"><input type="checkbox" value="${t.Nombre}" ${selected.has(t.Nombre)?'checked':''}><span>${t.Nombre} <span class="subtle">· ${t.Categoria} · ${fmtMoney(t.Precio_MXN)}</span></span></label>`).join('') || '<div class="empty">Sin resultados</div>';
   }
   document.getElementById('pickerBody').innerHTML = `
@@ -702,7 +715,7 @@ function openTreatmentPicker(preselected, onConfirm){
 /* ============ SELECTOR UNICO DE TRATAMIENTO (para Registrar pago) ============ */
 function openTreatmentPickerSingle(onSelect){
   function draw(filter){
-    const items = DATA.tratamientos.filter(t=>t.Activo!=='Inactivo' && matches(t.Nombre, filter||''));
+    const items = DATA.tratamientos.filter(t=>t.Estado!=='Inactivo' && matches(t.Nombre, filter||''));
     return items.map(t=>`<div class="picker-item" data-nombre="${t.Nombre}" data-precio="${t.Precio_MXN}">${t.Nombre} <span class="subtle">· ${t.Categoria} · ${fmtMoney(t.Precio_MXN)}</span></div>`).join('') || '<div class="empty">Sin resultados</div>';
   }
   document.getElementById('pickerBody').innerHTML = `
@@ -1445,10 +1458,10 @@ function renderPacientesHTML(){
     <input class="search" id="pacSearch" placeholder="Buscar por nombre o tratamiento..." value="${SEARCH_STATE.pacientes}">
     <div class="btn primary" id="btnAddPaciente">+ Nuevo paciente</div>
   </div>
-  <div class="table-wrap tw-fija" id="pacTableBlock">
+  <div class="table-wrap" id="pacTableBlock">
     <table><thead><tr>${thSort('pacientes','Paciente','Nombre')}${thSort('pacientes','Telefono','Telefono')}${thSort('pacientes','Ultima visita','Ultima_Visita')}${thSort('pacientes','Tratamientos','Tratamientos')}${thSort('pacientes','Estado','Estado')}${thSort('pacientes','Saldo','Saldo')}</tr></thead><tbody id="pacTbody"></tbody></table>
-    <div id="pacPaginador"></div>
-  </div>`;
+  </div>
+  <div id="pacPaginador"></div>`;
 }
 /* ============ ORDEN GENERICO (clic en encabezado) — Pacientes, Pagos, Gastos, Tratamientos ============ */
 const SORT_STATE = { pacientes:{key:null,dir:1}, pagos:{key:null,dir:1}, gastos:{key:null,dir:1}, tratamientos:{key:null,dir:1} };
@@ -1712,10 +1725,10 @@ function renderFinanzasHTML(){
         <input class="search" id="pagoSearch" placeholder="Buscar por fecha, paciente, tratamiento, monto..." value="${SEARCH_STATE.pagos}">
         <div class="btn primary sm" id="btnAddPago">+ Registrar pago</div>
       </div>
-      <div class="table-wrap tw-fija" id="pagTableBlock">
+      <div class="table-wrap" id="pagTableBlock">
         <table><thead><tr>${thSort('pagos','Paciente','Paciente')}${thSort('pagos','Tratamiento','Tratamiento')}${thSort('pagos','Categoría','Categoria')}${thSort('pagos','Inicio Tratamiento','Inicio_Tratamiento')}${thSort('pagos','Último pago','Ultimo_Pago')}${thSort('pagos','Total','Monto_Total')}${thSort('pagos','Pagado','Monto_Pagado')}${thSort('pagos','Saldo','Saldo')}<th></th></tr></thead><tbody id="pagosTbody"></tbody></table>
-        <div id="pagPaginador"></div>
       </div>
+      <div id="pagPaginador"></div>
     </div>
   </div>
 
@@ -1726,10 +1739,10 @@ function renderFinanzasHTML(){
         <input class="search" id="gastoSearch" placeholder="Buscar por fecha, concepto, categoría, monto..." value="${SEARCH_STATE.gastos}">
         <div class="btn primary sm" id="btnAddGasto">+ Registrar gasto</div>
       </div>
-      <div class="table-wrap tw-fija" id="gastoTableBlock">
+      <div class="table-wrap" id="gastoTableBlock">
         <table><thead><tr>${thSort('gastos','Fecha','Fecha')}${thSort('gastos','Concepto','Concepto')}${thSort('gastos','Categoría','Categoria')}${thSort('gastos','Monto','Monto')}</tr></thead><tbody id="gastosTbody"></tbody></table>
-        <div id="gastoPaginador"></div>
       </div>
+      <div id="gastoPaginador"></div>
     </div>
   </div>`;
 }
@@ -2032,10 +2045,10 @@ function renderTratamientosHTML(){
     <input class="search" id="tratSearch" placeholder="Buscar por tratamiento, categoría o precio..." value="${SEARCH_STATE.tratamientos}">
     <div class="btn primary" id="btnAddTratamiento">+ Nuevo tratamiento</div>
   </div>
-  <div class="table-wrap tw-fija" id="tratTableBlock">
-    <table><thead><tr>${thSort('tratamientos','Tratamiento','Nombre')}${thSort('tratamientos','Categoría','Categoria')}${thSort('tratamientos','Precio','Precio_MXN')}${thSort('tratamientos','Duración','Duracion_Min')}</tr></thead><tbody id="tratTbody"></tbody></table>
-    <div id="tratPaginador"></div>
-  </div>`;
+  <div class="table-wrap" id="tratTableBlock">
+    <table><thead><tr>${thSort('tratamientos','Tratamiento','Nombre')}${thSort('tratamientos','Categoría','Categoria')}${thSort('tratamientos','Precio','Precio_MXN')}${thSort('tratamientos','Duración','Duracion_Min')}${thSort('tratamientos','Estado','Estado')}</tr></thead><tbody id="tratTbody"></tbody></table>
+  </div>
+  <div id="tratPaginador"></div>`;
 }
 function fillTratamientosTable(filter){
   const tbody = document.getElementById('tratTbody'); if(!tbody) return;
@@ -2045,7 +2058,7 @@ function fillTratamientosTable(filter){
   const { pageItems: rows, total, totalPaginas } = paginar('tratamientos', filtrados);
   // Ciclo 2 (Grupo 2) — fila clickeable para editar; badge de estado
   // igual que Pacientes.
-  tbody.innerHTML = rows.map(t=>`<tr class="clickable" data-trat="${t.ID}"><td>${t.Nombre}</td><td>${t.Categoria}</td><td>${fmtMoney(t.Precio_MXN)}</td><td>${t.Duracion_Min||30} min</td><td>${t.Activo==='Inactivo'?'<span class="badge inactive">Inactivo</span>':'<span class="badge ok">Activo</span>'}</td></tr>`).join('') || '<tr><td colspan="5" class="empty">Sin resultados</td></tr>';
+  tbody.innerHTML = rows.map(t=>`<tr class="clickable" data-trat="${t.ID}"><td>${t.Nombre}</td><td>${t.Categoria}</td><td>${fmtMoney(t.Precio_MXN)}</td><td>${t.Duracion_Min||30} min</td><td>${t.Estado==='Inactivo'?'<span class="badge inactive">Inactivo</span>':'<span class="badge ok">Activo</span>'}</td></tr>`).join('') || '<tr><td colspan="5" class="empty">Sin resultados</td></tr>';
   tbody.querySelectorAll('[data-trat]').forEach(tr=>{ tr.addEventListener('click', ()=> abrirEdicionTratamiento(tr.dataset.trat)); });
   const pagBox = document.getElementById('tratPaginador');
   if(pagBox){ pagBox.innerHTML = renderPaginador('tratamientos', total, totalPaginas); attachPaginadorEvents('tratamientos', ()=>fillTratamientosTable(filter)); }
@@ -2060,7 +2073,7 @@ function fillTratamientosTable(filter){
 function abrirEdicionTratamiento(tratId){
   const t = DATA.tratamientos.find(x=>x.ID===tratId); if(!t) return;
   let categoriaSel = t.Categoria;
-  const esActivo = t.Activo!=='Inactivo';
+  const esActivo = t.Estado!=='Inactivo';
   const original = { Nombre: t.Nombre, Categoria: t.Categoria, Precio_MXN: Number(t.Precio_MXN), Duracion_Min: Number(t.Duracion_Min||30) };
   openModal(`
     <h3>Editar tratamiento</h3>
@@ -2082,8 +2095,8 @@ function abrirEdicionTratamiento(tratId){
   });
   document.getElementById('etToggleActivo').addEventListener('click', async ()=>{
     const nuevoEstado = esActivo ? 'Inactivo' : 'Activo';
-    if(CONFIG.API_URL){ await apiCall('edit_tratamiento', { tratamientoId: t.ID, cambios: { Activo: nuevoEstado } }, ['tratamientos']); }
-    else { t.Activo = nuevoEstado; }
+    if(CONFIG.API_URL){ await apiCall('edit_tratamiento', { tratamientoId: t.ID, cambios: { Estado: nuevoEstado } }, ['tratamientos']); }
+    else { t.Estado = nuevoEstado; }
     closeModal(); showToast(esActivo?'Tratamiento marcado como inactivo':'Tratamiento reactivado'); render();
   });
   document.getElementById('etGuardar').addEventListener('click', async ()=>{
@@ -2417,12 +2430,29 @@ function afterRenderHooks(){
           // pushModalState() guarda esta lista antes de abrir el abono, y
           // se le pasa un volverInit que la reconstruye completa (con sus
           // eventos ya reconectados) si el usuario cancela el abono.
-          function mostrarListaExistentes(){
-            const listaHtml = existentes.map(p=>`<div class="pend-row"><span>Inicio: ${formatearFecha(p.Inicio_Tratamiento)} <span class="subtle">· Saldo: ${fmtMoney(p.Saldo)}</span></span><div class="btn sm" data-abonar-existente="${p.ID}">Abonar</div></div>`).join('');
+          // Ciclo 2 / Ronda 4 (#12 de Pagos) — mismo patron de 5 por
+          // pagina + paginador que ya usa el detalle de "Ingresos por
+          // categoria", para que esta lista no crezca sin limite si algun
+          // dia hay muchos pagos abiertos del mismo tratamiento.
+          function mostrarListaExistentes(pagina){
+            pagina = pagina || 1;
+            const porPagina = 5;
+            const totalPaginas = Math.max(1, Math.ceil(existentes.length/porPagina));
+            if(pagina>totalPaginas) pagina = totalPaginas;
+            const existentesPagina = existentes.slice((pagina-1)*porPagina, pagina*porPagina);
+            const listaHtml = existentesPagina.map(p=>`<div class="pend-row"><span>Inicio: ${formatearFecha(p.Inicio_Tratamiento)} <span class="subtle">· Saldo: ${fmtMoney(p.Saldo)}</span></span><div class="btn sm" data-abonar-existente="${p.ID}">Abonar</div></div>`).join('');
             openModal(`
               <h3>${existentes.length>1?'Ya existen pagos pendientes':'Ya existe un pago pendiente'}</h3>
               <p style="font-size:13px;margin-bottom:14px;">${selPac.Nombre} ya tiene ${existentes.length>1?`${existentes.length} registros de`:'un registro de'} <b>${selTrat.nombre}</b> con saldo pendiente. ¿Quieres abonar a ${existentes.length>1?'alguno de los existentes':'ese registro'} en vez de crear uno nuevo?</p>
               <div style="margin-bottom:16px;">${listaHtml}</div>
+              ${existentes.length>porPagina ? `<div class="paginador" style="padding-top:8px;margin-bottom:16px;">
+                <span class="subtle">${existentes.length} registros</span>
+                <div class="paginador-controles">
+                  <div class="icon-btn" id="pendExistPrev" style="${pagina<=1?'opacity:.35;pointer-events:none;':''}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></div>
+                  <span class="subtle">Página ${pagina} de ${totalPaginas}</span>
+                  <div class="icon-btn" id="pendExistNext" style="${pagina>=totalPaginas?'opacity:.35;pointer-events:none;':''}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></div>
+                </div>
+              </div>` : ''}
               <div class="modal-actions">
                 <div class="btn block" id="btnCrearNuevo">Crear registro nuevo de todas formas</div>
               </div>`);
@@ -2431,9 +2461,13 @@ function afterRenderHooks(){
             // pila) llamarlo tambien aqui.
             document.querySelectorAll('[data-abonar-existente]').forEach(btn=>{
               btn.addEventListener('click', ()=>{
-                openAbonoModal(btn.dataset.abonarExistente, ()=>{ fillPagosTable(SEARCH_STATE.pagos); }, mostrarListaExistentes);
+                openAbonoModal(btn.dataset.abonarExistente, ()=>{ fillPagosTable(SEARCH_STATE.pagos); }, ()=>mostrarListaExistentes(pagina));
               });
             });
+            if(existentes.length>porPagina){
+              document.getElementById('pendExistPrev').addEventListener('click', ()=> mostrarListaExistentes(pagina-1));
+              document.getElementById('pendExistNext').addEventListener('click', ()=> mostrarListaExistentes(pagina+1));
+            }
             document.getElementById('btnCrearNuevo').addEventListener('click', ()=>{
               confirmarYGuardarPago(selPac, selTrat, total, pagado, inicioTrat);
             });

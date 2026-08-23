@@ -100,7 +100,17 @@
   .toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:10px;flex-wrap:wrap;}
   .search{flex:1;min-width:160px;max-width:320px;background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-size:13px;}
   .search::placeholder{color:var(--text-mute);}
-  table{width:100%;border-collapse:collapse;font-size:13px;}
+  /* Ciclo 2 / Ronda 3 (#4 de Pagos) — causa real del "texto en 2 lineas
+     que desalinea las filas": la tabla siempre se ajustaba al 100% del
+     contenedor sin importar cuantas columnas tuviera, asi que con mas
+     columnas (Pagos ya tiene 9) el texto se comprimia y se partia en 2
+     lineas en vez de desbordar — .table-wrap YA tenia overflow-x:auto,
+     pero nunca se activaba porque la tabla nunca superaba el 100%. Con
+     un ancho minimo, las columnas ya no se comprimen mas alla de lo
+     legible: en pantallas angostas aparece scroll horizontal (para esta
+     tabla y para cualquier otra con muchas columnas), en vez de romper
+     la altura uniforme de las filas. Aplica a las 4 tablas por igual. */
+  table{width:100%;min-width:1250px;border-collapse:collapse;font-size:13px;}
   thead th{text-align:left;color:var(--text-dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:0.4px;padding:10px 12px;border-bottom:1px solid var(--border);white-space:nowrap;}
   tbody td{padding:11px 12px;border-bottom:1px solid var(--border);}
   tbody tr.clickable{cursor:pointer;}
@@ -2398,24 +2408,38 @@ function afterRenderHooks(){
         // abonar en vez de asumir cual es.
         const existentes = DATA.pagos.filter(p=>p.Paciente_ID===selPac.ID && p.Tratamiento===selTrat.nombre && Number(p.Saldo)>0);
         if(existentes.length){
-          closeModal();
-          const listaHtml = existentes.map(p=>`<div class="pend-row"><span>Inicio: ${formatearFecha(p.Inicio_Tratamiento)} <span class="subtle">· Saldo: ${fmtMoney(p.Saldo)}</span></span><div class="btn sm" data-abonar-existente="${p.ID}">Abonar</div></div>`).join('');
-          openModal(`
-            <h3>${existentes.length>1?'Ya existen pagos pendientes':'Ya existe un pago pendiente'}</h3>
-            <p style="font-size:13px;margin-bottom:14px;">${selPac.Nombre} ya tiene ${existentes.length>1?`${existentes.length} registros de`:'un registro de'} <b>${selTrat.nombre}</b> con saldo pendiente. ¿Quieres abonar a ${existentes.length>1?'alguno de los existentes':'ese registro'} en vez de crear uno nuevo?</p>
-            <div style="margin-bottom:16px;">${listaHtml}</div>
-            <div class="modal-actions">
-              <div class="btn block" id="btnCrearNuevo">Crear registro nuevo de todas formas</div>
-            </div>`);
-          document.querySelectorAll('[data-abonar-existente]').forEach(btn=>{
-            btn.addEventListener('click', ()=>{
-              closeModal();
-              openAbonoModal(btn.dataset.abonarExistente, ()=>{ fillPagosTable(SEARCH_STATE.pagos); });
+          // Ciclo 2 / Ronda 3 (#9 de Pagos) — mismo bug de fondo que ya se
+          // corrigio en Categorias: "Cancelar" dentro del modal de abono
+          // hacia closeModal() sin que hubiera ningun estado guardado al
+          // que volver (aqui se cerraba esta misma lista con closeModal()
+          // ANTES de abrir el abono, perdiendola por completo). Se corrige
+          // con el mismo patron que ya usa "Elige el pago a abonar":
+          // pushModalState() guarda esta lista antes de abrir el abono, y
+          // se le pasa un volverInit que la reconstruye completa (con sus
+          // eventos ya reconectados) si el usuario cancela el abono.
+          function mostrarListaExistentes(){
+            const listaHtml = existentes.map(p=>`<div class="pend-row"><span>Inicio: ${formatearFecha(p.Inicio_Tratamiento)} <span class="subtle">· Saldo: ${fmtMoney(p.Saldo)}</span></span><div class="btn sm" data-abonar-existente="${p.ID}">Abonar</div></div>`).join('');
+            openModal(`
+              <h3>${existentes.length>1?'Ya existen pagos pendientes':'Ya existe un pago pendiente'}</h3>
+              <p style="font-size:13px;margin-bottom:14px;">${selPac.Nombre} ya tiene ${existentes.length>1?`${existentes.length} registros de`:'un registro de'} <b>${selTrat.nombre}</b> con saldo pendiente. ¿Quieres abonar a ${existentes.length>1?'alguno de los existentes':'ese registro'} en vez de crear uno nuevo?</p>
+              <div style="margin-bottom:16px;">${listaHtml}</div>
+              <div class="modal-actions">
+                <div class="btn block" id="btnCrearNuevo">Crear registro nuevo de todas formas</div>
+              </div>`);
+            // openAbonoModal ya hace su propio pushModalState(volverInit)
+            // internamente — no hace falta (y seria un duplicado en la
+            // pila) llamarlo tambien aqui.
+            document.querySelectorAll('[data-abonar-existente]').forEach(btn=>{
+              btn.addEventListener('click', ()=>{
+                openAbonoModal(btn.dataset.abonarExistente, ()=>{ fillPagosTable(SEARCH_STATE.pagos); }, mostrarListaExistentes);
+              });
             });
-          });
-          document.getElementById('btnCrearNuevo').addEventListener('click', ()=>{
-            confirmarYGuardarPago(selPac, selTrat, total, pagado, inicioTrat);
-          });
+            document.getElementById('btnCrearNuevo').addEventListener('click', ()=>{
+              confirmarYGuardarPago(selPac, selTrat, total, pagado, inicioTrat);
+            });
+          }
+          closeModal();
+          mostrarListaExistentes();
           return;
         }
         confirmarYGuardarPago(selPac, selTrat, total, pagado, inicioTrat);

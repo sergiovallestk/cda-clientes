@@ -119,6 +119,17 @@
      horizontal en pantallas normales. */
   table{width:100%;border-collapse:collapse;font-size:13px;}
   #pagTableBlock table{width:auto;min-width:1250px;}
+  /* Ciclo 2 / Ronda 8 — igual que Pagos, pero con min-width mucho mas
+     moderado: la meta aqui no es imitar el ancho de Pagos (9 columnas,
+     necesita scroll amplio) sino solo evitar que el texto se parta en
+     2-3 renglones en movil (nombres largos, fechas con guion). Estos 3
+     valores se calcularon sumando un ancho comodo por columna segun su
+     contenido tipico, dejando en movil un scroll horizontal chico —
+     visible pero no exagerado. Punto de partida para ajustar si Sergio
+     ve que falta o sobra. */
+  #pacTableBlock table{width:auto;min-width:760px;}
+  #tratTableBlock table{width:auto;min-width:650px;}
+  #gastoTableBlock table{width:auto;min-width:550px;}
   thead th{text-align:left;color:var(--text-dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:0.4px;padding:10px 12px;border-bottom:1px solid var(--border);white-space:nowrap;}
   /* Ciclo 2 / Ronda 4 (#4 de Pagos) — altura MINIMA (no fija) por celda,
      para eliminar variaciones de contenido sin arriesgar que el texto se
@@ -1638,7 +1649,7 @@ function fillPacientesTable(filter){
   tbody.querySelectorAll('tr[data-pac]').forEach(tr=>{ tr.addEventListener('click', ()=> showPacienteDetalle(tr.dataset.pac)); });
   const pagBox = document.getElementById('pacPaginador');
   if(pagBox){ pagBox.innerHTML = renderPaginador('pacientes', total, totalPaginas); attachPaginadorEvents('pacientes', ()=>fillPacientesTable(filter)); }
-  actualizarAlturaTabla('pacTableBlock', 'pacientes', total, 42); // Ciclo 2 / Ronda 7 (Tema 2) — alto real medido en navegador (antes usaba el default generico de 45, que dejaba un hueco de sobra antes del paginador)
+  actualizarAlturaTabla('pacTableBlock', 'pacientes', total, 45); // Ciclo 2 / Ronda 8 — Ronda 7 dejo esto en el alto real exacto (42px, sin margen), lo que reintrodujo el bug de "la tabla se achica/agranda al cambiar de pagina" (mismo mecanismo que #66 en Pagos). Se le devuelve un margen de seguridad chico (+3px) — evita el bug sin regresar al hueco grande que Ronda 7 corrigio.
   refreshSortArrows('pacientes'); attachSortHeaders('pacientes', ()=>fillPacientesTable(filter));
 }
 function showPacienteDetalle(pacId){
@@ -1816,7 +1827,7 @@ function fillPagosTable(filter){
   tbody.querySelectorAll('[data-eliminar-pago]').forEach(btn=>{ btn.addEventListener('click', ()=> confirmarEliminarPago(btn.dataset.eliminarPago)); });
   const pagBox = document.getElementById('pagPaginador');
   if(pagBox){ pagBox.innerHTML = renderPaginador('pagos', total, totalPaginas); attachPaginadorEvents('pagos', ()=>fillPagosTable(filter)); }
-  actualizarAlturaTabla('pagTableBlock', 'pagos', total, 54); // #66 — alto de fila real medido (49-53px) + margen
+  actualizarAlturaTabla('pagTableBlock', 'pagos', total, 53); // Ciclo 2 / Ronda 8 — se reduce 1px (de 54 a 53) para acercar visualmente el espacio antes del paginador al de las otras 3 tablas. No se reduce mas que esto: 53px es el TOPE real medido (rango 49-53px) — bajar de ahi quitaria el margen que evita el propio bug de achicamiento que #66 ya resolvio en esta tabla. La convergencia real viene del lado de las otras 3 tablas, que subieron su margen (ver Ronda 8 en Pacientes/Gastos/Tratamientos).
   refreshSortArrows('pagos'); attachSortHeaders('pagos', ()=>fillPagosTable(filter));
 }
 function fillGastosTable(filter){
@@ -1831,7 +1842,7 @@ function fillGastosTable(filter){
   tbody.querySelectorAll('[data-gasto]').forEach(tr=>{ tr.addEventListener('click', ()=> abrirEdicionGasto(tr.dataset.gasto)); });
   const pagBox = document.getElementById('gastoPaginador');
   if(pagBox){ pagBox.innerHTML = renderPaginador('gastos', total, totalPaginas); attachPaginadorEvents('gastos', ()=>fillGastosTable(filter)); }
-  actualizarAlturaTabla('gastoTableBlock', 'gastos', total, 38); // Ciclo 2 / Ronda 7 (Tema 2) — alto real medido en navegador (antes usaba el default generico de 45, que dejaba un hueco de sobra antes del paginador)
+  actualizarAlturaTabla('gastoTableBlock', 'gastos', total, 41); // Ciclo 2 / Ronda 8 — mismo ajuste que Pacientes/Tratamientos: se devuelve un margen de seguridad chico (+3px) sobre el alto real (38px) para evitar el bug de achicamiento, sin volver al hueco grande de antes de Ronda 7.
   refreshSortArrows('gastos'); attachSortHeaders('gastos', ()=>fillGastosTable(filter));
 }
 // Ciclo 2 (Grupo 2) — edicion de Gasto: Concepto, Categoria, Monto. Nunca
@@ -2100,7 +2111,7 @@ function fillTratamientosTable(filter){
   tbody.querySelectorAll('[data-trat]').forEach(tr=>{ tr.addEventListener('click', ()=> abrirEdicionTratamiento(tr.dataset.trat)); });
   const pagBox = document.getElementById('tratPaginador');
   if(pagBox){ pagBox.innerHTML = renderPaginador('tratamientos', total, totalPaginas); attachPaginadorEvents('tratamientos', ()=>fillTratamientosTable(filter)); }
-  actualizarAlturaTabla('tratTableBlock', 'tratamientos', total, 42); // Ciclo 2 / Ronda 7 (Tema 2) — alto real medido en navegador (antes usaba el default generico de 45, que dejaba un hueco de sobra antes del paginador)
+  actualizarAlturaTabla('tratTableBlock', 'tratamientos', total, 45); // Ciclo 2 / Ronda 8 — mismo ajuste que Pacientes/Gastos: se devuelve un margen de seguridad chico (+3px) sobre el alto real (42px) para evitar el bug de achicamiento, sin volver al hueco grande de antes de Ronda 7.
   refreshSortArrows('tratamientos'); attachSortHeaders('tratamientos', ()=>fillTratamientosTable(filter));
 }
 // Ciclo 2 (Grupo 2) — edicion de Tratamiento: Nombre, Categoria, Precio,

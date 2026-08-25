@@ -60,6 +60,20 @@
   .appt-info span{color:var(--text-dim);font-size:12px;}
   .appt-list{max-height:280px;overflow-y:auto;}
   .appt-actions{display:flex;gap:8px;margin-top:14px;}
+  /* Grupo 6 (Vista de calendario en Agenda) — CSS nueva y aislada, no
+     reutiliza ni modifica ninguna clase de la Lista de arriba (.appt,
+     .appt-info, etc). Si algo de esto se ve mal, la Lista sigue exacta. */
+  .cal-switch{display:flex;gap:6px;margin-bottom:12px;background:var(--panel-2);border-radius:8px;padding:3px;width:fit-content;}
+  .cal-switch-btn{padding:5px 12px;font-size:12px;font-weight:600;border-radius:6px;cursor:pointer;color:var(--text-dim);}
+  .cal-switch-btn.active{background:var(--teal-dim);color:var(--text);}
+  .cal-toolbar{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+  .cal-fecha-actual{font-weight:600;font-size:13px;flex:1;text-transform:capitalize;}
+  .cal-dia-grid{position:relative;border:1px solid var(--border);border-radius:10px;background:var(--panel-2);}
+  .cal-hora-linea{position:absolute;left:0;right:0;border-top:1px solid var(--border);}
+  .cal-hora-label{position:absolute;left:8px;top:-8px;font-size:10.5px;color:var(--text-mute);background:var(--panel-2);padding:0 4px;}
+  .cal-cita{position:absolute;left:60px;right:8px;background:#132135;border-left:3px solid var(--teal);border-radius:6px;padding:3px 8px;font-size:11.5px;overflow:hidden;cursor:pointer;}
+  .cal-cita b{display:block;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .cal-cita span{display:block;color:var(--text-dim);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .btn{padding:9px 14px;border-radius:8px;font-size:12.5px;font-weight:600;text-align:center;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text-dim);white-space:nowrap;}
   .btn:hover{border-color:var(--text-dim);}
   .btn.primary{background:var(--teal);color:#04241C;border:none;}
@@ -2205,6 +2219,141 @@ function abrirEdicionTratamiento(tratId){
 }
 
 /* ==================== AGENDA ==================== */
+/* ==================== GRUPO 6 — CALENDARIO DE AGENDA ====================
+   Bloque nuevo y aislado (Ronda 1 = Vista Dia; Semana y Mes se agregan en
+   rondas futuras). Ninguna funcion existente de Agenda (renderCitasListHTML,
+   attachCitasListHandlers, la logica interna de actualizarAgenda) se
+   modifico — solo se les agrego, en su punto de entrada, una llamada minima
+   a las funciones nuevas de aqui abajo cuando la vista activa es
+   "calendario" en vez de "lista". Si algo de este bloque fallara, la Lista
+   de siempre sigue funcionando exactamente igual, sin depender de nada de
+   este codigo. Alcance de esta ronda: la Vista Dia es de solo lectura (ver
+   detalle de una cita) — Reagendar/Cancelar de momento solo viven en la
+   Lista, a proposito, para no duplicar esa logica; se agrega un atajo
+   directo a la Lista desde el detalle de cada cita. */
+let AGENDA_VISTA = 'lista';        // 'lista' | 'calendario'
+let AGENDA_MODO = 'dia';           // 'dia' (unica por ahora)
+let AGENDA_FECHA_REF = todayStr(); // fecha que esta viendo el calendario
+
+const NOMBRES_DIA_SEMANA = ['Domingo','Lunes','Martes','Miercoles','Jueves','Viernes','Sabado'];
+// Rango de horas mostrado en la rejilla del dia. Version simple para esta
+// primera ronda (franja fija que cubre un horario tipico de consultorio);
+// se puede afinar despues para leer el horario real configurado por dia si
+// hace falta mas precision.
+const CAL_HORA_INICIO = 7, CAL_HORA_FIN = 21, CAL_PX_POR_HORA = 60;
+
+function sumarDiasFecha(fechaStr, n){
+  const p = ymd(fechaStr);
+  const d = new Date(p.y, p.m-1, p.d);
+  d.setDate(d.getDate()+n);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function formatearFechaLargaCalendario(fechaStr){
+  const p = ymd(fechaStr);
+  const d = new Date(p.y, p.m-1, p.d);
+  return `${NOMBRES_DIA_SEMANA[d.getDay()]}, ${p.d} de ${MESES_CORTOS[p.m-1]} de ${p.y}`;
+}
+
+function renderCalendarioHTML(){
+  return renderCalendarioDiaHTML(); // por ahora AGENDA_MODO solo puede ser 'dia'
+}
+
+function renderCalendarioDiaHTML(){
+  const fecha = AGENDA_FECHA_REF;
+  const hoy = todayStr();
+  const esHoy = fecha === hoy;
+  const citasDelDia = DATA.citas.filter(c=>c.Fecha===fecha).sort((a,b)=>a.Hora.localeCompare(b.Hora));
+  const horas = []; for(let h=CAL_HORA_INICIO; h<=CAL_HORA_FIN; h++) horas.push(h);
+  const alturaTotal = (CAL_HORA_FIN - CAL_HORA_INICIO) * CAL_PX_POR_HORA;
+
+  const bloques = citasDelDia.map(c=>{
+    const dur = c.Duracion_Min || duracionCitaMin(c.Tratamientos||c.Tratamiento);
+    const [h,mi] = c.Hora.split(':').map(Number);
+    const minutosDesdeInicio = Math.max(0, (h*60+mi) - (CAL_HORA_INICIO*60));
+    const top = minutosDesdeInicio * (CAL_PX_POR_HORA/60);
+    const alto = Math.max(dur * (CAL_PX_POR_HORA/60), 22);
+    const finCita = new Date(c.Fecha+'T'+c.Hora+':00').getTime() + dur*60000;
+    const esCancelada = c.Estado==='Cancelada';
+    const yaConcluida = finCita <= Date.now();
+    const esPasada = !esCancelada && ((c.Fecha < hoy) || (esHoy && yaConcluida));
+    const color = esCancelada ? 'var(--red)' : (esPasada ? 'var(--text-mute)' : (esHoy ? 'var(--amber)' : 'var(--teal)'));
+    return `<div class="cal-cita" style="top:${top}px;height:${alto}px;border-left-color:${color};${esCancelada?'opacity:.6;':''}" data-cal-cita="${c.ID}">
+      <b>${formatearHora(c.Hora)} · ${c.Paciente}</b>
+      <span>${tratArr(c.Tratamientos||c.Tratamiento).join(' + ')}</span>
+    </div>`;
+  }).join('');
+
+  return `
+  <div class="cal-toolbar">
+    <div class="icon-btn" id="calDiaAnterior">‹</div>
+    <div class="cal-fecha-actual">${formatearFechaLargaCalendario(fecha)}${esHoy?' <span class="subtle">· Hoy</span>':''}</div>
+    <div class="icon-btn" id="calDiaSiguiente">›</div>
+    <div class="btn sm" id="calIrHoy">Hoy</div>
+  </div>
+  <div class="cal-dia-grid" style="height:${alturaTotal}px;">
+    ${horas.map(h=>`<div class="cal-hora-linea" style="top:${(h-CAL_HORA_INICIO)*CAL_PX_POR_HORA}px;"><span class="cal-hora-label">${String(h).padStart(2,'0')}:00</span></div>`).join('')}
+    ${bloques}
+  </div>
+  ${citasDelDia.length===0 ? '<div class="empty" style="margin-top:8px;">Sin citas este día</div>' : ''}`;
+}
+
+// Detalle de solo lectura al tocar una cita en el calendario. El boton
+// "Ir a la lista" cambia la vista y deja que Reagendar/Cancelar los haga
+// la Lista, con su logica de siempre — sin duplicarla aqui.
+function abrirDetalleCitaCalendario(citaId){
+  const cita = DATA.citas.find(c=>c.ID===citaId); if(!cita) return;
+  const esCancelada = cita.Estado==='Cancelada';
+  openModal(`
+    <h3>${cita.Paciente}</h3>
+    <p class="subtle" style="margin-bottom:14px;">${formatearFecha(cita.Fecha)} · ${formatearHora(cita.Hora)} · ${tratArr(cita.Tratamientos||cita.Tratamiento).join(' + ')}${esCancelada?' · <span style="color:var(--red);">Cancelada</span>':''}</p>
+    <div class="modal-actions">
+      <div class="btn block" onclick="closeModal()">Cerrar</div>
+      <div class="btn primary block" id="btnCalIrLista">Ir a la lista para gestionar</div>
+    </div>`);
+  document.getElementById('btnCalIrLista').addEventListener('click', ()=>{
+    closeModal();
+    AGENDA_VISTA = 'lista';
+    repintarPanelAgenda();
+  });
+}
+
+function attachCalendarioHandlers(){
+  const btnAnt = document.getElementById('calDiaAnterior');
+  const btnSig = document.getElementById('calDiaSiguiente');
+  const btnHoy = document.getElementById('calIrHoy');
+  if(btnAnt) btnAnt.addEventListener('click', ()=>{ AGENDA_FECHA_REF = sumarDiasFecha(AGENDA_FECHA_REF,-1); repintarPanelAgenda(); });
+  if(btnSig) btnSig.addEventListener('click', ()=>{ AGENDA_FECHA_REF = sumarDiasFecha(AGENDA_FECHA_REF,1); repintarPanelAgenda(); });
+  if(btnHoy) btnHoy.addEventListener('click', ()=>{ AGENDA_FECHA_REF = todayStr(); repintarPanelAgenda(); });
+  document.querySelectorAll('[data-cal-cita]').forEach(el=>{
+    el.addEventListener('click', ()=> abrirDetalleCitaCalendario(el.dataset.calCita));
+  });
+}
+
+// Dispatcher: decide que handlers de CONTENIDO conectar (Lista o
+// Calendario) segun la vista activa — el switch Lista/Calendario en si
+// se conecta aparte, una sola vez, en attachSwitchAgendaVista().
+function attachContenidoAgenda(){
+  if(AGENDA_VISTA === 'calendario') attachCalendarioHandlers();
+  else attachCitasListHandlers();
+}
+function attachSwitchAgendaVista(){
+  document.querySelectorAll('[data-agenda-vista]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{ AGENDA_VISTA = btn.dataset.agendaVista; repintarPanelAgenda(); });
+  });
+}
+// Repinta SOLO el contenido de la caja de Citas (lista o calendario) y el
+// estado visual del switch — igual de quirurgico que ya hacia
+// actualizarAgenda() con la Lista, para no perder el formulario de "Nueva
+// cita" a medio llenar en la tarjeta de al lado.
+function repintarPanelAgenda(){
+  document.querySelectorAll('[data-agenda-vista]').forEach(btn=>{
+    btn.classList.toggle('active', btn.dataset.agendaVista === AGENDA_VISTA);
+  });
+  const list = document.getElementById('agendaCitasList');
+  if(list){ list.innerHTML = AGENDA_VISTA==='calendario' ? renderCalendarioHTML() : renderCitasListHTML(); }
+  attachContenidoAgenda();
+}
+
 function renderAgendarHTML(){
   const hoy = todayStr();
   return `
@@ -2248,8 +2397,12 @@ Maria Ramirez Cruz,Corona dental,2026-08-11,11:00</div>
     </div>
     <div class="card">
       <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>Citas</div><span class="link-btn" id="btnActualizarAgenda">↻ Actualizar agenda</span></div>
+      <div class="cal-switch">
+        <div class="cal-switch-btn ${AGENDA_VISTA==='lista'?'active':''}" data-agenda-vista="lista">Lista</div>
+        <div class="cal-switch-btn ${AGENDA_VISTA==='calendario'?'active':''}" data-agenda-vista="calendario">Calendario</div>
+      </div>
       <div class="appt-list" id="agendaCitasList" style="max-height:460px;">
-        ${renderCitasListHTML()}
+        ${AGENDA_VISTA==='calendario' ? renderCalendarioHTML() : renderCitasListHTML()}
       </div>
       <p class="subtle" style="margin-top:10px;">● gris = pasada &nbsp; ● ambar = hoy &nbsp; ● verde = futura</p>
     </div>
@@ -2326,7 +2479,10 @@ async function actualizarAgenda(){
   showMask('Actualizando agenda...');
   if(CONFIG.API_URL) await syncData(['citas']);
   const list = document.getElementById('agendaCitasList');
-  if(list){ list.innerHTML = renderCitasListHTML(); attachCitasListHandlers(); }
+  // Grupo 6 — unico cambio en esta funcion: la vista activa decide que se
+  // pinta (Lista de siempre, o Calendario nuevo); el resto del flujo
+  // (mascara, syncData, toast) sigue exactamente igual.
+  if(list){ list.innerHTML = AGENDA_VISTA==='calendario' ? renderCalendarioHTML() : renderCitasListHTML(); attachContenidoAgenda(); }
   hideMask();
   showToast('Agenda actualizada');
 }
@@ -2770,7 +2926,11 @@ function afterRenderHooks(){
       reader.readAsText(file);
     });
 
-    attachCitasListHandlers();
+    // Grupo 6 — unico cambio en este bloque: se agrega el switch
+    // Lista/Calendario y se usa el dispatcher (que decide Lista o
+    // Calendario) en vez de llamar siempre attachCitasListHandlers().
+    attachSwitchAgendaVista();
+    attachContenidoAgenda();
   }
 
   if(ACTIVE_TAB === 'configuracion'){

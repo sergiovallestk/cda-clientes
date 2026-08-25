@@ -76,11 +76,13 @@
      transparente por debajo al hacer scroll. */
   .cal-header-sticky{position:sticky;top:0;z-index:3;background:var(--panel);padding-bottom:6px;}
   .cal-toolbar{display:flex;align-items:center;gap:10px;margin-bottom:0;}
-  .cal-fecha-actual{font-weight:600;font-size:13px;flex:1;text-transform:capitalize;}
+  /* Ronda 3 (#20) — centrado entre las flechas ‹ › (flex:1 ya limitaba su
+     espacio a esa zona; solo faltaba el text-align). */
+  .cal-fecha-actual{font-weight:600;font-size:13px;flex:1;text-transform:capitalize;text-align:center;}
   /* Ronda 2 (#8) — espacio siempre reservado (por eso no usa display:none,
      sino visibility:hidden desde el JS) para que la rejilla no salte de
-     tamaño segun haya o no citas ese dia. */
-  .cal-sin-citas{height:18px;line-height:18px;font-size:12px;color:var(--text-mute);margin-top:6px;}
+     tamaño segun haya o no citas ese dia. Ronda 3: centrado (#8). */
+  .cal-sin-citas{height:18px;line-height:18px;font-size:12px;color:var(--text-mute);margin-top:6px;text-align:center;}
   .cal-dia-grid{position:relative;border:1px solid var(--border);border-radius:10px;background:var(--panel-2);}
   .cal-hora-linea{position:absolute;left:0;right:0;border-top:1px solid var(--border);}
   .cal-hora-label{position:absolute;left:8px;top:-8px;font-size:10.5px;color:var(--text-mute);background:var(--panel-2);padding:0 4px;}
@@ -91,14 +93,20 @@
      porcentajes limpios entre columnas cuando hay citas empalmadas, sin
      tener que lidiar con los 60px/8px fijos en cada calculo. */
   .cal-citas-area{position:absolute;top:0;left:60px;right:8px;bottom:0;}
-  .cal-cita{position:absolute;left:0;right:0;background:#132135;border-left:3px solid var(--teal);border-radius:6px;padding:3px 8px;font-size:11.5px;overflow:hidden;cursor:pointer;}
+  /* Ronda 3 (#13) — el borde sutil que antes solo tenian las citas
+     empalmadas ahora lo tienen TODAS: el caso reportado (una cita termina
+     justo cuando empieza la siguiente) no cuenta como "empalme" para
+     calcularLayoutCitas, asi que sin este borde universal se seguian
+     viendo pegadas como una sola tarjeta. */
+  .cal-cita{position:absolute;left:0;right:0;background:#132135;border:1px solid rgba(255,255,255,.18);border-left:3px solid var(--teal);border-radius:6px;padding:3px 8px;font-size:11.5px;overflow:hidden;cursor:pointer;}
   .cal-cita b{display:block;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .cal-cita span{display:block;color:var(--text-dim);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  /* Ronda 2 (#13/#15) — borde sutil extra en citas empalmadas (ademas del
-     hueco entre columnas que ya deja calcularLayoutCitas), para que se
-     note la division entre 2 eventos aunque esten pegados, igual que en
-     la captura de Google Calendar que compartio Sergio. */
-  .cal-cita-empalmada{border:1px solid rgba(255,255,255,.18);}
+  /* Ronda 3 (#21) — las canceladas se siguen mostrando (mismo criterio ya
+     usado en la Lista), pero se excluyen del calculo de columnas de
+     calcularLayoutCitas para no robarle ancho a las citas activas; se
+     dibujan como "fantasma" detras de ellas (mas transparentes, sin
+     borde de color, ancho completo). */
+  .cal-cita-cancelada{opacity:.4;z-index:0;}
   /* Ronda 2 (#18) — franja de "hora actual", solo se dibuja en la Vista
      Dia cuando la fecha mostrada es HOY. Se actualiza sola cada minuto
      desde JS (ver iniciarTimerHoraActual), sin ninguna peticion al
@@ -582,6 +590,10 @@ function fmtComision(n){ const moneda = DATA.comisionMoneda||'MXN'; const c = CU
    (AAAA-MM-DD) por dentro del sistema — estas funciones son solo la capa
    de presentacion final. */
 const MESES_CORTOS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+// Ronda 3 (#20) — mes completo sin abreviar, solo para el encabezado de
+// la Vista Dia del calendario (Grupo 6); el resto del sistema sigue
+// usando MESES_CORTOS tal cual.
+const MESES_LARGOS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 function formatearFecha(fechaISO){
   // Ciclo 1 / Ronda 8 (#17) — estandarizado con el resto del sistema:
   // sin fecha se muestra '—' (mismo guion que ya usan Ultima_Visita y
@@ -2282,7 +2294,7 @@ function sumarDiasFecha(fechaStr, n){
 function formatearFechaLargaCalendario(fechaStr){
   const p = ymd(fechaStr);
   const d = new Date(p.y, p.m-1, p.d);
-  return `${NOMBRES_DIA_SEMANA[d.getDay()]}, ${p.d} de ${MESES_CORTOS[p.m-1]} de ${p.y}`;
+  return `${NOMBRES_DIA_SEMANA[d.getDay()]}, ${p.d} ${MESES_LARGOS[p.m-1]} ${p.y}`;
 }
 
 // Ronda 2 (#13/#15) — detecta grupos de citas que se traslapan entre si
@@ -2355,26 +2367,46 @@ function renderCalendarioDiaHTML(){
   const horas = []; for(let h=CAL_HORA_INICIO; h<=CAL_HORA_FIN; h++) horas.push(h);
   const alturaTotal = (CAL_HORA_FIN - CAL_HORA_INICIO) * CAL_PX_POR_HORA;
 
-  const layout = calcularLayoutCitas(citasDelDia);
-  const bloques = layout.map(item=>{
-    const c = item.cita;
+  // Ronda 3 (#21) — se siguen mostrando las canceladas (mismo criterio ya
+  // establecido para la Lista), pero se separan ANTES de calcular
+  // columnas de empalme, para que nunca le quiten ancho a una cita
+  // activa que se traslape con ellas en horario.
+  const citasActivas = citasDelDia.filter(c=>c.Estado!=='Cancelada');
+  const citasCanceladas = citasDelDia.filter(c=>c.Estado==='Cancelada');
+
+  function calcularTopAlto(c){
     const dur = c.Duracion_Min || duracionCitaMin(c.Tratamientos||c.Tratamiento);
-    const minutosDesdeInicio = Math.max(0, item.inicioMin - (CAL_HORA_INICIO*60));
-    const top = minutosDesdeInicio * (CAL_PX_POR_HORA/60);
-    const alto = Math.max(dur * (CAL_PX_POR_HORA/60), 22);
-    const finCita = new Date(c.Fecha+'T'+c.Hora+':00').getTime() + dur*60000;
-    const esCancelada = c.Estado==='Cancelada';
+    const [h,mi] = c.Hora.split(':').map(Number);
+    const minutosDesdeInicio = Math.max(0, (h*60+mi) - (CAL_HORA_INICIO*60));
+    return { top: minutosDesdeInicio * (CAL_PX_POR_HORA/60), alto: Math.max(dur * (CAL_PX_POR_HORA/60), 22) };
+  }
+
+  // Canceladas: ancho completo, sin competir por columnas, dibujadas
+  // ANTES (quedan detras visualmente) de las activas.
+  const bloquesCanceladas = citasCanceladas.map(c=>{
+    const {top, alto} = calcularTopAlto(c);
+    return `<div class="cal-cita cal-cita-cancelada" style="top:${top}px;height:${alto}px;border-left-color:var(--red);" data-cal-cita="${c.ID}">
+      <b>${formatearHora(c.Hora)} · ${c.Paciente}</b>
+      <span>${tratArr(c.Tratamientos||c.Tratamiento).join(' + ')}</span>
+    </div>`;
+  }).join('');
+
+  const layout = calcularLayoutCitas(citasActivas);
+  const bloquesActivas = layout.map(item=>{
+    const c = item.cita;
+    const {top, alto} = calcularTopAlto(c);
+    const finCita = new Date(c.Fecha+'T'+c.Hora+':00').getTime() + (c.Duracion_Min || duracionCitaMin(c.Tratamientos||c.Tratamiento))*60000;
     const yaConcluida = finCita <= Date.now();
-    const esPasada = !esCancelada && ((c.Fecha < hoy) || (esHoy && yaConcluida));
-    const color = esCancelada ? 'var(--red)' : (esPasada ? 'var(--text-mute)' : (esHoy ? 'var(--amber)' : 'var(--teal)'));
+    const esPasada = (c.Fecha < hoy) || (esHoy && yaConcluida);
+    const color = esPasada ? 'var(--text-mute)' : (esHoy ? 'var(--amber)' : 'var(--teal)');
     // #13/#15 — cuando hay 2+ citas empalmadas se reparten el ancho de
     // .cal-citas-area en columnas iguales lado a lado, con 4px de aire
-    // entre cada una (el "hueco" que las distingue, mas el borde extra
-    // de .cal-cita-empalmada).
+    // entre cada una (el "hueco" que las distingue, mas el borde que
+    // ahora llevan TODAS las tarjetas — ver #13 en la ronda 3).
     const anchoPct = 100/item.totalColumnas;
     const leftPct = item.columna*anchoPct;
     const estiloColumnas = item.totalColumnas>1 ? `left:${leftPct}%;right:auto;width:calc(${anchoPct}% - 4px);` : '';
-    return `<div class="cal-cita${item.totalColumnas>1?' cal-cita-empalmada':''}" style="top:${top}px;height:${alto}px;border-left-color:${color};${estiloColumnas}${esCancelada?'opacity:.6;':''}" data-cal-cita="${c.ID}">
+    return `<div class="cal-cita" style="top:${top}px;height:${alto}px;border-left-color:${color};${estiloColumnas}" data-cal-cita="${c.ID}">
       <b>${formatearHora(c.Hora)} · ${c.Paciente}</b>
       <span>${tratArr(c.Tratamientos||c.Tratamiento).join(' + ')}</span>
     </div>`;
@@ -2402,7 +2434,7 @@ function renderCalendarioDiaHTML(){
   </div>
   <div class="cal-dia-grid" style="height:${alturaTotal}px;">
     ${horas.map(h=>`<div class="cal-hora-linea" style="top:${(h-CAL_HORA_INICIO)*CAL_PX_POR_HORA}px;"><span class="cal-hora-label">${String(h).padStart(2,'0')}:00</span></div>`).join('')}
-    <div class="cal-citas-area">${bloques}</div>
+    <div class="cal-citas-area">${bloquesCanceladas}${bloquesActivas}</div>
     ${lineaHoraActual}
   </div>`;
 }
@@ -2457,6 +2489,21 @@ function attachSwitchAgendaVista(){
     btn.addEventListener('click', ()=>{ AGENDA_VISTA = btn.dataset.agendaVista; repintarPanelAgenda(); });
   });
 }
+// Ronda 3 (#22) — extraido de repintarPanelAgenda para poder reutilizarlo
+// tambien despues de Agendar/Reagendar/Cancelar una cita (antes solo lo
+// usaba el boton "Ir a la lista para gestionar" del calendario, #16).
+// A proposito NO cambia de vista por si mismo: si en ese momento se esta
+// viendo el Calendario, no hace nada — solo actua cuando la Lista ya
+// esta a la vista, para no forzar un cambio de pantalla que nadie pidio.
+function ubicarCitaEnListaSiAplica(citaId){
+  if(!citaId || AGENDA_VISTA !== 'lista') return;
+  const fila = document.querySelector(`[data-appt-id="${citaId}"]`);
+  if(fila){
+    fila.scrollIntoView({block:'center'});
+    fila.classList.add('appt-resaltada');
+    setTimeout(()=> fila.classList.remove('appt-resaltada'), 2200);
+  }
+}
 // Repinta SOLO el contenido de la caja de Citas (lista o calendario) y el
 // estado visual del switch — igual de quirurgico que ya hacia
 // actualizarAgenda() con la Lista, para no perder el formulario de "Nueva
@@ -2471,14 +2518,7 @@ function repintarPanelAgenda(citaIdParaUbicar){
   const list = document.getElementById('agendaCitasList');
   if(list){ list.innerHTML = AGENDA_VISTA==='calendario' ? renderCalendarioHTML() : renderCitasListHTML(); }
   attachContenidoAgenda();
-  if(citaIdParaUbicar && AGENDA_VISTA==='lista'){
-    const fila = document.querySelector(`[data-appt-id="${citaIdParaUbicar}"]`);
-    if(fila){
-      fila.scrollIntoView({block:'center'});
-      fila.classList.add('appt-resaltada');
-      setTimeout(()=> fila.classList.remove('appt-resaltada'), 2200);
-    }
-  }
+  ubicarCitaEnListaSiAplica(citaIdParaUbicar);
 }
 
 function renderAgendarHTML(){
@@ -2531,7 +2571,7 @@ Maria Ramirez Cruz,Corona dental,2026-08-11,11:00</div>
       <div class="appt-list" id="agendaCitasList" style="max-height:460px;">
         ${AGENDA_VISTA==='calendario' ? renderCalendarioHTML() : renderCitasListHTML()}
       </div>
-      <p class="subtle" style="margin-top:10px;"><span style="color:var(--text-mute);">●</span> gris = pasada &nbsp; <span style="color:var(--amber);">●</span> ambar = hoy &nbsp; <span style="color:var(--teal);">●</span> verde = futura &nbsp; <span style="color:var(--red);">●</span> rojo = cancelada</p>
+      <p class="subtle" style="margin-top:10px;"><span style="color:var(--text-mute);">●</span> gris = pasada &nbsp; <span style="color:var(--amber);">●</span> ambar = hoy &nbsp; <span style="color:var(--teal);">●</span> verde = futura<br><span style="color:var(--red);">●</span> rojo = cancelada</p>
     </div>
   </div>`;
 }
@@ -2605,6 +2645,7 @@ function attachCitasListHandlers(){
         if(CONFIG.API_URL){ await apiCall('cancelar_cita', { citaId }, ['citas']); }
         else { cita.Estado = 'Cancelada'; }
         showToast('Cita cancelada'); render();
+        ubicarCitaEnListaSiAplica(citaId); // #22
       });
     });
   });
@@ -3198,6 +3239,7 @@ async function guardarCitaNueva(pac, trats, fecha, hora, forzar){
       document.getElementById('btnForzarCita').addEventListener('click', ()=>{ closeModal(); guardarCitaNueva(pac, trats, fecha, hora, true); });
       return;
     }
+    if(res && res.id) id = res.id; // #22 — id real asignado por el servidor, no el calculado localmente
     showToast(res ? 'Cita creada y agregada a Google Calendar' : 'Cita guardada localmente (sin conexion)');
   } else {
     // Ciclo 2 (Grupo 2) — Duracion_Min queda congelada con lo que dura
@@ -3208,6 +3250,7 @@ async function guardarCitaNueva(pac, trats, fecha, hora, forzar){
     showToast('Cita agendada (modo demo)');
   }
   render();
+  ubicarCitaEnListaSiAplica(id); // #22
 }
 
 async function intentarReagendar(citaId, nuevaFecha, nuevaHora, forzar){
@@ -3217,6 +3260,7 @@ async function intentarReagendar(citaId, nuevaFecha, nuevaHora, forzar){
     const cita = DATA.citas.find(c=>c.ID===citaId);
     cita.Fecha = nuevaFecha; cita.Hora = nuevaHora;
     closeModal(); showToast('Cita reagendada (modo demo)'); render();
+    ubicarCitaEnListaSiAplica(citaId); // #22
     return;
   }
   const res = await apiCall('reagendar_cita', { citaId, nuevaFecha, nuevaHora, forzar: !!forzar }, ['citas']);
@@ -3232,6 +3276,7 @@ async function intentarReagendar(citaId, nuevaFecha, nuevaHora, forzar){
   }
   if(res && res.ok){
     closeModal(); showToast('Cita reagendada y actualizada en Google Calendar'); render();
+    ubicarCitaEnListaSiAplica(citaId); // #22
   } else {
     showToast('No se pudo reagendar. Intenta de nuevo.');
   }

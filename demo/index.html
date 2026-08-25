@@ -413,7 +413,15 @@ async function loadData(){
   if(!CONFIG.API_URL){ DATA = JSON.parse(JSON.stringify(DEMO_DATA)); return; }
   const esCargaInicial = !DATA;
   try{
-    const res = await fetch(CONFIG.API_URL + '?client=' + encodeURIComponent(CONFIG.CLIENT_ID));
+    // Ciclo 2 / Ronda 10 — se agrega "&_ts=" (marca de tiempo, siempre
+    // distinta) y "cache:'no-store'" para que esta peticion nunca se
+    // resuelva con una copia guardada por el navegador. Sin esto, una
+    // URL identica a una ya pedida antes en la misma sesion (que es el
+    // caso normal aqui, siempre es la misma) podia regresar una
+    // respuesta vieja en vez de ir de verdad al servidor — eso hacia
+    // que "Sincronizar" pareciera no traer los cambios hechos desde
+    // otro dispositivo.
+    const res = await fetch(CONFIG.API_URL + '?client=' + encodeURIComponent(CONFIG.CLIENT_ID) + '&_ts=' + Date.now(), { cache:'no-store' });
     const json = await res.json();
     if(json && json.error){ LOAD_ERROR = json.error; if(esCargaInicial) DATA = emptyShell(); return false; }
     if(!json || !Array.isArray(json.pacientes)){ LOAD_ERROR = 'La API respondió con un formato inesperado.'; if(esCargaInicial) DATA = emptyShell(); return false; }
@@ -455,7 +463,12 @@ const MAPA_SYNC_KEYS = ['pacientes','tratamientos','citas','pagos','gastos','cat
 async function syncData(keys){
   if(!CONFIG.API_URL || !keys || !keys.length) return;
   try{
-    const res = await fetch(CONFIG.API_URL + '?client=' + encodeURIComponent(CONFIG.CLIENT_ID) + '&sheets=' + encodeURIComponent(keys.join(',')));
+    // Ciclo 2 / Ronda 10 — mismo fix que loadData(): esta es la peticion
+    // que se repite CADA VEZ que se guarda algo (para confirmar lo que
+    // realmente quedo escrito) y siempre con la misma URL por hoja — la
+    // mas propensa a regresar una copia vieja cacheada por el
+    // navegador (ej. el horario "desapareciendo" tras guardarlo).
+    const res = await fetch(CONFIG.API_URL + '?client=' + encodeURIComponent(CONFIG.CLIENT_ID) + '&sheets=' + encodeURIComponent(keys.join(',')) + '&_ts=' + Date.now(), { cache:'no-store' });
     const json = await res.json();
     if(json && !json.error){
       keys.forEach(k=>{ if(json[k]!==undefined) DATA[k] = json[k]; });
@@ -486,7 +499,7 @@ async function apiCall(action, payload, syncKeys){
   if(!CONFIG.API_URL) return null;
   showMask('Guardando...');
   try{
-    const res = await fetch(CONFIG.API_URL, { method:'POST', body: JSON.stringify({ client:CONFIG.CLIENT_ID, action, payload }) });
+    const res = await fetch(CONFIG.API_URL, { method:'POST', body: JSON.stringify({ client:CONFIG.CLIENT_ID, action, payload }), cache:'no-store' });
     const json = await res.json();
     if(json && !json.error && !json.conflict && syncKeys && syncKeys.length){
       showMask('Actualizando...');

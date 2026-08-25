@@ -127,9 +127,26 @@
      contenido tipico, dejando en movil un scroll horizontal chico —
      visible pero no exagerado. Punto de partida para ajustar si Sergio
      ve que falta o sobra. */
-  #pacTableBlock table{width:auto;min-width:760px;}
-  #tratTableBlock table{width:auto;min-width:650px;}
-  #gastoTableBlock table{width:auto;min-width:550px;}
+  /* Ciclo 2 / Ronda 9 — corregido de "width:auto" a "width:100%": con
+     auto, la tabla solo ocupaba lo que su contenido necesitaba y el
+     min-width quedaba como piso unicamente para pantallas angostas — en
+     PC, donde el contenedor es mas ancho que ese piso, la tabla se veia
+     "incompleta" (hueco vacio a la derecha). Con width:100%, la tabla
+     llena el contenedor en PC igual que antes de Ronda 8, y el
+     min-width sigue actuando como piso en movil para evitar texto
+     amontonado. Gastos ademas subio su min-width (550->620) para darle
+     mas aire a la columna Concepto tras el ajuste de nowrap de abajo. */
+  #pacTableBlock table{width:100%;min-width:760px;}
+  #tratTableBlock table{width:100%;min-width:650px;}
+  #gastoTableBlock table{width:100%;min-width:620px;}
+  /* Ciclo 2 / Ronda 9 — en Gastos, las fechas (con guion, ej. "24-Ago-
+     2026") se seguian partiendo en varios renglones en movil pese al
+     min-width: el guion es un punto de corte valido para el navegador,
+     y el layout automatico de la tabla le podia quitar espacio a esta
+     columna para dárselo a Concepto. Se fuerza nowrap en las 3 columnas
+     de dato corto (Fecha, Categoria, Monto) — solo Concepto, que es la
+     unica con texto realmente largo, puede partirse si de plano no cabe. */
+  #gastoTableBlock td:nth-child(1), #gastoTableBlock td:nth-child(3), #gastoTableBlock td:nth-child(4){white-space:nowrap;}
   thead th{text-align:left;color:var(--text-dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:0.4px;padding:10px 12px;border-bottom:1px solid var(--border);white-space:nowrap;}
   /* Ciclo 2 / Ronda 4 (#4 de Pagos) — altura MINIMA (no fija) por celda,
      para eliminar variaciones de contenido sin arriesgar que el texto se
@@ -2082,6 +2099,16 @@ async function sincronizarTodo(){
     const ok = await loadData();
     hideMask();
     if(!ok){ showToast('No se pudo sincronizar — tu información local sigue intacta'); return; }
+    // Ciclo 2 / Ronda 9 — bug encontrado: loadData() SI traia la
+    // configuracion regional actualizada (guardada desde otro
+    // dispositivo) dentro de DATA.config, pero nunca se volvia a aplicar
+    // a CONFIG (que es lo que realmente usan formatearFecha(),
+    // fmtMoney(), etc. para pintar la pantalla) — esa aplicacion solo
+    // ocurria una vez, al cargar la pagina por primera vez. Por eso
+    // "Sincronizar" traia el dato nuevo pero seguia mostrando el formato
+    // viejo de ESE dispositivo. Se agrega la misma llamada que ya usa la
+    // carga inicial.
+    hidratarConfigDesdeSheet();
   }
   render();
   showToast('Sincronizado');

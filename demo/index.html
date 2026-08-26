@@ -125,6 +125,31 @@
   .cal-sem-col{flex:1;position:relative;border-left:1px solid var(--border);}
   .cal-sem-col-hoy{background:rgba(242,184,75,0.05);}
   .cal-sem-citas{position:absolute;top:0;left:2px;right:2px;bottom:0;}
+  /* Grupo 6 / Ciclo 3 — Vista Mes. A diferencia de Dia/Semana (rejilla de
+     horas con posicionamiento absoluto), Mes es una cuadricula simple de
+     CSS Grid — no necesita eje de horas. Reutiliza los mismos colores por
+     estado ya establecidos (ver renderCalendarioMesHTML). */
+  .cal-mes-header-row{display:grid;grid-template-columns:repeat(7,1fr);margin-top:8px;text-align:center;font-size:11px;color:var(--text-dim);text-transform:uppercase;padding-bottom:4px;}
+  .cal-mes-grid{display:grid;grid-template-columns:repeat(7,1fr);border-left:1px solid var(--border);border-top:1px solid var(--border);border-radius:10px;overflow:hidden;margin:12px 10px 0 0;}
+  .cal-mes-celda{border-right:1px solid var(--border);border-bottom:1px solid var(--border);min-height:96px;padding:6px;position:relative;cursor:pointer;background:var(--panel-2);}
+  .cal-mes-celda:hover{background:rgba(255,255,255,.03);}
+  .cal-mes-celda-fuera{opacity:.35;}
+  .cal-mes-celda-hoy{background:rgba(242,184,75,0.06);}
+  .cal-mes-num{font-size:12px;color:var(--text-dim);margin-bottom:4px;}
+  .cal-mes-num-hoy{color:var(--amber);font-weight:700;}
+  .cal-mes-evento-texto{font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.5;}
+  .cal-mes-evento-mas{font-size:10px;color:var(--text-mute);margin-top:2px;}
+  .cal-mes-eventos-puntos{display:none;gap:3px;flex-wrap:wrap;margin-top:2px;align-items:center;}
+  .cal-mes-punto{display:inline-block;width:6px;height:6px;border-radius:50%;flex-shrink:0;}
+  .cal-mes-mas-puntos{font-size:9px;color:var(--text-mute);}
+  /* En movil no cabe texto legible en 7 columnas — se cambia a puntos de
+     color (tocar el dia sigue llevando a Vista Dia para ver el detalle
+     completo, definido asi desde la planeacion original del Grupo 6). */
+  @media (max-width:900px){
+    .cal-mes-eventos-texto{display:none;}
+    .cal-mes-eventos-puntos{display:flex;}
+    .cal-mes-celda{min-height:56px;padding:4px;}
+  }
   .btn{padding:9px 14px;border-radius:8px;font-size:12.5px;font-weight:600;text-align:center;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text-dim);white-space:nowrap;}
   .btn:hover{border-color:var(--text-dim);}
   .btn.primary{background:var(--teal);color:#04241C;border:none;}
@@ -2314,7 +2339,7 @@ function abrirEdicionTratamiento(tratId){
    Lista, a proposito, para no duplicar esa logica; se agrega un atajo
    directo a la Lista desde el detalle de cada cita. */
 let AGENDA_VISTA = 'lista';        // 'lista' | 'calendario'
-let AGENDA_MODO = 'dia';           // 'dia' | 'semana' (Grupo 6 / Ciclo 2 — Mes pendiente)
+let AGENDA_MODO = 'dia';           // 'dia' | 'semana' | 'mes'
 let AGENDA_FECHA_REF = todayStr(); // fecha que esta viendo el calendario
 
 const NOMBRES_DIA_SEMANA = ['Domingo','Lunes','Martes','Miercoles','Jueves','Viernes','Sabado'];
@@ -2367,6 +2392,34 @@ function formatearRangoSemana(inicioSemanaStr){
     return `${pL.d} ${MESES_CORTOS[pL.m-1]} - ${pD.d} ${MESES_CORTOS[pD.m-1]} ${pL.y}`;
   }
   return `${pL.d} ${MESES_CORTOS[pL.m-1]} ${pL.y} - ${pD.d} ${MESES_CORTOS[pD.m-1]} ${pD.y}`;
+}
+
+// Grupo 6 / Ciclo 3 — Vista Mes. Navega de mes en mes, siempre aterriza
+// en el dia 1 del mes destino (evita el problema clasico de "31 de enero
+// + 1 mes" cayendo en marzo en vez de febrero — para Mes no importa en
+// que dia del mes estemos parados, solo que mes se debe mostrar).
+function sumarMesesFecha(fechaStr, n){
+  const p = ymd(fechaStr);
+  const d = new Date(p.y, p.m-1+n, 1);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-01';
+}
+// Arma las celdas de la cuadricula del mes (incluyendo los dias del mes
+// anterior/siguiente que hacen falta para completar semanas enteras),
+// respetando CONFIG.PRIMER_DIA_SEMANA (#14) — igual que Semana, para que
+// las columnas de Mes y Semana siempre esten alineadas con el mismo
+// criterio de que dia empieza la semana.
+function obtenerCeldasMes(fechaRefStr){
+  const p = ymd(fechaRefStr);
+  const primerDiaStr = p.y+'-'+String(p.m).padStart(2,'0')+'-01';
+  const primerDiaDate = new Date(p.y, p.m-1, 1);
+  const diasEnMes = new Date(p.y, p.m, 0).getDate();
+  const inicioSemana = CONFIG.PRIMER_DIA_SEMANA==='domingo' ? 0 : 1; // 0=domingo,1=lunes
+  const offsetInicial = (primerDiaDate.getDay() - inicioSemana + 7) % 7;
+  const celdas = [];
+  for(let i=offsetInicial; i>0; i--) celdas.push({ fecha: sumarDiasFecha(primerDiaStr, -i), delMes:false });
+  for(let d=1; d<=diasEnMes; d++) celdas.push({ fecha: p.y+'-'+String(p.m).padStart(2,'0')+'-'+String(d).padStart(2,'0'), delMes:true });
+  while(celdas.length % 7 !== 0) celdas.push({ fecha: sumarDiasFecha(celdas[celdas.length-1].fecha, 1), delMes:false });
+  return celdas;
 }
 
 // Ronda 2 (#13/#15) — detecta grupos de citas que se traslapan entre si
@@ -2428,7 +2481,9 @@ function detenerTimerHoraActual(){
 }
 
 function renderCalendarioHTML(){
-  return AGENDA_MODO === 'semana' ? renderCalendarioSemanaHTML() : renderCalendarioDiaHTML();
+  if(AGENDA_MODO === 'semana') return renderCalendarioSemanaHTML();
+  if(AGENDA_MODO === 'mes') return renderCalendarioMesHTML();
+  return renderCalendarioDiaHTML();
 }
 
 // Grupo 6 / Ciclo 2-mod — extraido de la version original de
@@ -2611,6 +2666,69 @@ function renderCalendarioSemanaHTML(){
   </div>`;
 }
 
+// Grupo 6 / Ciclo 3 — Vista Mes. Reutiliza el mismo criterio de colores
+// por estado (gris/ambar/verde/rojo) ya establecido en Dia/Semana, y el
+// mismo principio de canceladas visibles pero sin competir por espacio
+// (aqui: no le quitan lugar a las 3 citas activas que se alcanzan a
+// mostrar por celda, se cuentan aparte en el "+N mas"). A diferencia de
+// Dia/Semana (rejilla de horas con posicionamiento absoluto), Mes es una
+// cuadricula simple de CSS Grid — no necesita eje de horas.
+// Al tocar cualquier dia, se cambia a Vista Dia en esa fecha (igual que
+// Google Calendar/Outlook) — funciona igual en PC y en movil, cubriendo
+// de una vez el "toca un dia para ver su detalle" que se definio para
+// movil desde la planeacion original.
+function renderCalendarioMesHTML(){
+  const p = ymd(AGENDA_FECHA_REF);
+  const hoy = todayStr();
+  const celdas = obtenerCeldasMes(AGENDA_FECHA_REF);
+  const ordenEncabezados = CONFIG.PRIMER_DIA_SEMANA==='domingo'
+    ? ['Dom','Lun','Mar','Mie','Jue','Vie','Sab']
+    : ['Lun','Mar','Mie','Jue','Vie','Sab','Dom'];
+  const encabezadosDias = ordenEncabezados.map(n=>`<div class="cal-mes-col-header">${n}</div>`).join('');
+
+  const MAX_TEXTO = 3, MAX_PUNTOS = 4;
+  const celdasHtml = celdas.map(c=>{
+    const esHoyCelda = c.fecha === hoy;
+    const citasDelDia = DATA.citas.filter(x=>x.Fecha===c.fecha).sort((a,b)=>a.Hora.localeCompare(b.Hora));
+
+    function colorDeCita(cita){
+      if(cita.Estado==='Cancelada') return 'var(--red)';
+      const dur = cita.Duracion_Min || duracionCitaMin(cita.Tratamientos||cita.Tratamiento);
+      const finCita = new Date(cita.Fecha+'T'+cita.Hora+':00').getTime() + dur*60000;
+      const esPasada = (cita.Fecha < hoy) || (cita.Fecha===hoy && finCita<=Date.now());
+      return esPasada ? 'var(--text-mute)' : (cita.Fecha===hoy ? 'var(--amber)' : 'var(--teal)');
+    }
+
+    const visibleTexto = citasDelDia.slice(0, MAX_TEXTO);
+    const restoTexto = citasDelDia.length - visibleTexto.length;
+    const textoHtml = visibleTexto.map(cita=>`<div class="cal-mes-evento-texto" style="color:${colorDeCita(cita)};${cita.Estado==='Cancelada'?'opacity:.6;':''}">${formatearHora(cita.Hora)} ${cita.Paciente}</div>`).join('')
+      + (restoTexto>0 ? `<div class="cal-mes-evento-mas">+${restoTexto} más</div>` : '');
+
+    const visiblePuntos = citasDelDia.slice(0, MAX_PUNTOS);
+    const restoPuntos = citasDelDia.length - visiblePuntos.length;
+    const puntosHtml = visiblePuntos.map(cita=>`<span class="cal-mes-punto" style="background:${colorDeCita(cita)};${cita.Estado==='Cancelada'?'opacity:.6;':''}"></span>`).join('')
+      + (restoPuntos>0 ? `<span class="cal-mes-mas-puntos">+${restoPuntos}</span>` : '');
+
+    return `<div class="cal-mes-celda${c.delMes?'':' cal-mes-celda-fuera'}${esHoyCelda?' cal-mes-celda-hoy':''}" data-cal-dia="${c.fecha}">
+      <div class="cal-mes-num${esHoyCelda?' cal-mes-num-hoy':''}">${ymd(c.fecha).d}</div>
+      <div class="cal-mes-eventos-texto">${textoHtml}</div>
+      <div class="cal-mes-eventos-puntos">${puntosHtml}</div>
+    </div>`;
+  }).join('');
+
+  return `
+  <div class="cal-header-sticky">
+    <div class="cal-toolbar">
+      <div class="icon-btn" id="calMesAnterior">‹</div>
+      <div class="cal-fecha-actual">${MESES_LARGOS[p.m-1]} ${p.y}</div>
+      <div class="icon-btn" id="calMesSiguiente">›</div>
+      <div class="btn sm" id="calIrHoy">Hoy</div>
+    </div>
+    <div class="cal-mes-header-row">${encabezadosDias}</div>
+  </div>
+  <div class="cal-mes-grid">${celdasHtml}</div>`;
+}
+
 // Detalle de solo lectura al tocar una cita en el calendario. El boton
 // "Ir a la lista" cambia la vista y deja que Reagendar/Cancelar los haga
 // la Lista, con su logica de siempre — sin duplicarla aqui.
@@ -2642,14 +2760,28 @@ function attachCalendarioHandlers(){
   const btnSig = document.getElementById('calDiaSiguiente');
   const btnSemAnt = document.getElementById('calSemanaAnterior');
   const btnSemSig = document.getElementById('calSemanaSiguiente');
+  const btnMesAnt = document.getElementById('calMesAnterior');
+  const btnMesSig = document.getElementById('calMesSiguiente');
   const btnHoy = document.getElementById('calIrHoy');
   if(btnAnt) btnAnt.addEventListener('click', ()=>{ AGENDA_FECHA_REF = sumarDiasFecha(AGENDA_FECHA_REF,-1); repintarPanelAgenda(); });
   if(btnSig) btnSig.addEventListener('click', ()=>{ AGENDA_FECHA_REF = sumarDiasFecha(AGENDA_FECHA_REF,1); repintarPanelAgenda(); });
   if(btnSemAnt) btnSemAnt.addEventListener('click', ()=>{ AGENDA_FECHA_REF = sumarDiasFecha(AGENDA_FECHA_REF,-7); repintarPanelAgenda(); });
   if(btnSemSig) btnSemSig.addEventListener('click', ()=>{ AGENDA_FECHA_REF = sumarDiasFecha(AGENDA_FECHA_REF,7); repintarPanelAgenda(); });
+  if(btnMesAnt) btnMesAnt.addEventListener('click', ()=>{ AGENDA_FECHA_REF = sumarMesesFecha(AGENDA_FECHA_REF,-1); repintarPanelAgenda(); });
+  if(btnMesSig) btnMesSig.addEventListener('click', ()=>{ AGENDA_FECHA_REF = sumarMesesFecha(AGENDA_FECHA_REF,1); repintarPanelAgenda(); });
   if(btnHoy) btnHoy.addEventListener('click', ()=>{ AGENDA_FECHA_REF = todayStr(); repintarPanelAgenda(); });
   document.querySelectorAll('[data-cal-cita]').forEach(el=>{
     el.addEventListener('click', ()=> abrirDetalleCitaCalendario(el.dataset.calCita));
+  });
+  // Vista Mes — tocar cualquier dia cambia a Vista Dia en esa fecha,
+  // igual que Google Calendar/Outlook. Cubre tanto PC como movil con la
+  // misma logica (definido asi desde la planeacion original del Grupo 6).
+  document.querySelectorAll('[data-cal-dia]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      AGENDA_FECHA_REF = el.dataset.calDia;
+      AGENDA_MODO = 'dia';
+      repintarPanelAgenda();
+    });
   });
 }
 
@@ -2762,6 +2894,7 @@ function renderAgendarHTML(){
     <div class="cal-switch" id="calSwitchModo" style="${AGENDA_VISTA==='calendario'?'':'display:none;'}">
       <div class="cal-switch-btn ${AGENDA_MODO==='dia'?'active':''}" data-agenda-modo="dia">Día</div>
       <div class="cal-switch-btn ${AGENDA_MODO==='semana'?'active':''}" data-agenda-modo="semana">Semana</div>
+      <div class="cal-switch-btn ${AGENDA_MODO==='mes'?'active':''}" data-agenda-modo="mes">Mes</div>
     </div>
     <div class="appt-list" id="agendaCitasList" style="max-height:620px;">
       ${AGENDA_VISTA==='calendario' ? renderCalendarioHTML() : renderCitasListHTML()}

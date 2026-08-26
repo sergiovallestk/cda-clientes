@@ -117,7 +117,7 @@
      bordes y demas reglas ya definidas para Vista Dia (ver
      renderBloquesCitasDeUnDia) — este bloque solo agrega el layout de
      7 columnas (una por dia) y su encabezado. */
-  .cal-sem-header-row{display:flex;margin-top:8px;}
+  .cal-sem-header-row{display:flex;margin-top:8px;padding-right:16px;}
   .cal-sem-gutter{width:60px;flex-shrink:0;}
   .cal-sem-col-header{flex:1;text-align:center;font-size:11px;color:var(--text-dim);line-height:1.4;padding-bottom:4px;text-transform:uppercase;}
   .cal-sem-col-header-hoy{color:var(--amber);font-weight:700;}
@@ -129,9 +129,9 @@
      horas con posicionamiento absoluto), Mes es una cuadricula simple de
      CSS Grid — no necesita eje de horas. Reutiliza los mismos colores por
      estado ya establecidos (ver renderCalendarioMesHTML). */
-  .cal-mes-header-row{display:grid;grid-template-columns:repeat(7,1fr);margin-top:8px;text-align:center;font-size:11px;color:var(--text-dim);text-transform:uppercase;padding-bottom:4px;}
+  .cal-mes-header-row{display:grid;grid-template-columns:repeat(7,1fr);margin:8px 10px 0 0;text-align:center;font-size:11px;color:var(--text-dim);text-transform:uppercase;padding-bottom:4px;}
   .cal-mes-grid{display:grid;grid-template-columns:repeat(7,1fr);border-left:1px solid var(--border);border-top:1px solid var(--border);border-radius:10px;overflow:hidden;margin:12px 10px 0 0;}
-  .cal-mes-celda{border-right:1px solid var(--border);border-bottom:1px solid var(--border);min-height:96px;padding:6px;position:relative;cursor:pointer;background:var(--panel-2);}
+  .cal-mes-celda{border-right:1px solid var(--border);border-bottom:1px solid var(--border);min-height:96px;padding:6px;position:relative;cursor:pointer;background:var(--panel-2);min-width:0;overflow:hidden;}
   .cal-mes-celda:hover{background:rgba(255,255,255,.03);}
   .cal-mes-celda-fuera{opacity:.35;}
   .cal-mes-celda-hoy{background:rgba(242,184,75,0.06);}
@@ -2699,12 +2699,24 @@ function renderCalendarioMesHTML(){
       return esPasada ? 'var(--text-mute)' : (cita.Fecha===hoy ? 'var(--amber)' : 'var(--teal)');
     }
 
-    const visibleTexto = citasDelDia.slice(0, MAX_TEXTO);
+    // #6/#9 — las canceladas se siguen mostrando, pero NUNCA le quitan un
+    // lugar a una cita activa dentro del cupo visible: primero se llenan
+    // los espacios con activas, y solo se usan los que sobren para
+    // canceladas — despues se reordenan por hora para verse en orden
+    // cronologico normal.
+    const activasDelDia = citasDelDia.filter(x=>x.Estado!=='Cancelada');
+    const canceladasDelDia = citasDelDia.filter(x=>x.Estado==='Cancelada');
+
+    const visibleTexto = activasDelDia.slice(0, MAX_TEXTO);
+    if(visibleTexto.length < MAX_TEXTO) visibleTexto.push(...canceladasDelDia.slice(0, MAX_TEXTO - visibleTexto.length));
+    visibleTexto.sort((a,b)=>a.Hora.localeCompare(b.Hora));
     const restoTexto = citasDelDia.length - visibleTexto.length;
     const textoHtml = visibleTexto.map(cita=>`<div class="cal-mes-evento-texto" style="color:${colorDeCita(cita)};${cita.Estado==='Cancelada'?'opacity:.6;':''}">${formatearHora(cita.Hora)} ${cita.Paciente}</div>`).join('')
       + (restoTexto>0 ? `<div class="cal-mes-evento-mas">+${restoTexto} más</div>` : '');
 
-    const visiblePuntos = citasDelDia.slice(0, MAX_PUNTOS);
+    const visiblePuntos = activasDelDia.slice(0, MAX_PUNTOS);
+    if(visiblePuntos.length < MAX_PUNTOS) visiblePuntos.push(...canceladasDelDia.slice(0, MAX_PUNTOS - visiblePuntos.length));
+    visiblePuntos.sort((a,b)=>a.Hora.localeCompare(b.Hora));
     const restoPuntos = citasDelDia.length - visiblePuntos.length;
     const puntosHtml = visiblePuntos.map(cita=>`<span class="cal-mes-punto" style="background:${colorDeCita(cita)};${cita.Estado==='Cancelada'?'opacity:.6;':''}"></span>`).join('')
       + (restoPuntos>0 ? `<span class="cal-mes-mas-puntos">+${restoPuntos}</span>` : '');

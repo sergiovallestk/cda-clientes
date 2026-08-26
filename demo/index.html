@@ -398,9 +398,13 @@
      calendario (Ronda 3, por legibilidad en pantallas angostas) ya no
      hace falta en PC ahora que el sistema usa casi todo el ancho de la
      pantalla — se oculta el <br> arriba de 900px (mismo punto de quiebre
-     que ya usa el resto del sistema para distinguir movil de PC), sin
-     tocar el comportamiento en movil, que se queda igual. */
-  @media (min-width:901px){
+     que ya usa el resto del sistema para distinguir movil de PC).
+     Ronda 11 — tambien se oculta en movil en horizontal (orientation:
+     landscape): ahi tambien sobra ancho de sobra para verlo en una sola
+     linea, aunque el ancho total siga por debajo de 900px. Solo se
+     mantiene forzado el salto de linea en movil VERTICAL, que es el
+     unico caso realmente angosto. */
+  @media (min-width:901px), (orientation:landscape) and (min-width:600px){
     .leyenda-salto{display:none;}
   }
 </style>

@@ -23,7 +23,7 @@
   .nav-item:hover{background:#152234;color:var(--text);}
   .nav-item.active{background:var(--teal);color:#04241C;font-weight:600;}
   .nav-item svg{width:17px;height:17px;flex-shrink:0;}
-  .main{flex:1;padding:28px 32px;max-width:1200px;overflow-x:hidden;min-width:0;}
+  .main{flex:1;padding:28px 32px;max-width:1550px;overflow-x:hidden;min-width:0;}
   .header{margin-bottom:22px;}
   .header h1{font-size:22px;font-weight:700;letter-spacing:0.2px;}
   .header h1 .accent{color:var(--teal);}
@@ -83,7 +83,7 @@
      sino visibility:hidden desde el JS) para que la rejilla no salte de
      tamaño segun haya o no citas ese dia. Ronda 3: centrado (#8). */
   .cal-sin-citas{height:18px;line-height:18px;font-size:12px;color:var(--text-mute);margin-top:6px;text-align:center;}
-  .cal-dia-grid{position:relative;margin-top:12px;border:1px solid var(--border);border-radius:10px;background:var(--panel-2);}
+  .cal-dia-grid{position:relative;margin:12px 10px 0 0;border:1px solid var(--border);border-radius:10px;background:var(--panel-2);}
   .cal-hora-linea{position:absolute;left:0;right:0;border-top:1px solid var(--border);}
   .cal-hora-label{position:absolute;left:8px;top:-8px;font-size:10.5px;color:var(--text-mute);background:var(--panel-2);padding:0 4px;}
   /* Ronda 2 (#13/#15) — antes .cal-cita tenia left:60px;right:8px directo.
@@ -1824,12 +1824,6 @@ function abrirEdicionPaciente(p){
    refresco automatico, sin tocar el resto de la pestaña de Finanzas — en
    particular, sin tocar las tablas de Pagos/Gastos, que ya no se refrescan
    solas. */
-/* ==================== FINANZAS ==================== */
-/* Ciclo 1 / Ronda 2 (5c) — los 4 KPI de arriba se separan en su propia
-   funcion para poder repintarlos solos (junto con las graficas) desde el
-   refresco automatico, sin tocar el resto de la pestaña de Finanzas — en
-   particular, sin tocar las tablas de Pagos/Gastos, que ya no se refrescan
-   solas. */
 function renderFinanzasKpiRowInner(){
   const now = new Date();
   const pagosMes = DATA.pagos.filter(p=> esMesActual(p.Ultimo_Pago, now));
@@ -2186,7 +2180,21 @@ async function sincronizarTodo(){
     showMask('Sincronizando...');
     const ok = await loadData();
     hideMask();
-    if(!ok){ showToast('No se pudo sincronizar — tu información local sigue intacta'); return; }
+    // Ciclo 3 — antes mostraba un aviso generico ("No se pudo
+    // sincronizar") sin ningun detalle, aunque loadData() SI guarda la
+    // causa exacta en LOAD_ERROR (el mismo mecanismo de diagnostico que
+    // ya usa la pantalla de error de la carga inicial). Se muestra ese
+    // detalle en una ventana emergente (no un toast, que desaparece en
+    // 2.6s y no da tiempo de leer un mensaje tecnico largo), para no
+    // volver a perder la pista de que fue lo que realmente fallo.
+    if(!ok){
+      openModal(`
+        <h3>No se pudo sincronizar</h3>
+        <p style="font-size:13px;margin-bottom:6px;">Tu información local sigue intacta — nada se perdió.</p>
+        <p style="font-size:12px;color:var(--text-mute);">${LOAD_ERROR || 'Motivo desconocido.'}</p>
+        <div class="modal-actions" style="margin-top:16px;"><div class="btn primary block" onclick="closeModal()">Entendido</div></div>`);
+      return;
+    }
     // Ciclo 2 / Ronda 9 — bug encontrado: loadData() SI traia la
     // configuracion regional actualizada (guardada desde otro
     // dispositivo) dentro de DATA.config, pero nunca se volvia a aplicar
@@ -3023,7 +3031,7 @@ function renderConfiguracionHTML(){
         <option value="false" ${!CONFIG.DECIMALES_PRECIO?'selected':''}>Sin decimales ($650 MXN)</option>
         <option value="true" ${CONFIG.DECIMALES_PRECIO?'selected':''}>Con decimales ($650.00 MXN)</option>
       </select></div>
-    <div class="field" style="margin-bottom:12px;"><label>Primer día de la semana (vista Semana del calendario)</label>
+    <div class="field" style="margin-bottom:12px;"><label>Primer día de la semana (Vista Calendario)</label>
       <select id="cfgPrimerDiaSemana">
         <option value="lunes" ${CONFIG.PRIMER_DIA_SEMANA==='lunes'?'selected':''}>Lunes</option>
         <option value="domingo" ${CONFIG.PRIMER_DIA_SEMANA==='domingo'?'selected':''}>Domingo</option>

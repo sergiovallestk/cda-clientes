@@ -58,7 +58,7 @@
   .appt-info{flex:1;background:#132135;border-left:3px solid var(--teal);border-radius:6px;padding:8px 10px;min-width:0;overflow-wrap:break-word;}
   .appt-info b{display:block;font-size:13px;overflow-wrap:break-word;}
   .appt-info span{color:var(--text-dim);font-size:12px;}
-  .appt-list{max-height:280px;overflow-y:auto;}
+  .appt-list{max-height:280px;overflow-y:auto;overscroll-behavior:contain;}
   .appt-actions{display:flex;gap:8px;margin-top:14px;}
   /* Ronda 2 (#16) — resalte breve al aterrizar en una cita especifica de
      la Lista desde "Ir a la lista para gestionar" del calendario. */
@@ -92,7 +92,7 @@
      0-100% de ESE espacio — así calcularLayoutCitas() puede repartir
      porcentajes limpios entre columnas cuando hay citas empalmadas, sin
      tener que lidiar con los 60px/8px fijos en cada calculo. */
-  .cal-citas-area{position:absolute;top:0;left:60px;right:16px;bottom:0;}
+  .cal-citas-area{position:absolute;top:0;left:60px;right:8px;bottom:0;}
   /* Ronda 3 (#13) — el borde sutil que antes solo tenian las citas
      empalmadas ahora lo tienen TODAS: el caso reportado (una cita termina
      justo cuando empieza la siguiente) no cuenta como "empalme" para
@@ -121,7 +121,7 @@
   .cal-sem-gutter{width:60px;flex-shrink:0;}
   .cal-sem-col-header{flex:1;text-align:center;font-size:11px;color:var(--text-dim);line-height:1.4;padding-bottom:4px;text-transform:uppercase;}
   .cal-sem-col-header-hoy{color:var(--amber);font-weight:700;}
-  .cal-sem-columnas{position:absolute;top:0;left:60px;right:16px;bottom:0;display:flex;}
+  .cal-sem-columnas{position:absolute;top:0;left:60px;right:8px;bottom:0;display:flex;}
   .cal-sem-col{flex:1;position:relative;border-left:1px solid var(--border);}
   .cal-sem-col-hoy{background:rgba(242,184,75,0.05);}
   .cal-sem-citas{position:absolute;top:0;left:2px;right:2px;bottom:0;}
@@ -435,7 +435,7 @@
 Chart.defaults.color = '#8FA1AE';
 Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
 
-const CONFIG = { API_URL: "https://script.google.com/macros/s/AKfycby2vc5fO1g4A08vLKsWTAhMBwO5HvVKqh1KkaigexC8JkGVgdTf-bl6rmMpPhSvNYRO/exec", CLIENT_ID: "DEMO", CURRENCY: "MXN", DIAS_SIN_VISITA: 60, PHONE_COUNTRY: "MX", FORMATO_HORA: "24h", FORMATO_FECHA: "iso", SEPARADOR: "es-MX", DECIMALES_PRECIO: false, PRIMER_DIA_SEMANA: "lunes" };
+const CONFIG = { API_URL: "https://script.google.com/macros/s/AKfycby2vc5fO1g4A08vLKsWTAhMBwO5HvVKqh1KkaigexC8JkGVgdTf-bl6rmMpPhSvNYRO/exec", CLIENT_ID: "DEMO", CURRENCY: "MXN", DIAS_SIN_VISITA: 60, PHONE_COUNTRY: "MX", FORMATO_HORA: "24h", FORMATO_FECHA: "iso", SEPARADOR: "es-MX", DECIMALES_PRECIO: false };
 const CURRENCIES = {
   MXN:{symbol:'$',nombre:'Peso mexicano'}, USD:{symbol:'$',nombre:'Dólar estadounidense'},
   COP:{symbol:'$',nombre:'Peso colombiano'}, EUR:{symbol:'€',nombre:'Euro'},
@@ -515,12 +515,6 @@ function hidratarConfigDesdeSheet(){
   if(['iso','iso-texto','dmy','dmy-texto'].includes(mapa.FormatoFecha)) CONFIG.FORMATO_FECHA = mapa.FormatoFecha;
   if(mapa.Separador==='es-MX' || mapa.Separador==='es-ES') CONFIG.SEPARADOR = mapa.Separador;
   if(mapa.DecimalesPrecio!==undefined) CONFIG.DECIMALES_PRECIO = (mapa.DecimalesPrecio==='true' || mapa.DecimalesPrecio===true);
-  // Grupo 6 / Ciclo 2-mod (#14) — primer dia de la semana para la Vista
-  // Semana del calendario. Guardado con el mismo mecanismo generico de
-  // Config que ya usan los demas ajustes regionales (setConfig en
-  // Code.gs crea la fila sola si no existe — no hizo falta tocar el
-  // backend para este ajuste).
-  if(mapa.PrimerDiaSemana==='domingo' || mapa.PrimerDiaSemana==='lunes') CONFIG.PRIMER_DIA_SEMANA = mapa.PrimerDiaSemana;
 }
 
 /* Mapa entre las claves del JSON del backend y los nombres de hoja que
@@ -2321,24 +2315,23 @@ function formatearFechaLargaCalendario(fechaStr){
   const d = new Date(p.y, p.m-1, p.d);
   return `${NOMBRES_DIA_SEMANA[d.getDay()]}, ${p.d} ${MESES_LARGOS[p.m-1]} ${p.y}`;
 }
-// Grupo 6 / Ciclo 2-mod — Vista Semana. Por default la semana empieza en
+// Grupo 6 / Ciclo 2-mod — Vista Semana. La semana siempre empieza en
 // Lunes (mismo criterio que ya usa Horario/DIAS_ORDEN en el resto del
-// sistema) pero ahora es configurable (#14, Configuración > Primer día
-// de la semana) — CONFIG.PRIMER_DIA_SEMANA puede ser 'lunes' o 'domingo'.
-function obtenerInicioDeSemana(fechaStr){
+// sistema), sin importar en que dia de la semana caiga AGENDA_FECHA_REF.
+function obtenerLunesDeLaSemana(fechaStr){
   const p = ymd(fechaStr);
   const d = new Date(p.y, p.m-1, p.d);
   const diaJs = d.getDay(); // 0=domingo...6=sabado
-  const offset = CONFIG.PRIMER_DIA_SEMANA==='domingo' ? -diaJs : (diaJs === 0 ? -6 : 1 - diaJs);
-  d.setDate(d.getDate() + offset);
+  const offsetALunes = diaJs === 0 ? -6 : 1 - diaJs;
+  d.setDate(d.getDate() + offsetALunes);
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
 // Etiqueta del encabezado de semana: "18 - 24 Agosto 2026", o
 // "28 Ago - 3 Sep 2026" si la semana cruza de mes (con mes abreviado en
 // ese caso especifico, para que quepa comodo).
-function formatearRangoSemana(inicioSemanaStr){
-  const finSemanaStr = sumarDiasFecha(inicioSemanaStr, 6);
-  const pL = ymd(inicioSemanaStr), pD = ymd(finSemanaStr);
+function formatearRangoSemana(lunesStr){
+  const domingoStr = sumarDiasFecha(lunesStr, 6);
+  const pL = ymd(lunesStr), pD = ymd(domingoStr);
   if(pL.m === pD.m && pL.y === pD.y){
     return `${pL.d} - ${pD.d} ${MESES_LARGOS[pL.m-1]} ${pL.y}`;
   }
@@ -2520,9 +2513,9 @@ function renderCalendarioDiaHTML(){
 // columnas de empalme, colores por estado, rango de horas dinamico,
 // franja de hora actual, y header pegajoso con controles centrados.
 function renderCalendarioSemanaHTML(){
-  const inicioSemana = obtenerInicioDeSemana(AGENDA_FECHA_REF);
+  const lunes = obtenerLunesDeLaSemana(AGENDA_FECHA_REF);
   const hoy = todayStr();
-  const dias = []; for(let i=0;i<7;i++) dias.push(sumarDiasFecha(inicioSemana, i));
+  const dias = []; for(let i=0;i<7;i++) dias.push(sumarDiasFecha(lunes, i));
   const citasPorDia = dias.map(f => DATA.citas.filter(c=>c.Fecha===f).sort((a,b)=>a.Hora.localeCompare(b.Hora)));
   const todasLasCitas = citasPorDia.flat();
 
@@ -2567,14 +2560,14 @@ function renderCalendarioSemanaHTML(){
   }).join('');
 
   const huboCitasEnLaSemana = todasLasCitas.length > 0;
-  const finSemana = sumarDiasFecha(inicioSemana, 6);
-  const incluyeHoy = hoy >= inicioSemana && hoy <= finSemana;
+  const domingo = sumarDiasFecha(lunes, 6);
+  const incluyeHoy = hoy >= lunes && hoy <= domingo;
 
   return `
   <div class="cal-header-sticky">
     <div class="cal-toolbar">
       <div class="icon-btn" id="calSemanaAnterior">‹</div>
-      <div class="cal-fecha-actual">${formatearRangoSemana(inicioSemana)}${incluyeHoy?' <span class="subtle">· semana actual</span>':''}</div>
+      <div class="cal-fecha-actual">${formatearRangoSemana(lunes)}${incluyeHoy?' <span class="subtle">· semana actual</span>':''}</div>
       <div class="icon-btn" id="calSemanaSiguiente">›</div>
       <div class="btn sm" id="calIrHoy">Hoy</div>
     </div>
@@ -2726,175 +2719,62 @@ function repintarPanelAgenda(citaIdParaUbicar){
 }
 
 function renderAgendarHTML(){
-  return `
-  <div class="card">
-    <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>Citas</div>
-      <div style="display:flex;align-items:center;gap:14px;">
-        <span class="link-btn" id="btnActualizarAgenda">↻ Actualizar agenda</span>
-        <div class="btn primary sm" id="btnAbrirNuevaCita">+ Nueva cita</div>
-      </div>
-    </div>
-    <div class="cal-switch">
-      <div class="cal-switch-btn ${AGENDA_VISTA==='lista'?'active':''}" data-agenda-vista="lista">Lista</div>
-      <div class="cal-switch-btn ${AGENDA_VISTA==='calendario'?'active':''}" data-agenda-vista="calendario">Calendario</div>
-    </div>
-    <div class="cal-switch" id="calSwitchModo" style="${AGENDA_VISTA==='calendario'?'':'display:none;'}">
-      <div class="cal-switch-btn ${AGENDA_MODO==='dia'?'active':''}" data-agenda-modo="dia">Día</div>
-      <div class="cal-switch-btn ${AGENDA_MODO==='semana'?'active':''}" data-agenda-modo="semana">Semana</div>
-    </div>
-    <div class="appt-list" id="agendaCitasList" style="max-height:620px;">
-      ${AGENDA_VISTA==='calendario' ? renderCalendarioHTML() : renderCitasListHTML()}
-    </div>
-    <p class="subtle" style="margin-top:10px;text-align:center;"><span style="color:var(--text-mute);">●</span> gris = pasada &nbsp; <span style="color:var(--amber);">●</span> ambar = hoy &nbsp; <span style="color:var(--teal);">●</span> verde = futura<br><span style="color:var(--red);">●</span> rojo = cancelada</p>
-  </div>`;
-}
-
-// #13 (Opción C) — el formulario de "Nueva cita" (que antes vivia siempre
-// visible al lado de Citas, robandole la mitad del ancho de la pantalla)
-// ahora vive dentro de un modal — se abre con el boton "+ Nueva cita".
-// Esto libera todo el ancho de la fila para Citas/Calendario. El
-// contenido del formulario es identico al de antes (mismos campos,
-// mismo import CSV), solo cambio DONDE vive.
-function renderNuevaCitaModalHTML(){
   const hoy = todayStr();
   return `
-    <h3>Nueva cita</h3>
-    <div class="form-grid" style="grid-template-columns:1fr;">
-      <div class="field"><label>Paciente</label>
-        <div class="picker-btn" id="citaPacBtn">Selecciona un paciente (solo activos)</div>
-        <input type="hidden" id="citaPacienteId">
+  <div class="row2">
+    <div class="card">
+      <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>Nueva cita</div>
+      <div class="form-grid" style="grid-template-columns:1fr;">
+        <div class="field"><label>Paciente</label>
+          <div class="picker-btn" id="citaPacBtn">Selecciona un paciente (solo activos)</div>
+          <input type="hidden" id="citaPacienteId">
+        </div>
+        <div class="field"><label>Tratamientos</label>
+          <div class="picker-btn" id="citaTratBtn">Selecciona uno o varios tratamientos</div>
+          <div class="chip-row" id="citaTratChips"></div>
+        </div>
+        <div class="form-grid">
+          <div class="field"><label>Fecha</label><input type="date" id="citaFecha" value="${hoy}" min="${hoy}"></div>
+          <div class="field"><label>Hora</label><input type="time" id="citaHora" value="10:00"></div>
+        </div>
+        <div class="btn primary" style="margin-top:6px;" id="btnGuardarCita">Agendar y crear en Google Calendar</div>
       </div>
-      <div class="field"><label>Tratamientos</label>
-        <div class="picker-btn" id="citaTratBtn">Selecciona uno o varios tratamientos</div>
-        <div class="chip-row" id="citaTratChips"></div>
-      </div>
-      <div class="form-grid">
-        <div class="field"><label>Fecha</label><input type="date" id="citaFecha" value="${hoy}" min="${hoy}"></div>
-        <div class="field"><label>Hora</label><input type="time" id="citaHora" value="10:00"></div>
-      </div>
-      <div class="btn primary" style="margin-top:6px;" id="btnGuardarCita">Agendar y crear en Google Calendar</div>
-    </div>
-    <div class="divider"></div>
-    <div class="collapsible collapsed" id="collCsv">
-      <div class="coll-header" onclick="toggleCollapse(this)"><svg class="coll-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg><b>Importar citas desde CSV</b></div>
-      <div class="coll-body">
-        <p class="subtle" style="margin-bottom:10px;">El archivo debe tener 4 columnas, en este orden exacto: <b>Paciente, Tratamientos, Fecha, Hora</b>. Cada renglón es una cita distinta. El paciente debe existir en el sistema y estar activo. La fecha va como AAAA-MM-DD (ej. 2026-08-10) y la hora en formato 24 horas, HH:MM (ej. 09:00, 14:30). Si una cita tiene más de un tratamiento, sepáralos con punto y coma (<b>;</b>) dentro de la misma columna.</p>
-        <p class="subtle" style="margin-bottom:4px;"><b>Ejemplo 1 — una cita con un solo tratamiento:</b></p>
-        <div class="csv-example">Paciente,Tratamientos,Fecha,Hora
+      <div class="divider"></div>
+      <div class="collapsible collapsed" id="collCsv">
+        <div class="coll-header" onclick="toggleCollapse(this)"><svg class="coll-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg><b>Importar citas desde CSV</b></div>
+        <div class="coll-body">
+          <p class="subtle" style="margin-bottom:10px;">El archivo debe tener 4 columnas, en este orden exacto: <b>Paciente, Tratamientos, Fecha, Hora</b>. Cada renglón es una cita distinta. El paciente debe existir en el sistema y estar activo. La fecha va como AAAA-MM-DD (ej. 2026-08-10) y la hora en formato 24 horas, HH:MM (ej. 09:00, 14:30). Si una cita tiene más de un tratamiento, sepáralos con punto y coma (<b>;</b>) dentro de la misma columna.</p>
+          <p class="subtle" style="margin-bottom:4px;"><b>Ejemplo 1 — una cita con un solo tratamiento:</b></p>
+          <div class="csv-example">Paciente,Tratamientos,Fecha,Hora
 Ana Lopez Garcia,Limpieza dental,2026-08-10,09:00</div>
-        <p class="subtle" style="margin-bottom:4px;"><b>Ejemplo 2 — una cita con varios tratamientos (separados por punto y coma):</b></p>
-        <div class="csv-example">Paciente,Tratamientos,Fecha,Hora
+          <p class="subtle" style="margin-bottom:4px;"><b>Ejemplo 2 — una cita con varios tratamientos (separados por punto y coma):</b></p>
+          <div class="csv-example">Paciente,Tratamientos,Fecha,Hora
 Juan Perez Diaz,Extraccion simple;Resina dental,2026-08-10,10:30</div>
-        <p class="subtle" style="margin-bottom:4px;"><b>Ejemplo 3 — varias citas juntas en un mismo archivo:</b></p>
-        <div class="csv-example">Paciente,Tratamientos,Fecha,Hora
+          <p class="subtle" style="margin-bottom:4px;"><b>Ejemplo 3 — varias citas juntas en un mismo archivo:</b></p>
+          <div class="csv-example">Paciente,Tratamientos,Fecha,Hora
 Ana Lopez Garcia,Limpieza dental,2026-08-10,09:00
 Juan Perez Diaz,Extraccion simple;Resina dental,2026-08-10,10:30
 Maria Ramirez Cruz,Corona dental,2026-08-11,11:00</div>
-        <input type="file" id="csvFile" accept=".csv" style="color:var(--text-dim);font-size:12.5px;">
+          <input type="file" id="csvFile" accept=".csv" style="color:var(--text-dim);font-size:12.5px;">
+        </div>
       </div>
     </div>
-    <div class="modal-actions" style="margin-top:16px;"><div class="btn block" onclick="closeModal()">Cerrar</div></div>`;
-}
-
-// #13 (Opción C) — abre el modal de Nueva Cita y conecta todos sus
-// controles. selectedPac/selectedTrats viven en el closure de esta
-// funcion (antes vivian en el closure del bloque de attach de la pestaña
-// Agendar) para que sobrevivan mientras el modal este abierto, incluso
-// si se abre y se regresa del modal de "Confirmar cita" (ver
-// pushModalState/volverModal mas abajo — sin esto, el boton "Corregir"
-// perderia la seleccion de paciente/tratamientos ya hecha, cosa que NO
-// pasaba antes porque el formulario vivia en la pagina, no en un modal).
-function abrirModalNuevaCita(){
-  let selectedTrats = []; let selectedPac = null;
-  openModal(renderNuevaCitaModalHTML(), true);
-
-  function conectarFormulario(){
-    document.getElementById('citaTratBtn').addEventListener('click', ()=>{
-      openTreatmentPickerScoped(selectedPac, selectedTrats, (sel)=>{ selectedTrats = sel; document.getElementById('citaTratChips').innerHTML = selectedTrats.map(t=>`<span class="chip">${t}</span>`).join(''); });
-    });
-    document.getElementById('citaPacBtn').addEventListener('click', ()=>{
-      openPatientPicker((pac)=>{
-        selectedPac = pac;
-        document.getElementById('citaPacBtn').textContent = pac.Nombre;
-        document.getElementById('citaPacienteId').value = pac.ID;
-        // Los tratamientos ya elegidos eran (posiblemente) de otro paciente — se limpian al cambiar de paciente.
-        selectedTrats = [];
-        document.getElementById('citaTratChips').innerHTML = '';
-        document.getElementById('citaTratBtn').textContent = 'Selecciona uno o varios tratamientos';
-      }, true);
-    });
-    document.getElementById('btnGuardarCita').addEventListener('click', ()=>{
-      const fecha = document.getElementById('citaFecha').value;
-      const hora = document.getElementById('citaHora').value;
-      const faltanCita = []; if(!selectedPac) faltanCita.push('Paciente'); if(selectedTrats.length===0) faltanCita.push('Tratamientos'); if(!fecha) faltanCita.push('Fecha'); if(!hora) faltanCita.push('Hora');
-      if(faltanCita.length) return showToast('Completa: '+faltanCita.join(', '));
-      // Se guarda el estado actual del formulario antes de tapar su
-      // contenido con la confirmacion — "Corregir" regresa a el con
-      // conectarFormulario() en vez de cerrar todo y perder la seleccion.
-      pushModalState(conectarFormulario);
-      openModal(`
-        <h3>Confirmar cita</h3>
-        <div class="summary-row"><span>Paciente</span><span>${selectedPac.Nombre}</span></div>
-        <div class="summary-row"><span>Tratamientos</span><span>${selectedTrats.join(', ')}</span></div>
-        <div class="summary-row"><span>Fecha</span><span>${formatearFecha(fecha)}</span></div>
-        <div class="summary-row"><span>Hora</span><span>${formatearHora(hora)}</span></div>
-        <div class="modal-actions"><div class="btn block" id="corregirCita">Corregir</div><div class="btn primary block" id="confirmCita">Confirmar y agendar</div></div>`);
-      document.getElementById('corregirCita').addEventListener('click', volverModal);
-      document.getElementById('confirmCita').addEventListener('click', ()=>{
-        closeModal();
-        guardarCitaNueva(selectedPac, selectedTrats, fecha, hora, false);
-      });
-    });
-    document.getElementById('csvFile').addEventListener('change', (e)=>{
-      const file = e.target.files[0]; if(!file) return;
-      const reader = new FileReader();
-      reader.onload = (ev)=>{
-        const lines = ev.target.result.split(/\r?\n/).filter(l=>l.trim().length>0);
-        if(lines.length<2) return showToast('El archivo esta vacio');
-        const headers = lines[0].split(',').map(h=>h.trim().toLowerCase());
-        const iPac = headers.indexOf('paciente'), iTrat = headers.indexOf('tratamientos'), iFecha = headers.indexOf('fecha'), iHora = headers.indexOf('hora');
-        if(iPac<0||iTrat<0||iFecha<0||iHora<0) return showToast('El CSV debe tener las columnas: Paciente, Tratamientos, Fecha, Hora');
-        const preview = lines.slice(1).map(line=>{
-          const cols = line.split(',');
-          const nombre = (cols[iPac]||'').trim();
-          const trats = (cols[iTrat]||'').trim().split(';').map(s=>s.trim()).filter(Boolean);
-          const fecha = (cols[iFecha]||'').trim();
-          const hora = (cols[iHora]||'').trim();
-          const pac = DATA.pacientes.find(p=> normalize(p.Nombre)===normalize(nombre) && p.Estado!=='Inactivo');
-          const tratInexistente = trats.find(t=> !DATA.tratamientos.some(dt=> normalize(dt.Nombre)===normalize(t)));
-          let error = '';
-          if(!pac) error = 'Paciente no encontrado o inactivo';
-          else if(tratInexistente) error = `Tratamiento "${tratInexistente}" no registrado`;
-          else if(!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) error = 'Fecha invalida (usar AAAA-MM-DD)';
-          else if(!/^\d{2}:\d{2}$/.test(hora)) error = 'Hora invalida (usar HH:MM)';
-          return { nombre, trats, fecha, hora, pac, error };
-        });
-        const validRows = preview.filter(r=>!r.error);
-        openModal(`
-          <h3>Vista previa de importacion (${preview.length} filas)</h3>
-          <div class="table-wrap" style="max-height:320px;overflow-y:auto;margin-bottom:14px;">
-            <table><thead><tr><th>Paciente</th><th>Tratamientos</th><th>Fecha</th><th>Hora</th><th>Estado</th></tr></thead>
-            <tbody>${preview.map(r=>`<tr><td>${r.nombre}</td><td>${r.trats.join(', ')}</td><td>${formatearFecha(r.fecha)}</td><td>${formatearHora(r.hora)}</td><td>${r.error?`<span class="badge cancel">${r.error}</span>`:`<span class="badge ok">OK</span>`}</td></tr>`).join('')}</tbody></table>
-          </div>
-          <p class="subtle" style="margin-bottom:10px;">${validRows.length} de ${preview.length} filas se importaran. Las filas con error se omiten.</p>
-          <div class="modal-actions"><div class="btn block" onclick="closeModal()">Cancelar</div><div class="btn primary block" id="confirmCsv">Importar ${validRows.length} citas</div></div>`, true);
-        document.getElementById('confirmCsv').addEventListener('click', async ()=>{
-          for(const r of validRows){
-            let id = 'C' + String(DATA.citas.length+1).padStart(3,'0');
-            if(CONFIG.API_URL){
-              const res = await apiCall('add_cita', { pacienteId:r.pac.ID, paciente:r.pac.Nombre, tratamientos:r.trats.join(', '), fecha:r.fecha, hora:r.hora });
-              if(res && res.id) id = res.id;
-            } else {
-              DATA.citas.push({ID:id, Fecha:r.fecha, Hora:r.hora, Paciente_ID:r.pac.ID, Paciente:r.pac.Nombre, Tratamientos:r.trats.join(', '), Estado:'Confirmada'});
-            }
-          }
-          closeModal(); showToast(`${validRows.length} citas importadas`); render();
-        });
-      };
-      reader.readAsText(file);
-    });
-  }
-  conectarFormulario();
+    <div class="card">
+      <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>Citas</div><span class="link-btn" id="btnActualizarAgenda">↻ Actualizar agenda</span></div>
+      <div class="cal-switch">
+        <div class="cal-switch-btn ${AGENDA_VISTA==='lista'?'active':''}" data-agenda-vista="lista">Lista</div>
+        <div class="cal-switch-btn ${AGENDA_VISTA==='calendario'?'active':''}" data-agenda-vista="calendario">Calendario</div>
+      </div>
+      <div class="cal-switch" id="calSwitchModo" style="${AGENDA_VISTA==='calendario'?'':'display:none;'}">
+        <div class="cal-switch-btn ${AGENDA_MODO==='dia'?'active':''}" data-agenda-modo="dia">Día</div>
+        <div class="cal-switch-btn ${AGENDA_MODO==='semana'?'active':''}" data-agenda-modo="semana">Semana</div>
+      </div>
+      <div class="appt-list" id="agendaCitasList" style="max-height:460px;">
+        ${AGENDA_VISTA==='calendario' ? renderCalendarioHTML() : renderCitasListHTML()}
+      </div>
+      <p class="subtle" style="margin-top:10px;text-align:center;"><span style="color:var(--text-mute);">●</span> gris = pasada &nbsp; <span style="color:var(--amber);">●</span> ambar = hoy &nbsp; <span style="color:var(--teal);">●</span> verde = futura<br><span style="color:var(--red);">●</span> rojo = cancelada</p>
+    </div>
+  </div>`;
 }
 /* #51 — construye el HTML de la lista de Citas del tab Agendar. Se separa
    en su propia funcion para poder refrescarla sola (boton "Actualizar
@@ -3022,11 +2902,6 @@ function renderConfiguracionHTML(){
       <select id="cfgDecimalesPrecio">
         <option value="false" ${!CONFIG.DECIMALES_PRECIO?'selected':''}>Sin decimales ($650 MXN)</option>
         <option value="true" ${CONFIG.DECIMALES_PRECIO?'selected':''}>Con decimales ($650.00 MXN)</option>
-      </select></div>
-    <div class="field" style="margin-bottom:12px;"><label>Primer día de la semana (vista Semana del calendario)</label>
-      <select id="cfgPrimerDiaSemana">
-        <option value="lunes" ${CONFIG.PRIMER_DIA_SEMANA==='lunes'?'selected':''}>Lunes</option>
-        <option value="domingo" ${CONFIG.PRIMER_DIA_SEMANA==='domingo'?'selected':''}>Domingo</option>
       </select></div>
     <div class="field" style="margin-bottom:16px;"><label>ID de cliente</label><input value="${CONFIG.CLIENT_ID}" readonly></div>
     <div class="btn primary" id="btnGuardarConfig">Guardar cambios</div>
@@ -3340,13 +3215,94 @@ function afterRenderHooks(){
   }
 
   if(ACTIVE_TAB === 'agendar'){
+    let selectedTrats = []; let selectedPac = null;
     document.getElementById('btnActualizarAgenda').addEventListener('click', actualizarAgenda);
-    // #13 (Opción C) — el formulario de Nueva Cita ya no vive inline en la
-    // pagina, asi que aqui ya no hay nada que conectar de ese formulario
-    // directamente; solo el boton que abre su modal (abrirModalNuevaCita
-    // conecta TODOS los campos del formulario por su cuenta, cada vez que
-    // se abre).
-    document.getElementById('btnAbrirNuevaCita').addEventListener('click', abrirModalNuevaCita);
+    document.getElementById('citaTratBtn').addEventListener('click', ()=>{
+      openTreatmentPickerScoped(selectedPac, selectedTrats, (sel)=>{ selectedTrats = sel; document.getElementById('citaTratChips').innerHTML = selectedTrats.map(t=>`<span class="chip">${t}</span>`).join(''); });
+    });
+    document.getElementById('citaPacBtn').addEventListener('click', ()=>{
+      openPatientPicker((pac)=>{
+        selectedPac = pac;
+        document.getElementById('citaPacBtn').textContent = pac.Nombre;
+        document.getElementById('citaPacienteId').value = pac.ID;
+        // Los tratamientos ya elegidos eran (posiblemente) de otro paciente — se limpian al cambiar de paciente.
+        selectedTrats = [];
+        document.getElementById('citaTratChips').innerHTML = '';
+        document.getElementById('citaTratBtn').textContent = 'Selecciona uno o varios tratamientos';
+      }, true);
+    });
+    document.getElementById('btnGuardarCita').addEventListener('click', ()=>{
+      const fecha = document.getElementById('citaFecha').value;
+      const hora = document.getElementById('citaHora').value;
+      const faltanCita = []; if(!selectedPac) faltanCita.push('Paciente'); if(selectedTrats.length===0) faltanCita.push('Tratamientos'); if(!fecha) faltanCita.push('Fecha'); if(!hora) faltanCita.push('Hora');
+      if(faltanCita.length) return showToast('Completa: '+faltanCita.join(', '));
+      openModal(`
+        <h3>Confirmar cita</h3>
+        <div class="summary-row"><span>Paciente</span><span>${selectedPac.Nombre}</span></div>
+        <div class="summary-row"><span>Tratamientos</span><span>${selectedTrats.join(', ')}</span></div>
+        <div class="summary-row"><span>Fecha</span><span>${formatearFecha(fecha)}</span></div>
+        <div class="summary-row"><span>Hora</span><span>${formatearHora(hora)}</span></div>
+        <div class="modal-actions"><div class="btn block" onclick="closeModal()">Corregir</div><div class="btn primary block" id="confirmCita">Confirmar y agendar</div></div>`);
+      document.getElementById('confirmCita').addEventListener('click', ()=>{
+        closeModal();
+        guardarCitaNueva(selectedPac, selectedTrats, fecha, hora, false);
+      });
+    });
+
+    document.getElementById('csvFile').addEventListener('change', (e)=>{
+      const file = e.target.files[0]; if(!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev)=>{
+        const lines = ev.target.result.split(/\r?\n/).filter(l=>l.trim().length>0);
+        if(lines.length<2) return showToast('El archivo esta vacio');
+        const headers = lines[0].split(',').map(h=>h.trim().toLowerCase());
+        const iPac = headers.indexOf('paciente'), iTrat = headers.indexOf('tratamientos'), iFecha = headers.indexOf('fecha'), iHora = headers.indexOf('hora');
+        if(iPac<0||iTrat<0||iFecha<0||iHora<0) return showToast('El CSV debe tener las columnas: Paciente, Tratamientos, Fecha, Hora');
+        const preview = lines.slice(1).map(line=>{
+          const cols = line.split(',');
+          const nombre = (cols[iPac]||'').trim();
+          const trats = (cols[iTrat]||'').trim().split(';').map(s=>s.trim()).filter(Boolean);
+          const fecha = (cols[iFecha]||'').trim();
+          const hora = (cols[iHora]||'').trim();
+          const pac = DATA.pacientes.find(p=> normalize(p.Nombre)===normalize(nombre) && p.Estado!=='Inactivo');
+          // #72 — un tratamiento requiere datos relacionados (precio, categoria,
+          // duracion) que solo existen si esta dado de alta en el sistema. Sin
+          // esta validacion, una fila con un tratamiento inexistente pasaba la
+          // vista previa como valida, se agregaba a DATA.citas en memoria (por
+          // eso aparecia en la tarjeta), pero el backend no podia guardarla en
+          // el Sheet ni en Calendar — se perdia en silencio. Mismo patron que
+          // ya usa la validacion de paciente.
+          const tratInexistente = trats.find(t=> !DATA.tratamientos.some(dt=> normalize(dt.Nombre)===normalize(t)));
+          let error = '';
+          if(!pac) error = 'Paciente no encontrado o inactivo';
+          else if(tratInexistente) error = `Tratamiento "${tratInexistente}" no registrado`;
+          else if(!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) error = 'Fecha invalida (usar AAAA-MM-DD)';
+          else if(!/^\d{2}:\d{2}$/.test(hora)) error = 'Hora invalida (usar HH:MM)';
+          return { nombre, trats, fecha, hora, pac, error };
+        });
+        const validRows = preview.filter(r=>!r.error);
+        openModal(`
+          <h3>Vista previa de importacion (${preview.length} filas)</h3>
+          <div class="table-wrap" style="max-height:320px;overflow-y:auto;margin-bottom:14px;">
+            <table><thead><tr><th>Paciente</th><th>Tratamientos</th><th>Fecha</th><th>Hora</th><th>Estado</th></tr></thead>
+            <tbody>${preview.map(r=>`<tr><td>${r.nombre}</td><td>${r.trats.join(', ')}</td><td>${formatearFecha(r.fecha)}</td><td>${formatearHora(r.hora)}</td><td>${r.error?`<span class="badge cancel">${r.error}</span>`:`<span class="badge ok">OK</span>`}</td></tr>`).join('')}</tbody></table>
+          </div>
+          <p class="subtle" style="margin-bottom:10px;">${validRows.length} de ${preview.length} filas se importaran. Las filas con error se omiten.</p>
+          <div class="modal-actions"><div class="btn block" onclick="closeModal()">Cancelar</div><div class="btn primary block" id="confirmCsv">Importar ${validRows.length} citas</div></div>`, true);
+        document.getElementById('confirmCsv').addEventListener('click', async ()=>{
+          for(const r of validRows){
+            let id = 'C' + String(DATA.citas.length+1).padStart(3,'0');
+            if(CONFIG.API_URL){
+              const res = await apiCall('add_cita', { pacienteId:r.pac.ID, paciente:r.pac.Nombre, tratamientos:r.trats.join(', '), fecha:r.fecha, hora:r.hora });
+              if(res && res.id) id = res.id;
+            }
+            DATA.citas.push({ID:id, Fecha:r.fecha, Hora:r.hora, Paciente_ID:r.pac.ID, Paciente:r.pac.Nombre, Tratamientos:r.trats.join(', '), Estado:'Confirmada'});
+          }
+          closeModal(); showToast(`${validRows.length} citas importadas`); render();
+        });
+      };
+      reader.readAsText(file);
+    });
 
     // Grupo 6 — unico cambio en este bloque: se agrega el switch
     // Lista/Calendario y se usa el dispatcher (que decide Lista o
@@ -3367,7 +3323,6 @@ function afterRenderHooks(){
       CONFIG.FORMATO_FECHA = document.getElementById('cfgFormatoFecha').value;
       CONFIG.SEPARADOR = document.getElementById('cfgSeparador').value;
       CONFIG.DECIMALES_PRECIO = document.getElementById('cfgDecimalesPrecio').value === 'true';
-      CONFIG.PRIMER_DIA_SEMANA = document.getElementById('cfgPrimerDiaSemana').value;
       if(CONFIG.API_URL){
         // Ciclo 1 / Ronda 3 (#7/#5f) — causa real de "tardo minutos": esto
         // eran 7 peticiones SEPARADAS al servidor, una por una, cada una
@@ -3383,7 +3338,6 @@ function afterRenderHooks(){
           { clave:'FormatoFecha', valor: CONFIG.FORMATO_FECHA },
           { clave:'Separador', valor: CONFIG.SEPARADOR },
           { clave:'DecimalesPrecio', valor: CONFIG.DECIMALES_PRECIO },
-          { clave:'PrimerDiaSemana', valor: CONFIG.PRIMER_DIA_SEMANA },
         ], ['config']);
       }
       showToast('Configuración guardada');

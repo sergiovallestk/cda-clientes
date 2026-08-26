@@ -75,7 +75,7 @@
      fondo solido (mismo color que .card) para que la rejilla no se
      transparente por debajo al hacer scroll. */
   .cal-header-sticky{position:sticky;top:0;z-index:3;background:var(--panel);padding-bottom:6px;}
-  .cal-toolbar{display:flex;align-items:center;gap:10px;margin-bottom:0;}
+  .cal-toolbar{display:flex;align-items:center;gap:10px;margin-bottom:0;padding:0 6px;}
   /* Ronda 3 (#20) — centrado entre las flechas ‹ › (flex:1 ya limitaba su
      espacio a esa zona; solo faltaba el text-align). */
   .cal-fecha-actual{font-weight:600;font-size:13px;flex:1;text-transform:capitalize;text-align:center;}
@@ -2504,27 +2504,39 @@ function attachCalendarioHandlers(){
 // Calendario) segun la vista activa — el switch Lista/Calendario en si
 // se conecta aparte, una sola vez, en attachSwitchAgendaVista().
 function attachContenidoAgenda(){
+  const list = document.getElementById('agendaCitasList');
+  if(list){
+    // Ronda 5 (#25) — restaura el scroll de la vista activa cada vez que
+    // se pinta contenido aqui (cubre TODOS los casos: cambio de vista,
+    // vuelta desde otro menu, navegacion de dia en Calendario), y
+    // registra en vivo el scroll mientras el usuario se mueve, sin
+    // depender de capturar un evento especifico de "salida".
+    list.scrollTop = AGENDA_VISTA==='lista' ? CAL_SCROLL_LISTA : CAL_SCROLL_CALENDARIO;
+    list.addEventListener('scroll', ()=>{
+      if(AGENDA_VISTA==='lista') CAL_SCROLL_LISTA = list.scrollTop;
+      else CAL_SCROLL_CALENDARIO = list.scrollTop;
+    });
+  }
   if(AGENDA_VISTA === 'calendario') attachCalendarioHandlers();
   else { detenerTimerHoraActual(); attachCitasListHandlers(); }
 }
-// Ronda 4 (#25) — recuerda en donde se quedo el scroll de cada vista por
-// separado, para no regresar siempre hasta arriba al cambiar entre Lista
-// y Calendario. Solo se guarda/restaura en el switch mismo — la
-// navegacion de dias (‹ › Hoy) y "Ir a la lista para gestionar" siguen
-// su propio comportamiento (repintarPanelAgenda), sin verse afectados.
+// Ronda 4/5 (#25) — recuerda en donde se quedo el scroll de cada vista
+// por separado, para no regresar siempre hasta arriba al cambiar entre
+// Lista y Calendario. La Ronda 4 solo lo capturaba en el clic del switch
+// mismo — pero si sales de Agenda por otro camino (cambiar de menu
+// principal, sin tocar el switch primero) esa captura nunca ocurria y la
+// Lista se quedaba sin recordar nada. Ronda 5: se registra EN VIVO con un
+// listener de scroll (sin importar por donde salgas, siempre queda
+// guardado el ultimo punto real), y se restaura de forma centralizada en
+// attachContenidoAgenda() — que se ejecuta cada vez que se pinta
+// contenido en el panel (cambio de vista, vuelta desde otro menu,
+// navegacion de dia en Calendario).
 let CAL_SCROLL_LISTA = 0, CAL_SCROLL_CALENDARIO = 0;
 function attachSwitchAgendaVista(){
   document.querySelectorAll('[data-agenda-vista]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
-      const listActual = document.getElementById('agendaCitasList');
-      if(listActual){
-        if(AGENDA_VISTA==='lista') CAL_SCROLL_LISTA = listActual.scrollTop;
-        else CAL_SCROLL_CALENDARIO = listActual.scrollTop;
-      }
       AGENDA_VISTA = btn.dataset.agendaVista;
       repintarPanelAgenda();
-      const listNueva = document.getElementById('agendaCitasList');
-      if(listNueva) listNueva.scrollTop = AGENDA_VISTA==='lista' ? CAL_SCROLL_LISTA : CAL_SCROLL_CALENDARIO;
     });
   });
 }

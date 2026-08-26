@@ -183,7 +183,7 @@
      con suficientes columnas (9) para de verdad necesitar scroll
      horizontal en pantallas normales. */
   table{width:100%;border-collapse:collapse;font-size:13px;}
-  #pagTableBlock table{width:auto;min-width:1250px;}
+  #pagTableBlock table{width:100%;min-width:1250px;}
   /* Ciclo 2 / Ronda 8 — igual que Pagos, pero con min-width mucho mas
      moderado: la meta aqui no es imitar el ancho de Pagos (9 columnas,
      necesita scroll amplio) sino solo evitar que el texto se parta en
@@ -201,7 +201,7 @@
      min-width sigue actuando como piso en movil para evitar texto
      amontonado. Gastos ademas subio su min-width (550->620) para darle
      mas aire a la columna Concepto tras el ajuste de nowrap de abajo. */
-  #pacTableBlock table{width:100%;min-width:760px;}
+  #pacTableBlock table{width:100%;min-width:820px;}
   #tratTableBlock table{width:100%;min-width:650px;}
   #gastoTableBlock table{width:100%;min-width:620px;}
   /* Ciclo 2 / Ronda 9 — en Gastos, las fechas (con guion, ej. "24-Ago-
@@ -393,6 +393,15 @@
   @media (min-width:901px) and (max-width:1180px){
     .grid{grid-template-columns:1fr 1fr;}
     .row2{grid-template-columns:1fr;}
+  }
+  /* Ciclo 3 — el salto de linea forzado en la leyenda de colores del
+     calendario (Ronda 3, por legibilidad en pantallas angostas) ya no
+     hace falta en PC ahora que el sistema usa casi todo el ancho de la
+     pantalla — se oculta el <br> arriba de 900px (mismo punto de quiebre
+     que ya usa el resto del sistema para distinguir movil de PC), sin
+     tocar el comportamiento en movil, que se queda igual. */
+  @media (min-width:901px){
+    .leyenda-salto{display:none;}
   }
 </style>
 </head>
@@ -1754,7 +1763,7 @@ function fillPacientesTable(filter){
   tbody.querySelectorAll('tr[data-pac]').forEach(tr=>{ tr.addEventListener('click', ()=> showPacienteDetalle(tr.dataset.pac)); });
   const pagBox = document.getElementById('pacPaginador');
   if(pagBox){ pagBox.innerHTML = renderPaginador('pacientes', total, totalPaginas); attachPaginadorEvents('pacientes', ()=>fillPacientesTable(filter)); }
-  actualizarAlturaTabla('pacTableBlock', 'pacientes', total, 45); // Ciclo 2 / Ronda 8 — Ronda 7 dejo esto en el alto real exacto (42px, sin margen), lo que reintrodujo el bug de "la tabla se achica/agranda al cambiar de pagina" (mismo mecanismo que #66 en Pagos). Se le devuelve un margen de seguridad chico (+3px) — evita el bug sin regresar al hueco grande que Ronda 7 corrigio.
+  actualizarAlturaTabla('pacTableBlock', 'pacientes', total, 50); // Ciclo 3 — el margen de +3px (Ronda 8) no bastaba en movil: 6 columnas apretadas en 760px hacian que algun nombre/tratamiento largo ocasionalmente necesitara 2 renglones, reintroduciendo el achicamiento. Se sube el margen a +8px sobre el real (42px), ademas de mas ancho minimo en movil (760->820px) para que sea menos probable que el texto necesite partirse.
   refreshSortArrows('pacientes'); attachSortHeaders('pacientes', ()=>fillPacientesTable(filter));
 }
 function showPacienteDetalle(pacId){
@@ -2753,7 +2762,7 @@ function renderAgendarHTML(){
     <div class="appt-list" id="agendaCitasList" style="max-height:620px;">
       ${AGENDA_VISTA==='calendario' ? renderCalendarioHTML() : renderCitasListHTML()}
     </div>
-    <p class="subtle" style="margin-top:10px;text-align:center;"><span style="color:var(--text-mute);">●</span> gris = pasada &nbsp; <span style="color:var(--amber);">●</span> ambar = hoy &nbsp; <span style="color:var(--teal);">●</span> verde = futura<br><span style="color:var(--red);">●</span> rojo = cancelada</p>
+    <p class="subtle" style="margin-top:10px;text-align:center;"><span style="color:var(--text-mute);">●</span> gris = pasada &nbsp; <span style="color:var(--amber);">●</span> ambar = hoy &nbsp; <span style="color:var(--teal);">●</span> verde = futura<br class="leyenda-salto"><span style="color:var(--red);">●</span> rojo = cancelada</p>
   </div>`;
 }
 

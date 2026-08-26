@@ -2766,7 +2766,7 @@ function renderAgendarHTML(){
     <div class="appt-list" id="agendaCitasList" style="max-height:620px;">
       ${AGENDA_VISTA==='calendario' ? renderCalendarioHTML() : renderCitasListHTML()}
     </div>
-    <p class="subtle" style="margin-top:10px;text-align:center;"><span style="color:var(--text-mute);">●</span> gris = pasada &nbsp; <span style="color:var(--amber);">●</span> ambar = hoy &nbsp; <span style="color:var(--teal);">●</span> verde = futura<br class="leyenda-salto"><span style="color:var(--red);">●</span> rojo = cancelada</p>
+    <p class="subtle" style="margin-top:10px;text-align:center;"><span style="color:var(--text-mute);">●</span> gris = pasada &nbsp; <span style="color:var(--amber);">●</span> ambar = hoy &nbsp; <span style="color:var(--teal);">●</span> verde = futura &nbsp;<br class="leyenda-salto"><span style="color:var(--red);">●</span> rojo = cancelada</p>
   </div>`;
 }
 
@@ -2891,6 +2891,12 @@ function abrirModalNuevaCita(){
           return { nombre, trats, fecha, hora, pac, error };
         });
         const validRows = preview.filter(r=>!r.error);
+        // #18 — antes "Cancelar" aqui cerraba TODO el modal (perdiendo la
+        // seleccion de paciente/tratamientos si se habia llenado algo del
+        // formulario manual antes de intentar el CSV). Se guarda el estado
+        // del formulario antes de tapar su contenido con la vista previa,
+        // igual que ya se hace en el paso de "Confirmar cita".
+        pushModalState(conectarFormulario);
         openModal(`
           <h3>Vista previa de importacion (${preview.length} filas)</h3>
           <div class="table-wrap" style="max-height:320px;overflow-y:auto;margin-bottom:14px;">
@@ -2898,7 +2904,7 @@ function abrirModalNuevaCita(){
             <tbody>${preview.map(r=>`<tr><td>${r.nombre}</td><td>${r.trats.join(', ')}</td><td>${formatearFecha(r.fecha)}</td><td>${formatearHora(r.hora)}</td><td>${r.error?`<span class="badge cancel">${r.error}</span>`:`<span class="badge ok">OK</span>`}</td></tr>`).join('')}</tbody></table>
           </div>
           <p class="subtle" style="margin-bottom:10px;">${validRows.length} de ${preview.length} filas se importaran. Las filas con error se omiten.</p>
-          <div class="modal-actions"><div class="btn block" onclick="closeModal()">Cancelar</div><div class="btn primary block" id="confirmCsv">Importar ${validRows.length} citas</div></div>`, true);
+          <div class="modal-actions"><div class="btn block" onclick="volverModal()">Cancelar</div><div class="btn primary block" id="confirmCsv">Importar ${validRows.length} citas</div></div>`, true);
         document.getElementById('confirmCsv').addEventListener('click', async ()=>{
           for(const r of validRows){
             let id = 'C' + String(DATA.citas.length+1).padStart(3,'0');

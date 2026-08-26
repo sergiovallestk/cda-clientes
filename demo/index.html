@@ -113,6 +113,18 @@
      backend — solo lee la hora del propio navegador. */
   .cal-hora-actual{position:absolute;left:0;right:0;height:0;border-top:2px solid var(--red);z-index:2;}
   .cal-hora-actual-punto{position:absolute;left:-3px;top:-4px;width:8px;height:8px;border-radius:50%;background:var(--red);}
+  /* Grupo 6 / Ciclo 2-mod — Vista Semana. Reutiliza .cal-cita, colores,
+     bordes y demas reglas ya definidas para Vista Dia (ver
+     renderBloquesCitasDeUnDia) — este bloque solo agrega el layout de
+     7 columnas (una por dia) y su encabezado. */
+  .cal-sem-header-row{display:flex;margin-top:8px;}
+  .cal-sem-gutter{width:60px;flex-shrink:0;}
+  .cal-sem-col-header{flex:1;text-align:center;font-size:11px;color:var(--text-dim);line-height:1.4;padding-bottom:4px;text-transform:uppercase;}
+  .cal-sem-col-header-hoy{color:var(--amber);font-weight:700;}
+  .cal-sem-columnas{position:absolute;top:0;left:60px;right:8px;bottom:0;display:flex;}
+  .cal-sem-col{flex:1;position:relative;border-left:1px solid var(--border);}
+  .cal-sem-col-hoy{background:rgba(242,184,75,0.05);}
+  .cal-sem-citas{position:absolute;top:0;left:2px;right:2px;bottom:0;}
   .btn{padding:9px 14px;border-radius:8px;font-size:12.5px;font-weight:600;text-align:center;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text-dim);white-space:nowrap;}
   .btn:hover{border-color:var(--text-dim);}
   .btn.primary{background:var(--teal);color:#04241C;border:none;}
@@ -2275,7 +2287,7 @@ function abrirEdicionTratamiento(tratId){
    Lista, a proposito, para no duplicar esa logica; se agrega un atajo
    directo a la Lista desde el detalle de cada cita. */
 let AGENDA_VISTA = 'lista';        // 'lista' | 'calendario'
-let AGENDA_MODO = 'dia';           // 'dia' (unica por ahora)
+let AGENDA_MODO = 'dia';           // 'dia' | 'semana' (Grupo 6 / Ciclo 2 — Mes pendiente)
 let AGENDA_FECHA_REF = todayStr(); // fecha que esta viendo el calendario
 
 const NOMBRES_DIA_SEMANA = ['Domingo','Lunes','Martes','Miercoles','Jueves','Viernes','Sabado'];
@@ -2302,6 +2314,31 @@ function formatearFechaLargaCalendario(fechaStr){
   const p = ymd(fechaStr);
   const d = new Date(p.y, p.m-1, p.d);
   return `${NOMBRES_DIA_SEMANA[d.getDay()]}, ${p.d} ${MESES_LARGOS[p.m-1]} ${p.y}`;
+}
+// Grupo 6 / Ciclo 2-mod — Vista Semana. La semana siempre empieza en
+// Lunes (mismo criterio que ya usa Horario/DIAS_ORDEN en el resto del
+// sistema), sin importar en que dia de la semana caiga AGENDA_FECHA_REF.
+function obtenerLunesDeLaSemana(fechaStr){
+  const p = ymd(fechaStr);
+  const d = new Date(p.y, p.m-1, p.d);
+  const diaJs = d.getDay(); // 0=domingo...6=sabado
+  const offsetALunes = diaJs === 0 ? -6 : 1 - diaJs;
+  d.setDate(d.getDate() + offsetALunes);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+// Etiqueta del encabezado de semana: "18 - 24 Agosto 2026", o
+// "28 Ago - 3 Sep 2026" si la semana cruza de mes (con mes abreviado en
+// ese caso especifico, para que quepa comodo).
+function formatearRangoSemana(lunesStr){
+  const domingoStr = sumarDiasFecha(lunesStr, 6);
+  const pL = ymd(lunesStr), pD = ymd(domingoStr);
+  if(pL.m === pD.m && pL.y === pD.y){
+    return `${pL.d} - ${pD.d} ${MESES_LARGOS[pL.m-1]} ${pL.y}`;
+  }
+  if(pL.y === pD.y){
+    return `${pL.d} ${MESES_CORTOS[pL.m-1]} - ${pD.d} ${MESES_CORTOS[pD.m-1]} ${pL.y}`;
+  }
+  return `${pL.d} ${MESES_CORTOS[pL.m-1]} ${pL.y} - ${pD.d} ${MESES_CORTOS[pD.m-1]} ${pD.y}`;
 }
 
 // Ronda 2 (#13/#15) — detecta grupos de citas que se traslapan entre si
@@ -2363,7 +2400,59 @@ function detenerTimerHoraActual(){
 }
 
 function renderCalendarioHTML(){
-  return renderCalendarioDiaHTML(); // por ahora AGENDA_MODO solo puede ser 'dia'
+  return AGENDA_MODO === 'semana' ? renderCalendarioSemanaHTML() : renderCalendarioDiaHTML();
+}
+
+// Grupo 6 / Ciclo 2-mod — extraido de la version original de
+// renderCalendarioDiaHTML para poder reutilizarse tambien en la Vista
+// Semana: dado un array de citas de UN dia (ya filtradas a esa fecha) y
+// el inicio de la rejilla compartida, regresa el HTML de sus tarjetas —
+// misma logica y mismas reglas ya definidas y pulidas para Vista Dia:
+// canceladas se muestran pero NO compiten por ancho con las activas
+// (Ronda 3 #21, se dibujan detras, mas transparentes), citas empalmadas
+// se reparten en columnas lado a lado (Ronda 2 #13/#15), y TODAS las
+// tarjetas llevan borde para distinguirse aunque esten pegadas (Ronda 3
+// #13). Al vivir en un solo lugar, cualquier ajuste futuro a estas
+// reglas aplica automaticamente a Dia y Semana por igual.
+function renderBloquesCitasDeUnDia(citasDelDia, horaInicio, fechaDelDia){
+  const hoy = todayStr();
+  const esHoyEsteDia = fechaDelDia === hoy;
+  const citasActivas = citasDelDia.filter(c=>c.Estado!=='Cancelada');
+  const citasCanceladas = citasDelDia.filter(c=>c.Estado==='Cancelada');
+
+  function calcularTopAlto(c){
+    const dur = c.Duracion_Min || duracionCitaMin(c.Tratamientos||c.Tratamiento);
+    const [h,mi] = c.Hora.split(':').map(Number);
+    const minutosDesdeInicio = Math.max(0, (h*60+mi) - (horaInicio*60));
+    return { top: minutosDesdeInicio * (CAL_PX_POR_HORA/60), alto: Math.max(dur * (CAL_PX_POR_HORA/60), 22) };
+  }
+
+  const bloquesCanceladas = citasCanceladas.map(c=>{
+    const {top, alto} = calcularTopAlto(c);
+    return `<div class="cal-cita cal-cita-cancelada" style="top:${top}px;height:${alto}px;border-left-color:var(--red);" data-cal-cita="${c.ID}">
+      <b>${formatearHora(c.Hora)} · ${c.Paciente}</b>
+      <span>${tratArr(c.Tratamientos||c.Tratamiento).join(' + ')}</span>
+    </div>`;
+  }).join('');
+
+  const layout = calcularLayoutCitas(citasActivas);
+  const bloquesActivas = layout.map(item=>{
+    const c = item.cita;
+    const {top, alto} = calcularTopAlto(c);
+    const finCita = new Date(c.Fecha+'T'+c.Hora+':00').getTime() + (c.Duracion_Min || duracionCitaMin(c.Tratamientos||c.Tratamiento))*60000;
+    const yaConcluida = finCita <= Date.now();
+    const esPasada = (fechaDelDia < hoy) || (esHoyEsteDia && yaConcluida);
+    const color = esPasada ? 'var(--text-mute)' : (esHoyEsteDia ? 'var(--amber)' : 'var(--teal)');
+    const anchoPct = 100/item.totalColumnas;
+    const leftPct = item.columna*anchoPct;
+    const estiloColumnas = item.totalColumnas>1 ? `left:${leftPct}%;right:auto;width:calc(${anchoPct}% - 4px);` : '';
+    return `<div class="cal-cita" style="top:${top}px;height:${alto}px;border-left-color:${color};${estiloColumnas}" data-cal-cita="${c.ID}">
+      <b>${formatearHora(c.Hora)} · ${c.Paciente}</b>
+      <span>${tratArr(c.Tratamientos||c.Tratamiento).join(' + ')}</span>
+    </div>`;
+  }).join('');
+
+  return bloquesCanceladas + bloquesActivas;
 }
 
 function renderCalendarioDiaHTML(){
@@ -2389,51 +2478,7 @@ function renderCalendarioDiaHTML(){
 
   const horas = []; for(let h=horaInicio; h<=horaFin; h++) horas.push(h);
   const alturaTotal = (horaFin - horaInicio) * CAL_PX_POR_HORA;
-
-  // Ronda 3 (#21) — se siguen mostrando las canceladas (mismo criterio ya
-  // establecido para la Lista), pero se separan ANTES de calcular
-  // columnas de empalme, para que nunca le quiten ancho a una cita
-  // activa que se traslape con ellas en horario.
-  const citasActivas = citasDelDia.filter(c=>c.Estado!=='Cancelada');
-  const citasCanceladas = citasDelDia.filter(c=>c.Estado==='Cancelada');
-
-  function calcularTopAlto(c){
-    const dur = c.Duracion_Min || duracionCitaMin(c.Tratamientos||c.Tratamiento);
-    const [h,mi] = c.Hora.split(':').map(Number);
-    const minutosDesdeInicio = Math.max(0, (h*60+mi) - (horaInicio*60));
-    return { top: minutosDesdeInicio * (CAL_PX_POR_HORA/60), alto: Math.max(dur * (CAL_PX_POR_HORA/60), 22) };
-  }
-
-  // Canceladas: ancho completo, sin competir por columnas, dibujadas
-  // ANTES (quedan detras visualmente) de las activas.
-  const bloquesCanceladas = citasCanceladas.map(c=>{
-    const {top, alto} = calcularTopAlto(c);
-    return `<div class="cal-cita cal-cita-cancelada" style="top:${top}px;height:${alto}px;border-left-color:var(--red);" data-cal-cita="${c.ID}">
-      <b>${formatearHora(c.Hora)} · ${c.Paciente}</b>
-      <span>${tratArr(c.Tratamientos||c.Tratamiento).join(' + ')}</span>
-    </div>`;
-  }).join('');
-
-  const layout = calcularLayoutCitas(citasActivas);
-  const bloquesActivas = layout.map(item=>{
-    const c = item.cita;
-    const {top, alto} = calcularTopAlto(c);
-    const finCita = new Date(c.Fecha+'T'+c.Hora+':00').getTime() + (c.Duracion_Min || duracionCitaMin(c.Tratamientos||c.Tratamiento))*60000;
-    const yaConcluida = finCita <= Date.now();
-    const esPasada = (c.Fecha < hoy) || (esHoy && yaConcluida);
-    const color = esPasada ? 'var(--text-mute)' : (esHoy ? 'var(--amber)' : 'var(--teal)');
-    // #13/#15 — cuando hay 2+ citas empalmadas se reparten el ancho de
-    // .cal-citas-area en columnas iguales lado a lado, con 4px de aire
-    // entre cada una (el "hueco" que las distingue, mas el borde que
-    // ahora llevan TODAS las tarjetas — ver #13 en la ronda 3).
-    const anchoPct = 100/item.totalColumnas;
-    const leftPct = item.columna*anchoPct;
-    const estiloColumnas = item.totalColumnas>1 ? `left:${leftPct}%;right:auto;width:calc(${anchoPct}% - 4px);` : '';
-    return `<div class="cal-cita" style="top:${top}px;height:${alto}px;border-left-color:${color};${estiloColumnas}" data-cal-cita="${c.ID}">
-      <b>${formatearHora(c.Hora)} · ${c.Paciente}</b>
-      <span>${tratArr(c.Tratamientos||c.Tratamiento).join(' + ')}</span>
-    </div>`;
-  }).join('');
+  const bloques = renderBloquesCitasDeUnDia(citasDelDia, horaInicio, fecha);
 
   // #18 — franja de hora actual, solo si se esta viendo el dia de HOY.
   let lineaHoraActual = '';
@@ -2457,8 +2502,84 @@ function renderCalendarioDiaHTML(){
   </div>
   <div class="cal-dia-grid" style="height:${alturaTotal}px;">
     ${horas.map(h=>`<div class="cal-hora-linea" style="top:${(h-horaInicio)*CAL_PX_POR_HORA}px;"><span class="cal-hora-label">${String(h).padStart(2,'0')}:00</span></div>`).join('')}
-    <div class="cal-citas-area">${bloquesCanceladas}${bloquesActivas}</div>
+    <div class="cal-citas-area">${bloques}</div>
     ${lineaHoraActual}
+  </div>`;
+}
+
+// Grupo 6 / Ciclo 2-mod — Vista Semana. Reutiliza exactamente los mismos
+// estandares ya pulidos en Vista Dia (ver renderBloquesCitasDeUnDia):
+// bordes en todas las tarjetas, canceladas sin competir por ancho,
+// columnas de empalme, colores por estado, rango de horas dinamico,
+// franja de hora actual, y header pegajoso con controles centrados.
+function renderCalendarioSemanaHTML(){
+  const lunes = obtenerLunesDeLaSemana(AGENDA_FECHA_REF);
+  const hoy = todayStr();
+  const dias = []; for(let i=0;i<7;i++) dias.push(sumarDiasFecha(lunes, i));
+  const citasPorDia = dias.map(f => DATA.citas.filter(c=>c.Fecha===f).sort((a,b)=>a.Hora.localeCompare(b.Hora)));
+  const todasLasCitas = citasPorDia.flat();
+
+  // Rango de horas: igual que en Dia (#23), pero compartido entre los 7
+  // dias — todas las columnas necesitan el mismo eje vertical de horas
+  // para alinearse correctamente entre si.
+  let horaInicio = CAL_HORA_INICIO, horaFin = CAL_HORA_FIN;
+  todasLasCitas.forEach(c=>{
+    const dur = c.Duracion_Min || duracionCitaMin(c.Tratamientos||c.Tratamiento);
+    const [h,mi] = c.Hora.split(':').map(Number);
+    if(h < horaInicio) horaInicio = h;
+    const finH = Math.ceil((h*60+mi+dur)/60);
+    if(finH > horaFin) horaFin = finH;
+  });
+  CAL_RANGO_HORAS = { inicio: horaInicio, fin: horaFin };
+
+  const horas = []; for(let h=horaInicio; h<=horaFin; h++) horas.push(h);
+  const alturaTotal = (horaFin - horaInicio) * CAL_PX_POR_HORA;
+
+  const encabezadosDias = dias.map(f=>{
+    const p = ymd(f);
+    const d = new Date(p.y, p.m-1, p.d);
+    const esHoyCol = f === hoy;
+    return `<div class="cal-sem-col-header${esHoyCol?' cal-sem-col-header-hoy':''}">${NOMBRES_DIA_SEMANA[d.getDay()].slice(0,3)}<br>${p.d}</div>`;
+  }).join('');
+
+  const columnas = dias.map((f, i)=>{
+    const esHoyCol = f === hoy;
+    const bloques = renderBloquesCitasDeUnDia(citasPorDia[i], horaInicio, f);
+    let lineaHoraActual = '';
+    if(esHoyCol){
+      const ahora = new Date();
+      const minDesdeInicio = (ahora.getHours()*60+ahora.getMinutes()) - (horaInicio*60);
+      const dentroDeRango = minDesdeInicio>=0 && minDesdeInicio<=(horaFin-horaInicio)*60;
+      const topActual = minDesdeInicio*(CAL_PX_POR_HORA/60);
+      lineaHoraActual = `<div class="cal-hora-actual" id="calLineaHoraActual" style="top:${topActual}px;${dentroDeRango?'':'display:none;'}"><span class="cal-hora-actual-punto"></span></div>`;
+    }
+    return `<div class="cal-sem-col${esHoyCol?' cal-sem-col-hoy':''}">
+      <div class="cal-sem-citas">${bloques}</div>
+      ${lineaHoraActual}
+    </div>`;
+  }).join('');
+
+  const huboCitasEnLaSemana = todasLasCitas.length > 0;
+  const domingo = sumarDiasFecha(lunes, 6);
+  const incluyeHoy = hoy >= lunes && hoy <= domingo;
+
+  return `
+  <div class="cal-header-sticky">
+    <div class="cal-toolbar">
+      <div class="icon-btn" id="calSemanaAnterior">‹</div>
+      <div class="cal-fecha-actual">${formatearRangoSemana(lunes)}${incluyeHoy?' <span class="subtle">· semana actual</span>':''}</div>
+      <div class="icon-btn" id="calSemanaSiguiente">›</div>
+      <div class="btn sm" id="calIrHoy">Hoy</div>
+    </div>
+    <div class="cal-sin-citas" style="${huboCitasEnLaSemana?'visibility:hidden;':''}">Sin citas esta semana</div>
+    <div class="cal-sem-header-row">
+      <div class="cal-sem-gutter"></div>
+      ${encabezadosDias}
+    </div>
+  </div>
+  <div class="cal-dia-grid cal-sem-grid" style="height:${alturaTotal}px;">
+    ${horas.map(h=>`<div class="cal-hora-linea" style="top:${(h-horaInicio)*CAL_PX_POR_HORA}px;"><span class="cal-hora-label">${String(h).padStart(2,'0')}:00</span></div>`).join('')}
+    <div class="cal-sem-columnas">${columnas}</div>
   </div>`;
 }
 
@@ -2491,9 +2612,13 @@ function attachCalendarioHandlers(){
   iniciarTimerHoraActual();
   const btnAnt = document.getElementById('calDiaAnterior');
   const btnSig = document.getElementById('calDiaSiguiente');
+  const btnSemAnt = document.getElementById('calSemanaAnterior');
+  const btnSemSig = document.getElementById('calSemanaSiguiente');
   const btnHoy = document.getElementById('calIrHoy');
   if(btnAnt) btnAnt.addEventListener('click', ()=>{ AGENDA_FECHA_REF = sumarDiasFecha(AGENDA_FECHA_REF,-1); repintarPanelAgenda(); });
   if(btnSig) btnSig.addEventListener('click', ()=>{ AGENDA_FECHA_REF = sumarDiasFecha(AGENDA_FECHA_REF,1); repintarPanelAgenda(); });
+  if(btnSemAnt) btnSemAnt.addEventListener('click', ()=>{ AGENDA_FECHA_REF = sumarDiasFecha(AGENDA_FECHA_REF,-7); repintarPanelAgenda(); });
+  if(btnSemSig) btnSemSig.addEventListener('click', ()=>{ AGENDA_FECHA_REF = sumarDiasFecha(AGENDA_FECHA_REF,7); repintarPanelAgenda(); });
   if(btnHoy) btnHoy.addEventListener('click', ()=>{ AGENDA_FECHA_REF = todayStr(); repintarPanelAgenda(); });
   document.querySelectorAll('[data-cal-cita]').forEach(el=>{
     el.addEventListener('click', ()=> abrirDetalleCitaCalendario(el.dataset.calCita));
@@ -2540,6 +2665,17 @@ function attachSwitchAgendaVista(){
     });
   });
 }
+// Grupo 6 / Ciclo 2-mod — switch Día/Semana dentro de Calendario. Igual
+// que attachSwitchAgendaVista, solo cambia el estado y deja que
+// repintarPanelAgenda() vuelva a dibujar segun AGENDA_MODO.
+function attachSwitchModoCalendario(){
+  document.querySelectorAll('[data-agenda-modo]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      AGENDA_MODO = btn.dataset.agendaModo;
+      repintarPanelAgenda();
+    });
+  });
+}
 // Ronda 3 (#22) — extraido de repintarPanelAgenda para poder reutilizarlo
 // tambien despues de Agendar/Reagendar/Cancelar una cita (antes solo lo
 // usaba el boton "Ir a la lista para gestionar" del calendario, #16).
@@ -2565,6 +2701,16 @@ function ubicarCitaEnListaSiAplica(citaId){
 function repintarPanelAgenda(citaIdParaUbicar){
   document.querySelectorAll('[data-agenda-vista]').forEach(btn=>{
     btn.classList.toggle('active', btn.dataset.agendaVista === AGENDA_VISTA);
+  });
+  // Grupo 6 / Ciclo 2-mod — el switch Día/Semana vive FUERA de
+  // #agendaCitasList (para quedarse visible sin depender del scroll), asi
+  // que su innerHTML nunca se reconstruye solo — hay que sincronizar su
+  // visibilidad (solo tiene sentido en Calendario) y su estado activo
+  // aqui, cada vez que se repinta el panel.
+  const switchModo = document.getElementById('calSwitchModo');
+  if(switchModo) switchModo.style.display = AGENDA_VISTA==='calendario' ? '' : 'none';
+  document.querySelectorAll('[data-agenda-modo]').forEach(btn=>{
+    btn.classList.toggle('active', btn.dataset.agendaModo === AGENDA_MODO);
   });
   const list = document.getElementById('agendaCitasList');
   if(list){ list.innerHTML = AGENDA_VISTA==='calendario' ? renderCalendarioHTML() : renderCitasListHTML(); }
@@ -2618,6 +2764,10 @@ Maria Ramirez Cruz,Corona dental,2026-08-11,11:00</div>
       <div class="cal-switch">
         <div class="cal-switch-btn ${AGENDA_VISTA==='lista'?'active':''}" data-agenda-vista="lista">Lista</div>
         <div class="cal-switch-btn ${AGENDA_VISTA==='calendario'?'active':''}" data-agenda-vista="calendario">Calendario</div>
+      </div>
+      <div class="cal-switch" id="calSwitchModo" style="${AGENDA_VISTA==='calendario'?'':'display:none;'}">
+        <div class="cal-switch-btn ${AGENDA_MODO==='dia'?'active':''}" data-agenda-modo="dia">Día</div>
+        <div class="cal-switch-btn ${AGENDA_MODO==='semana'?'active':''}" data-agenda-modo="semana">Semana</div>
       </div>
       <div class="appt-list" id="agendaCitasList" style="max-height:460px;">
         ${AGENDA_VISTA==='calendario' ? renderCalendarioHTML() : renderCitasListHTML()}
@@ -3157,7 +3307,9 @@ function afterRenderHooks(){
     // Grupo 6 — unico cambio en este bloque: se agrega el switch
     // Lista/Calendario y se usa el dispatcher (que decide Lista o
     // Calendario) en vez de llamar siempre attachCitasListHandlers().
+    // Ciclo 2-mod — se agrega tambien el switch Dia/Semana.
     attachSwitchAgendaVista();
+    attachSwitchModoCalendario();
     attachContenidoAgenda();
   }
 

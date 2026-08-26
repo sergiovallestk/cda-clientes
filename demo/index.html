@@ -121,7 +121,7 @@
   .cal-sem-gutter{width:60px;flex-shrink:0;}
   .cal-sem-col-header{flex:1;text-align:center;font-size:11px;color:var(--text-dim);line-height:1.4;padding-bottom:4px;text-transform:uppercase;}
   .cal-sem-col-header-hoy{color:var(--amber);font-weight:700;}
-  .cal-sem-columnas{position:absolute;top:0;left:60px;right:16px;bottom:0;display:flex;}
+  .cal-sem-columnas{position:absolute;top:0;left:60px;right:16px;bottom:0;display:flex;border-right:1px solid var(--border);}
   .cal-sem-col{flex:1;position:relative;border-left:1px solid var(--border);}
   .cal-sem-col-hoy{background:rgba(242,184,75,0.05);}
   .cal-sem-citas{position:absolute;top:0;left:2px;right:2px;bottom:0;}
@@ -2699,24 +2699,29 @@ function renderCalendarioMesHTML(){
       return esPasada ? 'var(--text-mute)' : (cita.Fecha===hoy ? 'var(--amber)' : 'var(--teal)');
     }
 
-    // #6/#9 — las canceladas se siguen mostrando, pero NUNCA le quitan un
-    // lugar a una cita activa dentro del cupo visible: primero se llenan
-    // los espacios con activas, y solo se usan los que sobren para
-    // canceladas — despues se reordenan por hora para verse en orden
-    // cronologico normal.
+    // #6/#9 (exclusivo de Vista Mes) — las canceladas se siguen
+    // mostrando, pero NUNCA le quitan un lugar a una cita activa dentro
+    // del cupo visible: primero se llenan los espacios con activas, y
+    // solo se usan los que sobren para canceladas. El orden final agrupa
+    // primero TODAS las activas (por hora) y despues TODAS las
+    // canceladas que hayan alcanzado a mostrarse (tambien por hora) —
+    // a proposito NO es un orden cronologico puro, para que una
+    // cancelada de la manana no aparezca antes que una activa de la
+    // tarde. Este criterio es exclusivo de Mes; Dia y Semana siguen
+    // usando orden cronologico normal, sin agrupar por estado.
     const activasDelDia = citasDelDia.filter(x=>x.Estado!=='Cancelada');
     const canceladasDelDia = citasDelDia.filter(x=>x.Estado==='Cancelada');
 
     const visibleTexto = activasDelDia.slice(0, MAX_TEXTO);
     if(visibleTexto.length < MAX_TEXTO) visibleTexto.push(...canceladasDelDia.slice(0, MAX_TEXTO - visibleTexto.length));
-    visibleTexto.sort((a,b)=>a.Hora.localeCompare(b.Hora));
+    visibleTexto.sort((a,b)=> (a.Estado==='Cancelada')-(b.Estado==='Cancelada') || a.Hora.localeCompare(b.Hora));
     const restoTexto = citasDelDia.length - visibleTexto.length;
     const textoHtml = visibleTexto.map(cita=>`<div class="cal-mes-evento-texto" style="color:${colorDeCita(cita)};${cita.Estado==='Cancelada'?'opacity:.6;':''}">${formatearHora(cita.Hora)} ${cita.Paciente}</div>`).join('')
       + (restoTexto>0 ? `<div class="cal-mes-evento-mas">+${restoTexto} más</div>` : '');
 
     const visiblePuntos = activasDelDia.slice(0, MAX_PUNTOS);
     if(visiblePuntos.length < MAX_PUNTOS) visiblePuntos.push(...canceladasDelDia.slice(0, MAX_PUNTOS - visiblePuntos.length));
-    visiblePuntos.sort((a,b)=>a.Hora.localeCompare(b.Hora));
+    visiblePuntos.sort((a,b)=> (a.Estado==='Cancelada')-(b.Estado==='Cancelada') || a.Hora.localeCompare(b.Hora));
     const restoPuntos = citasDelDia.length - visiblePuntos.length;
     const puntosHtml = visiblePuntos.map(cita=>`<span class="cal-mes-punto" style="background:${colorDeCita(cita)};${cita.Estado==='Cancelada'?'opacity:.6;':''}"></span>`).join('')
       + (restoPuntos>0 ? `<span class="cal-mes-mas-puntos">+${restoPuntos}</span>` : '');

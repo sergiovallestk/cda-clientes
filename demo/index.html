@@ -121,7 +121,17 @@
   .cal-sem-gutter{width:60px;flex-shrink:0;}
   .cal-sem-col-header{flex:1;text-align:center;font-size:11px;color:var(--text-dim);line-height:1.4;padding-bottom:4px;text-transform:uppercase;}
   .cal-sem-col-header-hoy{color:var(--amber);font-weight:700;}
-  .cal-sem-columnas{position:absolute;top:0;left:60px;right:16px;bottom:0;display:flex;border-right:1px solid var(--border);}
+  .cal-sem-columnas{position:absolute;top:0;left:60px;right:16px;bottom:0;display:flex;}
+  /* Ronda 15 (correccion) — la linea delimitadora del borde derecho NO
+     puede ir directo en .cal-sem-columnas: ese contenedor reparte su
+     ancho en 7 partes iguales (flex:1 cada columna), y agregarle un
+     borde le resta 1px a ese total — cuando el resultado ya no se
+     divide exacto entre 7, el navegador deja el sobrante como una
+     rebanada visible aparte (el "octavo carril" angosto que reporto
+     Sergio, visible incluso en PC). Se dibuja como elemento aparte, que
+     no participa en el reparto de las 7 columnas, para no tocar esa
+     division. */
+  .cal-sem-borde-derecho{position:absolute;top:0;bottom:0;right:16px;width:1px;background:var(--border);}
   .cal-sem-col{flex:1;position:relative;border-left:1px solid var(--border);}
   .cal-sem-col-hoy{background:rgba(242,184,75,0.05);}
   .cal-sem-citas{position:absolute;top:0;left:2px;right:2px;bottom:0;}
@@ -2663,6 +2673,7 @@ function renderCalendarioSemanaHTML(){
   <div class="cal-dia-grid cal-sem-grid" style="height:${alturaTotal}px;">
     ${horas.map(h=>`<div class="cal-hora-linea" style="top:${(h-horaInicio)*CAL_PX_POR_HORA}px;"><span class="cal-hora-label">${String(h).padStart(2,'0')}:00</span></div>`).join('')}
     <div class="cal-sem-columnas">${columnas}</div>
+    <div class="cal-sem-borde-derecho"></div>
   </div>`;
 }
 

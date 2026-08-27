@@ -83,8 +83,8 @@
      sino visibility:hidden desde el JS) para que la rejilla no salte de
      tamaño segun haya o no citas ese dia. Ronda 3: centrado (#8). */
   .cal-sin-citas{height:18px;line-height:18px;font-size:12px;color:var(--text-mute);margin-top:6px;text-align:center;}
-  .cal-dia-grid{position:relative;margin:12px 10px 0 0;border:1px solid var(--border);border-radius:10px;background:var(--panel-2);}
-  .cal-hora-linea{position:absolute;left:0;right:0;border-top:1px solid var(--border);}
+  .cal-dia-grid{position:relative;margin:12px 10px 0 0;border:1px solid var(--border);border-radius:10px;background:var(--panel);}
+  .cal-hora-linea{position:absolute;left:0;right:8px;border-top:1px solid var(--border);}
   .cal-hora-label{position:absolute;left:8px;top:-8px;font-size:10.5px;color:var(--text-mute);background:var(--panel-2);padding:0 4px;}
   /* Ronda 2 (#13/#15) — antes .cal-cita tenia left:60px;right:8px directo.
      Ahora ese hueco (60px de la columna de horas, 8px de aire a la
@@ -117,21 +117,22 @@
      bordes y demas reglas ya definidas para Vista Dia (ver
      renderBloquesCitasDeUnDia) — este bloque solo agrega el layout de
      7 columnas (una por dia) y su encabezado. */
-  .cal-sem-header-row{display:flex;margin-top:8px;padding-right:16px;}
+  .cal-sem-header-row{display:flex;margin-top:8px;padding-right:18px;}
   .cal-sem-gutter{width:60px;flex-shrink:0;}
   .cal-sem-col-header{flex:1;text-align:center;font-size:11px;color:var(--text-dim);line-height:1.4;padding-bottom:4px;text-transform:uppercase;}
   .cal-sem-col-header-hoy{color:var(--amber);font-weight:700;}
-  .cal-sem-columnas{position:absolute;top:0;left:60px;right:16px;bottom:0;display:flex;}
-  /* Ronda 15 (correccion) — la linea delimitadora del borde derecho NO
-     puede ir directo en .cal-sem-columnas: ese contenedor reparte su
-     ancho en 7 partes iguales (flex:1 cada columna), y agregarle un
-     borde le resta 1px a ese total — cuando el resultado ya no se
-     divide exacto entre 7, el navegador deja el sobrante como una
-     rebanada visible aparte (el "octavo carril" angosto que reporto
-     Sergio, visible incluso en PC). Se dibuja como elemento aparte, que
-     no participa en el reparto de las 7 columnas, para no tocar esa
-     division. */
-  .cal-sem-borde-derecho{position:absolute;top:0;bottom:0;right:16px;width:1px;background:var(--border);}
+  .cal-sem-columnas{position:absolute;top:0;left:60px;right:8px;bottom:0;display:flex;}
+  /* Ronda 15 — se probaron 2 versiones de una linea delimitadora recta en
+     este borde derecho (una directo en .cal-sem-columnas, otra aparte) y
+     ambas fallaban: una linea PERFECTAMENTE RECTA no puede convivir bien
+     con la esquina REDONDEADA del marco de la cuadricula (border-radius)
+     — ahi es donde se formaba la "cuadricula fantasma" que Sergio
+     reportaba (confirmado con zoom extremo sobre una captura real). Con
+     las 7 columnas ya verificadas parejas y el espacio de aire chico
+     (8px), el propio borde curveado del marco ya delimita bien donde
+     termina — no hace falta ninguna linea recta extra. Se quita por
+     completo (ver tambien el HTML de renderCalendarioSemanaHTML, que ya
+     no incluye el div .cal-sem-borde-derecho). */
   .cal-sem-col{flex:1;position:relative;border-left:1px solid var(--border);}
   .cal-sem-col-hoy{background:rgba(242,184,75,0.05);}
   .cal-sem-citas{position:absolute;top:0;left:2px;right:2px;bottom:0;}
@@ -2673,7 +2674,6 @@ function renderCalendarioSemanaHTML(){
   <div class="cal-dia-grid cal-sem-grid" style="height:${alturaTotal}px;">
     ${horas.map(h=>`<div class="cal-hora-linea" style="top:${(h-horaInicio)*CAL_PX_POR_HORA}px;"><span class="cal-hora-label">${String(h).padStart(2,'0')}:00</span></div>`).join('')}
     <div class="cal-sem-columnas">${columnas}</div>
-    <div class="cal-sem-borde-derecho"></div>
   </div>`;
 }
 

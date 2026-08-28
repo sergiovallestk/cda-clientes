@@ -3581,6 +3581,24 @@ function afterRenderHooks(){
       FORMATO_HORA: CONFIG.FORMATO_HORA, FORMATO_FECHA: CONFIG.FORMATO_FECHA, SEPARADOR: CONFIG.SEPARADOR,
       DECIMALES_PRECIO: CONFIG.DECIMALES_PRECIO, PRIMER_DIA_SEMANA: CONFIG.PRIMER_DIA_SEMANA,
     };
+    // #13 (Ronda 16, parte 2) — mismo patron que configOriginal arriba,
+    // pero para el horario de atencion: faltaba la "foto" original, asi
+    // que "Guardar horario" siempre llamaba al servidor aunque no se
+    // hubiera tocado nada. construirHorarioDesdeDOM() se reutiliza tanto
+    // para tomar la foto (justo al entrar a la pestaña) como para leer lo
+    // que hay al momento de dar clic en el boton.
+    function construirHorarioDesdeDOM(){
+      const resultado = [];
+      document.querySelectorAll('.day-block').forEach(block=>{
+        const dia = block.dataset.dia;
+        const activo = block.querySelector('.hDiaActivo').checked;
+        const turnos = block.querySelectorAll('.turno-row');
+        if(turnos.length===0){ resultado.push({Dia:dia, Activo:false, HoraInicio:'', HoraFin:''}); }
+        else{ turnos.forEach(row=>{ resultado.push({Dia:dia, Activo:activo, HoraInicio:row.querySelector('.hInicio').value, HoraFin:row.querySelector('.hFin').value}); }); }
+      });
+      return resultado;
+    }
+    const horarioOriginal = JSON.stringify(construirHorarioDesdeDOM());
     document.getElementById('btnGuardarConfig').addEventListener('click', async ()=>{
       const nuevo = {
         CURRENCY: document.getElementById('cfgMoneda').value,
@@ -3629,14 +3647,8 @@ function afterRenderHooks(){
       block.querySelectorAll('[data-remove-turno]').forEach(btn=>{ btn.addEventListener('click', (e)=> e.target.closest('.turno-row').remove()); });
     });
     document.getElementById('btnGuardarHorario').addEventListener('click', async ()=>{
-      const nuevoHorario = [];
-      document.querySelectorAll('.day-block').forEach(block=>{
-        const dia = block.dataset.dia;
-        const activo = block.querySelector('.hDiaActivo').checked;
-        const turnos = block.querySelectorAll('.turno-row');
-        if(turnos.length===0){ nuevoHorario.push({Dia:dia, Activo:false, HoraInicio:'', HoraFin:''}); }
-        else{ turnos.forEach(row=>{ nuevoHorario.push({Dia:dia, Activo:activo, HoraInicio:row.querySelector('.hInicio').value, HoraFin:row.querySelector('.hFin').value}); }); }
-      });
+      const nuevoHorario = construirHorarioDesdeDOM();
+      if(JSON.stringify(nuevoHorario) === horarioOriginal){ showToast('Sin cambios que guardar'); return; }
       if(CONFIG.API_URL){ await apiCall('update_horario', { dias: nuevoHorario }, ['horario']); }
       else { DATA.horario = nuevoHorario; }
       showToast('Horario guardado'); render();

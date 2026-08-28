@@ -3255,7 +3255,7 @@ function renderConfiguracionHTML(){
         return `<div class="day-block" data-dia="${dia}">
           <div class="day-block-head">
             <b>${dia}</b>
-            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" class="hDiaActivo" ${activo?'checked':''}><span class="subtle">${activo?'Abierto':'Cerrado'}</span></label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" class="hDiaActivo" ${activo?'checked':''}><span class="subtle hDiaEstadoTexto">${activo?'Abierto':'Cerrado'}</span></label>
           </div>
           <div class="turnos-list">
             ${turnos.filter(t=>t.HoraInicio||t.HoraFin).map((t,i)=>`
@@ -3645,6 +3645,16 @@ function afterRenderHooks(){
         row.querySelector('[data-remove-turno]').addEventListener('click', ()=> row.remove());
       });
       block.querySelectorAll('[data-remove-turno]').forEach(btn=>{ btn.addEventListener('click', (e)=> e.target.closest('.turno-row').remove()); });
+      // #16 (Ronda 18, seguimiento) — el texto "Abierto"/"Cerrado" solo se
+      // recalculaba al volver a renderizar la pestaña; ahora que el
+      // checkbox quedo justo al lado, se actualiza al instante al marcar
+      // o desmarcar. Esto es SOLO visual — la comparacion real de
+      // "hubo cambios?" al dar clic en "Guardar horario" sigue siendo
+      // contra horarioOriginal (los datos que ya tiene el sistema en
+      // memoria), nunca contra este texto.
+      block.querySelector('.hDiaActivo').addEventListener('change', (e)=>{
+        block.querySelector('.hDiaEstadoTexto').textContent = e.target.checked ? 'Abierto' : 'Cerrado';
+      });
     });
     document.getElementById('btnGuardarHorario').addEventListener('click', async ()=>{
       const nuevoHorario = construirHorarioDesdeDOM();

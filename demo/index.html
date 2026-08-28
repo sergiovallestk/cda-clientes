@@ -3067,16 +3067,41 @@ function abrirModalNuevaCita(){
           <p class="subtle" style="margin-bottom:10px;">${validRows.length} de ${preview.length} filas se importaran. Las filas con error se omiten.</p>
           <div class="modal-actions"><div class="btn block" onclick="volverModal()">Cancelar</div><div class="btn primary block" id="confirmCsv">Importar ${validRows.length} citas</div></div>`, true);
         document.getElementById('confirmCsv').addEventListener('click', async ()=>{
+          // #10 — 2 bugs reales corregidos aqui:
+          // 1) antes nunca se revisaba si el servidor rechazo la cita por
+          //    empalme de horario (respuesta {conflict:true}) — se contaba
+          //    como "importada" de todos modos, sin haberse creado nada ni
+          //    en el Sheet ni en Calendar. Ahora se detecta, NO se crea (no
+          //    se fuerza a ciegas, mismo criterio que el agendado manual), y
+          //    se reporta al final cuales filas se saltaron y por que.
+          // 2) faltaba el 3er argumento de apiCall (['citas','pacientes'])
+          //    que ya usa el agendado manual — sin el, aunque la cita SI se
+          //    creara bien en el servidor, no se reflejaba en pantalla hasta
+          //    una recarga o sincronizacion manual.
+          let importadas = 0;
+          const conflictos = [];
           for(const r of validRows){
             let id = 'C' + String(DATA.citas.length+1).padStart(3,'0');
             if(CONFIG.API_URL){
-              const res = await apiCall('add_cita', { pacienteId:r.pac.ID, paciente:r.pac.Nombre, tratamientos:r.trats.join(', '), fecha:r.fecha, hora:r.hora });
+              const res = await apiCall('add_cita', { pacienteId:r.pac.ID, paciente:r.pac.Nombre, tratamientos:r.trats.join(', '), fecha:r.fecha, hora:r.hora }, ['citas','pacientes']);
+              if(res && res.conflict){ conflictos.push(`${r.pac.Nombre} — ${formatearFecha(r.fecha)} ${formatearHora(r.hora)}`); continue; }
               if(res && res.id) id = res.id;
+              importadas++;
             } else {
               DATA.citas.push({ID:id, Fecha:r.fecha, Hora:r.hora, Paciente_ID:r.pac.ID, Paciente:r.pac.Nombre, Tratamientos:r.trats.join(', '), Estado:'Confirmada'});
+              importadas++;
             }
           }
-          closeModal(); showToast(`${validRows.length} citas importadas`); render();
+          closeModal(); render();
+          if(conflictos.length){
+            openModal(`
+              <h3>Importación con conflictos de horario</h3>
+              <p class="subtle" style="margin-bottom:10px;">${importadas} cita(s) se importaron correctamente. ${conflictos.length} NO se importaron porque su horario ya estaba ocupado:</p>
+              <ul style="font-size:12.5px;color:var(--text-dim);padding-left:18px;margin-bottom:16px;">${conflictos.map(c=>`<li>${c}</li>`).join('')}</ul>
+              <div class="modal-actions"><div class="btn primary block" onclick="closeModal()">Entendido</div></div>`);
+          } else {
+            showToast(`${importadas} citas importadas`);
+          }
         });
       };
       reader.readAsText(file);
@@ -3546,16 +3571,30 @@ function afterRenderHooks(){
   }
 
   if(ACTIVE_TAB === 'configuracion'){
+    // #13 — mismo patron ya usado en Pacientes/Tratamientos/Gastos: se
+    // guarda una "foto" de como estaba la configuracion justo al entrar a
+    // esta pestaña, para poder comparar contra lo que hay al momento de
+    // guardar y evitar peticiones al servidor si el usuario le dio clic a
+    // "Guardar cambios" sin haber tocado nada.
+    const configOriginal = {
+      CURRENCY: CONFIG.CURRENCY, PHONE_COUNTRY: CONFIG.PHONE_COUNTRY, DIAS_SIN_VISITA: CONFIG.DIAS_SIN_VISITA,
+      FORMATO_HORA: CONFIG.FORMATO_HORA, FORMATO_FECHA: CONFIG.FORMATO_FECHA, SEPARADOR: CONFIG.SEPARADOR,
+      DECIMALES_PRECIO: CONFIG.DECIMALES_PRECIO, PRIMER_DIA_SEMANA: CONFIG.PRIMER_DIA_SEMANA,
+    };
     document.getElementById('btnGuardarConfig').addEventListener('click', async ()=>{
-      CONFIG.CURRENCY = document.getElementById('cfgMoneda').value;
-      CONFIG.PHONE_COUNTRY = document.getElementById('cfgPaisTelefono').value;
-      CONFIG.DIAS_SIN_VISITA = Number(document.getElementById('cfgDiasSinVisita').value) || 60;
-      // Grupo 1 (#27/#28/#34/#35)
-      CONFIG.FORMATO_HORA = document.getElementById('cfgFormatoHora').value;
-      CONFIG.FORMATO_FECHA = document.getElementById('cfgFormatoFecha').value;
-      CONFIG.SEPARADOR = document.getElementById('cfgSeparador').value;
-      CONFIG.DECIMALES_PRECIO = document.getElementById('cfgDecimalesPrecio').value === 'true';
-      CONFIG.PRIMER_DIA_SEMANA = document.getElementById('cfgPrimerDiaSemana').value;
+      const nuevo = {
+        CURRENCY: document.getElementById('cfgMoneda').value,
+        PHONE_COUNTRY: document.getElementById('cfgPaisTelefono').value,
+        DIAS_SIN_VISITA: Number(document.getElementById('cfgDiasSinVisita').value) || 60,
+        FORMATO_HORA: document.getElementById('cfgFormatoHora').value,
+        FORMATO_FECHA: document.getElementById('cfgFormatoFecha').value,
+        SEPARADOR: document.getElementById('cfgSeparador').value,
+        DECIMALES_PRECIO: document.getElementById('cfgDecimalesPrecio').value === 'true',
+        PRIMER_DIA_SEMANA: document.getElementById('cfgPrimerDiaSemana').value,
+      };
+      const huboCambios = Object.keys(nuevo).some(k => nuevo[k] !== configOriginal[k]);
+      if(!huboCambios){ showToast('Sin cambios que guardar'); return; }
+      Object.assign(CONFIG, nuevo);
       if(CONFIG.API_URL){
         // Ciclo 1 / Ronda 3 (#7/#5f) — causa real de "tardo minutos": esto
         // eran 7 peticiones SEPARADAS al servidor, una por una, cada una

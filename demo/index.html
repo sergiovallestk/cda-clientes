@@ -3254,8 +3254,8 @@ function renderConfiguracionHTML(){
         const activo = turnos.some(t=>t.Activo);
         return `<div class="day-block" data-dia="${dia}">
           <div class="day-block-head">
-            <label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" class="hDiaActivo" ${activo?'checked':''}><b>${dia}</b></label>
-            <span class="subtle">${activo?'Abierto':'Cerrado'}</span>
+            <b>${dia}</b>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" class="hDiaActivo" ${activo?'checked':''}><span class="subtle">${activo?'Abierto':'Cerrado'}</span></label>
           </div>
           <div class="turnos-list">
             ${turnos.filter(t=>t.HoraInicio||t.HoraFin).map((t,i)=>`

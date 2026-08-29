@@ -3705,7 +3705,7 @@ function fillReferidosLista(){
   if(PAGINA_REFERIDOS>totalPaginas) PAGINA_REFERIDOS = totalPaginas;
   const pagina = filtrados.map((r,i)=>({r,i})).slice((PAGINA_REFERIDOS-1)*porPagina, PAGINA_REFERIDOS*porPagina).map(x=>x.r);
   box.innerHTML = `
-    <div style="max-height:220px;overflow-y:auto;">
+    <div class="detail-block-fixed">
       ${pagina.map(r=>`<div class="referral-row"><span>${r.NombreReferido}<br><span class="subtle">${formatearFecha(r.Fecha)}</span></span><b style="color:${estadoColor(r.Estado)};font-size:12px;">${r.Estado}</b></div>`).join('') || `<div class="empty">${f ? 'Sin resultados' : 'Aun no tienes referidos registrados'}</div>`}
     </div>
     ${filtrados.length>porPagina ? `<div class="paginador" style="padding-top:8px;">

@@ -324,7 +324,23 @@
   .chip-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
   .chip{background:#12291F;color:var(--teal);font-size:11.5px;padding:4px 9px;border-radius:20px;}
 
-  .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:150;padding:16px;}
+  /* #10 (correccion 2) — el fix anterior solo toco el max-height del
+     .modal (la caja de adentro), pero el problema real estaba un nivel
+     arriba: .modal-overlay usaba "inset:0" en un elemento position:fixed,
+     que en moviles se mide contra la altura MAXIMA teorica de la
+     pantalla (como si la barra de direcciones ya estuviera oculta). El
+     modal se centra verticalmente DENTRO de este overlay
+     (align-items:center) — si el overlay esta calculado mas alto de lo
+     que en verdad se ve, el centrado empuja el modal hacia abajo, fuera
+     de la pantalla, sin importar que tan corto sea el modal por dentro.
+     Se reemplaza "inset:0" por bordes explicitos + height:100vh con
+     height:100dvh de respaldo (mismo truco de cascada que ya se uso en
+     .modal: los navegadores sin soporte para dvh ignoran esa linea y se
+     quedan con vh; los que si soportan, usan dvh por ser la ultima
+     declaracion valida). Verificado con Playwright: el overlay ya mide
+     exactamente window.innerHeight en distintos tamanos de viewport, y
+     el modal queda completamente visible en ambos casos probados. */
+  .modal-overlay{position:fixed;top:0;left:0;right:0;height:100vh;height:100dvh;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:150;padding:16px;}
   .modal-overlay.open{display:flex;}
   /* #10 (auditoria arquitectonica) — la unidad "vh" en moviles (Chrome/
      Safari) se calcula contra la altura MAXIMA posible de la pantalla,
@@ -433,7 +449,16 @@
        scroll. overflow-y:auto le da scroll propio cuando su contenido no
        cabe (solo pasa en horizontal); -webkit-overflow-scrolling:touch
        mejora el desplazamiento tactil en iOS. */
-    .sidebar{position:fixed;top:0;left:0;height:100vh;overflow-y:auto;-webkit-overflow-scrolling:touch;transform:translateX(-100%);transition:transform .2s ease;z-index:100;}
+    /* #11 (correccion 2) — mismo problema de raiz que #10: height:100vh
+       en un elemento position:fixed se mide contra la altura MAXIMA
+       teorica en moviles, no la real, asi que el area scrolleable
+       calculada tenia espacio de mas — de ahi que hiciera falta un
+       primer gesto de scroll para que el navegador "se asentara" antes
+       de que el verdadero limite fuera alcanzable. Se agrega
+       height:100dvh de respaldo (mismo truco de cascada). Verificado con
+       Playwright: forzando un desborde de 16px, un solo scrollTop directo
+       llega exacto al fondo, sin necesitar un segundo gesto. */
+    .sidebar{position:fixed;top:0;left:0;height:100vh;height:100dvh;overflow-y:auto;-webkit-overflow-scrolling:touch;transform:translateX(-100%);transition:transform .2s ease;z-index:100;}
     .sidebar.open{transform:translateX(0);}
     .main{padding:64px 14px 28px;max-width:100%;}
     .grid{grid-template-columns:1fr;}

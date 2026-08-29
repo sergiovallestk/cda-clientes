@@ -3184,10 +3184,12 @@ function attachCitasListHandlers(){
       openModal(`
         <h3>Cancelar cita</h3>
         <p class="subtle" style="margin-bottom:16px;">¿Cancelar la cita de ${cita.Paciente} el ${formatearFecha(cita.Fecha)} a las ${formatearHora(cita.Hora)}?</p>
+        <div class="field" style="margin-bottom:16px;"><label>Motivo (opcional)</label><input id="motivoCancelacion" type="text" placeholder="Ej. el paciente avisó que no podía asistir"></div>
         <div class="modal-actions"><div class="btn block" onclick="closeModal()">Volver</div><div class="btn danger block" id="btnConfirmarCancelar">Sí, cancelar</div></div>`);
       document.getElementById('btnConfirmarCancelar').addEventListener('click', async ()=>{
+        const motivo = document.getElementById('motivoCancelacion').value.trim();
         closeModal();
-        if(CONFIG.API_URL){ await apiCall('cancelar_cita', { citaId }, ['citas']); }
+        if(CONFIG.API_URL){ await apiCall('cancelar_cita', { citaId, motivo }, ['citas']); }
         else { cita.Estado = 'Cancelada'; }
         showToast('Cita cancelada'); render();
         ubicarCitaEnListaSiAplica(citaId); // #22

@@ -340,7 +340,7 @@
      declaracion valida). Verificado con Playwright: el overlay ya mide
      exactamente window.innerHeight en distintos tamanos de viewport, y
      el modal queda completamente visible en ambos casos probados. */
-  .modal-overlay{position:fixed;top:0;left:0;right:0;height:100vh;height:100dvh;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:150;padding:16px;}
+  .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:150;padding:16px;}
   .modal-overlay.open{display:flex;}
   /* #10 (auditoria arquitectonica) — la unidad "vh" en moviles (Chrome/
      Safari) se calcula contra la altura MAXIMA posible de la pantalla,
@@ -354,7 +354,7 @@
      misma regla a proposito: los navegadores que no soportan "dvh"
      ignoran esa linea y se quedan con el valor "vh" de respaldo; los que
      si la soportan, usan "dvh" por ser la ultima declaracion valida. */
-  .modal{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:22px;width:460px;max-width:100%;max-height:88vh;max-height:88dvh;overflow-y:auto;}
+  .modal{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:22px;width:460px;max-width:100%;max-height:95vh;overflow-y:auto;}
   .modal.wide{width:640px;}
   .modal h3{font-size:16px;margin-bottom:16px;}
   .modal-actions{display:flex;gap:10px;margin-top:18px;}
@@ -413,9 +413,9 @@
   .referral-teaser{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text-dim);cursor:pointer;padding:10px 12px;border:1px dashed var(--border);border-radius:10px;margin-top:16px;}
   .referral-teaser:hover{border-color:var(--teal);color:var(--text);}
   .referral-teaser svg{color:var(--teal);flex-shrink:0;}
-  .referral-code-box{background:var(--panel-2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;margin:12px 0;}
+  .referral-code-box{background:var(--panel-2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 0;}
   .referral-code-box b{font-size:16px;letter-spacing:0.5px;color:var(--teal);}
-  .referral-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0;}
+  .referral-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:10px 0;}
   .referral-stat{background:var(--panel-2);border-radius:10px;padding:10px;text-align:center;}
   .referral-stat .num{font-size:18px;font-weight:700;}
   .referral-stat .lbl{font-size:10.5px;color:var(--text-dim);margin-top:2px;}
@@ -851,6 +851,11 @@ function setTab(tab){
   ocultarChartTooltip();
   document.getElementById('sidebar').classList.remove('open');
   document.getElementById('sidebarOverlay').classList.remove('open');
+  // Bug nuevo (no relacionado a esta sesion) — .main no tiene scroll propio,
+  // usa el scroll normal de la pagina, y reemplazar su HTML al cambiar de
+  // pestaña no mueve el scroll solo (comportamiento estandar del navegador).
+  // Se regresa manualmente a la posicion 0 cada vez que se cambia de pestaña.
+  window.scrollTo(0, 0);
 }
 document.querySelectorAll('.nav-item[data-tab]').forEach(item=>{ item.addEventListener('click', ()=> setTab(item.dataset.tab)); });
 // Ciclo 1 / Ronda 7 (#18) — "Sincronizar" vive en el menu principal, no
@@ -3785,10 +3790,10 @@ function showReferidosModal(){
   PAGINA_REFERIDOS = 1;
   openModal(`
     <h3>Programa de referidos</h3>
-    <p class="subtle" style="margin-bottom:12px;">Comparte el sistema con un colega. Cuando esa persona pague su instalación, ganas ${fmtComision(DATA.comisionMonto)}.</p>
+    <p class="subtle" style="margin-bottom:8px;">Comparte el sistema con un colega. Cuando esa persona pague su instalación, ganas ${fmtComision(DATA.comisionMonto)}.</p>
     <div class="referral-code-box"><span class="subtle">Tu código</span><b>${codigo}</b></div>
-    <div class="btn primary block" id="btnCompartirReferido" style="margin-bottom:14px;">Compartir</div>
-    <div class="divider"></div>
+    <div class="btn primary block" id="btnCompartirReferido" style="margin-bottom:10px;">Compartir</div>
+    <div class="divider" style="margin:10px 0;"></div>
     <div class="card-head" style="margin-bottom:4px;">
       <div class="card-title">Tu historial</div>
       <span class="link-btn" id="btnActualizarReferidos">↻ Recargar</span>
@@ -3798,7 +3803,7 @@ function showReferidosModal(){
       <div class="referral-stat"><div class="num" style="color:var(--amber);">${convertidosLista.length}</div><div class="lbl">Convertidos</div><div class="subtle" style="font-size:11px;margin-top:2px;">${fmtComision(montoConvertidos)}</div></div>
       <div class="referral-stat"><div class="num" style="color:var(--teal);">${pagadosLista.length}</div><div class="lbl">Comisión pagada</div><div class="subtle" style="font-size:11px;margin-top:2px;">${fmtComision(montoPagados)}</div></div>
     </div>
-    <input class="search" id="refSearch" style="margin-bottom:10px;" placeholder="Buscar por nombre, fecha o estado..." value="${SEARCH_STATE.referidos}">
+    <input class="search" id="refSearch" style="margin-bottom:8px;" placeholder="Buscar por nombre, fecha o estado..." value="${SEARCH_STATE.referidos}">
     <div id="referidosListaBox"></div>
     <div class="modal-actions"><div class="btn primary block" onclick="closeModal()">Cerrar</div></div>`);
 

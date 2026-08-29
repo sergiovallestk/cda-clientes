@@ -2127,9 +2127,20 @@ function openAbonoModal(pagoId, onDone, volverInit){
       // abono en vez de dejar un saldo negativo (ver addAbono en Code.gs).
       const res = await apiCall('add_abono', { pagoId: pago.ID, monto, fecha: todayStr() }, ['pagos']);
       if(res && res.conflict){
+        // Ciclo 1 / Ronda 7 (auditoria de historial de pagos, #5) — antes,
+        // apiCall() ya apagaba su propia mascara en cuanto regresaba la
+        // respuesta (correcto para el camino de exito), pero el trabajo
+        // extra de este camino de conflicto (syncData + repintar) corria
+        // SIN ninguna mascara — el modal de abono se cerraba y quedaban
+        // unos segundos de pantalla "vacia" antes de que apareciera el
+        // mensaje de error, prestandose a confusion. Ahora la mascara se
+        // mantiene visible sin interrupcion desde "Registrar" hasta que
+        // el mensaje final aparece en pantalla.
+        showMask('Verificando...');
         await syncData(['pagos']);
         if(ACTIVE_TAB==='dashboard' || ACTIVE_TAB==='finanzas') repintarGraficasConDatosActuales();
         if(volverInit){ volverModal(); } else { closeModal(); }
+        hideMask();
         // Ciclo 1 / Ronda 6 (#15) — antes esto era un toast que
         // desaparecia solo en pocos segundos; ahora es una ventana que
         // se queda hasta que el usuario la cierra, mismo patron que ya

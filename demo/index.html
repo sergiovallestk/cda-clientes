@@ -326,7 +326,19 @@
 
   .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:150;padding:16px;}
   .modal-overlay.open{display:flex;}
-  .modal{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:22px;width:460px;max-width:100%;max-height:88vh;overflow-y:auto;}
+  /* #10 (auditoria arquitectonica) — la unidad "vh" en moviles (Chrome/
+     Safari) se calcula contra la altura MAXIMA posible de la pantalla,
+     como si la barra de direcciones ya estuviera oculta — pero justo al
+     abrir la pagina por primera vez esa barra todavia esta visible
+     ocupando espacio real, asi que el modal se calculaba mas alto de lo
+     que en verdad cabia, cortando el contenido de mas abajo (el boton
+     "Cerrar") hasta que el usuario hacia scroll y el navegador ocultaba
+     la barra. "dvh" (dynamic viewport height) se ajusta en tiempo real
+     al espacio visible de verdad — se declara DESPUES de "vh" en la
+     misma regla a proposito: los navegadores que no soportan "dvh"
+     ignoran esa linea y se quedan con el valor "vh" de respaldo; los que
+     si la soportan, usan "dvh" por ser la ultima declaracion valida. */
+  .modal{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:22px;width:460px;max-width:100%;max-height:88vh;max-height:88dvh;overflow-y:auto;}
   .modal.wide{width:640px;}
   .modal h3{font-size:16px;margin-bottom:16px;}
   .modal-actions{display:flex;gap:10px;margin-top:18px;}
@@ -411,7 +423,17 @@
 
   @media (max-width:900px){
     .hamburger{display:flex;}
-    .sidebar{position:fixed;top:0;left:0;height:100vh;transform:translateX(-100%);transition:transform .2s ease;z-index:100;}
+    /* #11 (auditoria arquitectonica) — el menu lateral usaba height:100vh
+       sin scroll propio. En vertical nunca se notaba (100vh alcanza de
+       sobra para todas las opciones), pero en horizontal 100vh es mucho
+       mas bajo (el celular acostado tiene mucha menos altura), asi que
+       el menu no alcanzaba a mostrar todas sus opciones — y como no
+       tenia scroll propio, el gesto de deslizar sobre el se le pasaba de
+       largo a la pagina de atras (el Dashboard), que si tiene su propio
+       scroll. overflow-y:auto le da scroll propio cuando su contenido no
+       cabe (solo pasa en horizontal); -webkit-overflow-scrolling:touch
+       mejora el desplazamiento tactil en iOS. */
+    .sidebar{position:fixed;top:0;left:0;height:100vh;overflow-y:auto;-webkit-overflow-scrolling:touch;transform:translateX(-100%);transition:transform .2s ease;z-index:100;}
     .sidebar.open{transform:translateX(0);}
     .main{padding:64px 14px 28px;max-width:100%;}
     .grid{grid-template-columns:1fr;}

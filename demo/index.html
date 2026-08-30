@@ -342,6 +342,12 @@
      el modal queda completamente visible en ambos casos probados. */
   .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:150;padding:16px;}
   .modal-overlay.open{display:flex;}
+  /* Fase 2 (usuarios/login) — por encima de cualquier modal normal
+     (z-index:150 de .modal-overlay). loginScreen ademas por encima del
+     aviso de sesion (si el aviso llegara a dispararse justo cuando ya se
+     esta mostrando login, login gana). */
+  #loginScreen{z-index:600;}
+  #sessionWarningOverlay{z-index:500;}
   /* #10 (auditoria arquitectonica) — la unidad "vh" en moviles (Chrome/
      Safari) se calcula contra la altura MAXIMA posible de la pantalla,
      como si la barra de direcciones ya estuviera oculta — pero justo al
@@ -523,6 +529,13 @@
 
 <div class="modal-overlay" id="modalOverlay"><div class="modal" id="modalBody"></div></div>
 <div class="modal-overlay" id="pickerOverlay"><div class="modal" id="pickerBody"></div></div>
+<!-- Fase 2 (usuarios/login) — 2 overlays nuevos, independientes de modalOverlay:
+     nunca se cierran al hacer clic afuera (sin ese listener a proposito) y no
+     comparten el mismo overlay que los modales normales del sistema para no
+     perder lo que el usuario tuviera abierto ahi (ej. el aviso de "tu sesion
+     esta por terminar" no debe reemplazar un formulario a medio llenar). -->
+<div class="modal-overlay" id="loginScreen"><div class="modal" id="loginBody" style="max-width:360px;"></div></div>
+<div class="modal-overlay" id="sessionWarningOverlay"><div class="modal" id="sessionWarningBody" style="max-width:340px;"></div></div>
 <div class="toast" id="toast"></div>
 <div class="blocking-mask show" id="blockingMask"><div class="spinner"></div><span id="maskText">Cargando información...</span></div>
 
@@ -551,14 +564,163 @@ const PHONE_COUNTRIES = {
 };
 function telefonoInfo(){ return PHONE_COUNTRIES[CONFIG.PHONE_COUNTRY] || PHONE_COUNTRIES.MX; }
 const DIAS_ORDEN = ["Lunes","Martes","Miercoles","Jueves","Viernes","Sabado","Domingo"];
-const DEMO_DATA = {"pacientes": [], "tratamientos": [], "citas": [], "pagos": [], "gastos": [], "categorias_tratamiento": [], "categorias_gasto": [], "horario": [], "config": [], "referidos": [], "comisionMoneda": "MXN", "comisionMonto": 300};
+const DEMO_DATA = {"pacientes": [], "tratamientos": [], "citas": [], "pagos": [], "gastos": [], "categorias_tratamiento": [], "categorias_gasto": [], "horario": [], "config": [], "referidos": [], "usuarios": [], "comisionMoneda": "MXN", "comisionMonto": 300};
 let DATA = JSON.parse(JSON.stringify(DEMO_DATA));
 let ACTIVE_TAB = 'dashboard';
 
 let LOAD_ERROR = null;
 function emptyShell(){
-  return { pacientes:[], tratamientos:[], citas:[], pagos:[], gastos:[], categorias_tratamiento:[], categorias_gasto:[], horario:[], config:[], referidos:[], comisionMoneda:'MXN', comisionMonto:300 };
+  return { pacientes:[], tratamientos:[], citas:[], pagos:[], gastos:[], categorias_tratamiento:[], categorias_gasto:[], horario:[], config:[], referidos:[], usuarios:[], comisionMoneda:'MXN', comisionMonto:300 };
 }
+/* ==================== Fase 2 (Grupo 3) — Sesion / Login ====================
+ * Apps Script no tiene sesion nativa — el token que regresa login() se
+ * guarda en localStorage del navegador y se manda en CADA peticion futura
+ * (GET y POST). "renovadaEn" + "duracionSegundos" permiten calcular, al
+ * recargar la pagina con una sesion ya guardada, cuanto tiempo le queda
+ * de verdad sin tener que preguntarle al servidor (CacheService no
+ * expone su tiempo restante) — es una estimacion conservadora del lado
+ * del navegador, el servidor sigue siendo la autoridad final: si esta
+ * estimacion se equivoca por poco, la siguiente peticion real
+ * simplemente regresa "session_invalid" y se maneja igual que cualquier
+ * expiracion real.
+ * En modo DEMO (sin CONFIG.API_URL) todo este mecanismo se omite por
+ * completo — decision explicita de Sergio, para no estorbarle a un
+ * prospecto viendo la demo con datos falsos. */
+const SESION_STORAGE_KEY = 'cda_sesion';
+const SESION_AVISO_ANTES_SEGUNDOS = 60; // aviso "tu sesion esta por terminar" con este margen antes de expirar
+let SESSION = { token:null, usuario:null, esAdmin:false, debeCambiarPassword:false, duracionSegundos:0, renovadaEn:0 };
+let sessionWarningTimer = null;
+let sessionExpireTimer = null;
+
+function cargarSesionGuardada(){
+  try{ const raw = localStorage.getItem(SESION_STORAGE_KEY); return raw ? JSON.parse(raw) : null; }
+  catch(err){ return null; }
+}
+function guardarSesion(){ try{ localStorage.setItem(SESION_STORAGE_KEY, JSON.stringify(SESSION)); }catch(err){} }
+function borrarSesionGuardada(){ try{ localStorage.removeItem(SESION_STORAGE_KEY); }catch(err){} }
+
+// Se llama cada vez que el servidor confirma una sesion nueva o renovada
+// (login o renovar_sesion) — reinicia el reloj de "cuanto le queda".
+function fijarSesion(token, usuario, esAdmin, debeCambiarPassword, duracionSegundos){
+  SESSION = { token, usuario, esAdmin, debeCambiarPassword, duracionSegundos, renovadaEn: Date.now() };
+  guardarSesion();
+  programarAvisoDesdeRestantes(duracionSegundos);
+}
+
+function programarAvisoDesdeRestantes(segundosRestantes){
+  clearTimeout(sessionWarningTimer); clearTimeout(sessionExpireTimer);
+  if(segundosRestantes <= 0){ manejarSesionInvalida(); return; }
+  const avisoEnSeg = Math.max(segundosRestantes - SESION_AVISO_ANTES_SEGUNDOS, 2);
+  sessionWarningTimer = setTimeout(mostrarAvisoExpiracion, avisoEnSeg*1000);
+}
+
+// Aviso tipo banco: "tu sesion esta por terminar, ¿deseas continuar?".
+// Vive en su PROPIO overlay (sessionWarningOverlay), no en el modal
+// normal del sistema, para no reemplazar algo que el usuario tuviera
+// abierto en ese momento (ej. un formulario a medio llenar).
+function mostrarAvisoExpiracion(){
+  document.getElementById('sessionWarningBody').innerHTML = `
+    <h3>Tu sesión está por terminar</h3>
+    <p style="font-size:13px;margin-bottom:16px;">¿Deseas continuar conectado?</p>
+    <div class="modal-actions"><div class="btn block" id="btnNoExtenderSesion">No</div><div class="btn primary block" id="btnExtenderSesion">Sí, continuar</div></div>`;
+  document.getElementById('sessionWarningOverlay').classList.add('open');
+  sessionExpireTimer = setTimeout(()=>{
+    document.getElementById('sessionWarningOverlay').classList.remove('open');
+    manejarSesionInvalida();
+  }, SESION_AVISO_ANTES_SEGUNDOS*1000);
+  document.getElementById('btnExtenderSesion').addEventListener('click', async ()=>{
+    document.getElementById('sessionWarningOverlay').classList.remove('open');
+    clearTimeout(sessionExpireTimer);
+    const json = await apiCall('renovar_sesion', {}, [], 'Extendiendo sesión...');
+    if(json && json.ok){ fijarSesion(SESSION.token, SESSION.usuario, SESSION.esAdmin, SESSION.debeCambiarPassword, json.expiraEnSegundos); showToast('Sesión extendida'); }
+    else { manejarSesionInvalida(); }
+  });
+  document.getElementById('btnNoExtenderSesion').addEventListener('click', ()=>{
+    document.getElementById('sessionWarningOverlay').classList.remove('open');
+    clearTimeout(sessionExpireTimer);
+    logoutUsuario();
+  });
+}
+
+// Se llama en cuanto CUALQUIER peticion (GET o POST) regresa
+// "session_invalid" — token vencido, borrado, o nunca existio.
+function manejarSesionInvalida(mensaje){
+  clearTimeout(sessionWarningTimer); clearTimeout(sessionExpireTimer);
+  document.getElementById('sessionWarningOverlay').classList.remove('open');
+  SESSION = { token:null, usuario:null, esAdmin:false, debeCambiarPassword:false, duracionSegundos:0, renovadaEn:0 };
+  borrarSesionGuardada();
+  mostrarPantallaLogin(mensaje || 'Tu sesión terminó. Vuelve a iniciar sesión.');
+}
+
+async function logoutUsuario(){
+  clearTimeout(sessionWarningTimer); clearTimeout(sessionExpireTimer);
+  try{ await apiCall('logout', {}, [], 'Cerrando sesión...'); }catch(err){ /* si no hay conexion, se limpia igual del lado del navegador */ }
+  SESSION = { token:null, usuario:null, esAdmin:false, debeCambiarPassword:false, duracionSegundos:0, renovadaEn:0 };
+  borrarSesionGuardada();
+  mostrarPantallaLogin();
+}
+
+function mostrarPantallaLogin(mensajeError){
+  clearTimeout(sessionWarningTimer); clearTimeout(sessionExpireTimer);
+  document.getElementById('sessionWarningOverlay').classList.remove('open');
+  document.getElementById('loginScreen').classList.add('open');
+  document.getElementById('loginBody').innerHTML = `
+    <h3>Iniciar sesión</h3>
+    <p class="subtle" style="margin-bottom:16px;">Control Dental App</p>
+    ${mensajeError ? `<p style="color:var(--amber);font-size:13px;margin-bottom:12px;">${mensajeError}</p>` : ''}
+    <div class="field" style="margin-bottom:12px;"><label>Usuario</label><input id="loginUsuario" autocomplete="username" maxlength="10" style="text-transform:uppercase;"></div>
+    <div class="field" style="margin-bottom:18px;"><label>Contraseña</label><input id="loginPassword" type="password" autocomplete="current-password"></div>
+    <div class="btn primary block" id="btnHacerLogin">Entrar</div>`;
+  document.getElementById('loginUsuario').addEventListener('input', e=>{ e.target.value = e.target.value.toUpperCase(); });
+  const intentarLogin = async ()=>{
+    const usuario = document.getElementById('loginUsuario').value.trim();
+    const password = document.getElementById('loginPassword').value;
+    if(!usuario || !password) return showToast('Completa usuario y contraseña');
+    showMask('Verificando...');
+    let json;
+    try{
+      const res = await fetch(CONFIG.API_URL, { method:'POST', body: JSON.stringify({ token:null, action:'login', payload:{usuario, password} }), cache:'no-store' });
+      json = await res.json();
+    }catch(err){ hideMask(); mostrarPantallaLogin('No se pudo conectar. Intenta de nuevo.'); return; }
+    hideMask();
+    if(!json || json.error){ mostrarPantallaLogin(json && json.error ? json.error : 'No se pudo iniciar sesión.'); return; }
+    fijarSesion(json.token, json.usuario, json.esAdmin, json.debeCambiarPassword, json.expiraEnSegundos);
+    document.getElementById('loginScreen').classList.remove('open');
+    if(SESSION.debeCambiarPassword){ mostrarPantallaCambioForzado(); return; }
+    showMask('Cargando información...');
+    await loadData(); hidratarConfigDesdeSheet(); hideMask(); render();
+  };
+  document.getElementById('btnHacerLogin').addEventListener('click', intentarLogin);
+  document.getElementById('loginPassword').addEventListener('keydown', e=>{ if(e.key==='Enter') intentarLogin(); });
+}
+
+// Pantalla de cambio OBLIGATORIO tras un reseteo de contraseña por el
+// admin — sin opcion de saltarla ni de navegar a otra pestaña hasta
+// completarla. No pide la contraseña "actual" (la temporal) porque el
+// login que acaba de pasar ya probo esa identidad.
+function mostrarPantallaCambioForzado(){
+  document.getElementById('loginScreen').classList.add('open');
+  document.getElementById('loginBody').innerHTML = `
+    <h3>Cambia tu contraseña</h3>
+    <p class="subtle" style="margin-bottom:16px;">Tu contraseña es temporal. Define una nueva antes de continuar.</p>
+    <div class="field" style="margin-bottom:12px;"><label>Contraseña nueva</label><input id="cpfNueva" type="password"></div>
+    <div class="field" style="margin-bottom:18px;"><label>Confirmar contraseña nueva</label><input id="cpfConfirmar" type="password"></div>
+    <div class="btn primary block" id="btnGuardarCambioForzado">Guardar y continuar</div>`;
+  document.getElementById('btnGuardarCambioForzado').addEventListener('click', async ()=>{
+    const nueva = document.getElementById('cpfNueva').value;
+    const confirmar = document.getElementById('cpfConfirmar').value;
+    if(!nueva || nueva.length<4) return showToast('La contraseña debe tener al menos 4 caracteres');
+    if(nueva!==confirmar) return showToast('Las contraseñas no coinciden');
+    const json = await apiCall('cambiar_password', { passwordNueva: nueva }, [], 'Guardando...');
+    if(!json || json.error) return showToast(json && json.error ? json.error : 'No se pudo cambiar la contraseña');
+    SESSION.debeCambiarPassword = false; guardarSesion();
+    document.getElementById('loginScreen').classList.remove('open');
+    showMask('Cargando información...');
+    await loadData(); hidratarConfigDesdeSheet(); hideMask(); render();
+    showToast('Contraseña actualizada');
+  });
+}
+
 /* Ciclo 1 / Ronda 3 (5c), vigente en Ronda 4 — bug real encontrado:
    antes, CUALQUIER falla al recargar (una respuesta lenta, un hipo de
    red, lo que sea) borraba TODA la informacion ya cargada y la
@@ -582,11 +744,16 @@ async function loadData(){
     // respuesta vieja en vez de ir de verdad al servidor — eso hacia
     // que "Sincronizar" pareciera no traer los cambios hechos desde
     // otro dispositivo.
-    const res = await fetch(CONFIG.API_URL + '?client=' + encodeURIComponent(CONFIG.CLIENT_ID) + '&_ts=' + Date.now(), { cache:'no-store' });
+    const res = await fetch(CONFIG.API_URL + '?client=' + encodeURIComponent(CONFIG.CLIENT_ID) + '&token=' + encodeURIComponent(SESSION.token||'') + '&_ts=' + Date.now(), { cache:'no-store' });
     const json = await res.json();
+    // Fase 2 — "session_invalid" es un valor reconocido especificamente
+    // para mostrar la pantalla de login de nuevo, distinto de cualquier
+    // otro error (ese SI se muestra como LOAD_ERROR normal en pantalla).
+    if(json && json.error==='session_invalid'){ manejarSesionInvalida(); return false; }
     if(json && json.error){ LOAD_ERROR = json.error; if(esCargaInicial) DATA = emptyShell(); return false; }
     if(!json || !Array.isArray(json.pacientes)){ LOAD_ERROR = 'La API respondió con un formato inesperado.'; if(esCargaInicial) DATA = emptyShell(); return false; }
     DATA = json;
+    if(json.sesionEsAdmin!==undefined) SESSION.esAdmin = json.sesionEsAdmin; // por si el rol cambio mientras la sesion seguia activa
     return true;
   }catch(err){
     console.error('Sin conexion a la API.', err);
@@ -635,13 +802,15 @@ async function syncData(keys){
     // realmente quedo escrito) y siempre con la misma URL por hoja — la
     // mas propensa a regresar una copia vieja cacheada por el
     // navegador (ej. el horario "desapareciendo" tras guardarlo).
-    const res = await fetch(CONFIG.API_URL + '?client=' + encodeURIComponent(CONFIG.CLIENT_ID) + '&sheets=' + encodeURIComponent(keys.join(',')) + '&_ts=' + Date.now(), { cache:'no-store' });
+    const res = await fetch(CONFIG.API_URL + '?client=' + encodeURIComponent(CONFIG.CLIENT_ID) + '&sheets=' + encodeURIComponent(keys.join(',')) + '&token=' + encodeURIComponent(SESSION.token||'') + '&_ts=' + Date.now(), { cache:'no-store' });
     const json = await res.json();
+    if(json && json.error==='session_invalid'){ manejarSesionInvalida(); return; }
     if(json && !json.error){
       keys.forEach(k=>{ if(json[k]!==undefined) DATA[k] = json[k]; });
       if(json.referidos!==undefined) DATA.referidos = json.referidos;
       if(json.comisionMoneda!==undefined) DATA.comisionMoneda = json.comisionMoneda;
       if(json.comisionMonto!==undefined) DATA.comisionMonto = json.comisionMonto;
+      if(json.usuarios!==undefined) DATA.usuarios = json.usuarios;
     }
   }catch(err){ console.error('Error al sincronizar '+keys.join(','), err); }
 }
@@ -662,12 +831,17 @@ async function syncData(keys){
    unica forma de traer todo de nuevo es el boton manual de
    "Sincronizar con otros dispositivos" en Configuracion, para cuando de
    verdad hay alguien mas usando el sistema en otro dispositivo. */
-async function apiCall(action, payload, syncKeys){
+async function apiCall(action, payload, syncKeys, maskText){
   if(!CONFIG.API_URL) return null;
-  showMask('Guardando...');
+  showMask(maskText || 'Guardando...');
   try{
-    const res = await fetch(CONFIG.API_URL, { method:'POST', body: JSON.stringify({ client:CONFIG.CLIENT_ID, action, payload }), cache:'no-store' });
+    const res = await fetch(CONFIG.API_URL, { method:'POST', body: JSON.stringify({ token: SESSION.token, client:CONFIG.CLIENT_ID, action, payload }), cache:'no-store' });
     const json = await res.json();
+    // Fase 2 — cualquier accion (salvo "login", que nunca llega por esta
+    // funcion con token valido de todos modos) puede regresar
+    // "session_invalid" si el token vencio entre que se cargo la pantalla
+    // y que se dio clic en algo — se maneja igual en cualquier caso.
+    if(json && json.error==='session_invalid'){ hideMask(); manejarSesionInvalida(); return json; }
     if(json && !json.error && !json.conflict && syncKeys && syncKeys.length){
       showMask('Actualizando...');
       await syncData(syncKeys);
@@ -3269,7 +3443,36 @@ function renderConfiguracionHTML(){
   const porDia = {};
   DIAS_ORDEN.forEach(d=>porDia[d]=[]);
   dias.forEach(d=>{ if(!porDia[d.Dia]) porDia[d.Dia]=[]; porDia[d.Dia].push(d); });
+  // Fase 2 (usuarios/login) — estas 2 tarjetas solo existen en modo real
+  // (con sesion activa) — en modo DEMO no hay ningun concepto de usuario
+  // conectado que mostrar.
+  const miCuentaHTML = !CONFIG.API_URL ? '' : `
+  <div class="card config-card" style="margin-bottom:16px;" id="miCuentaCard">
+    <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg>Mi cuenta</div>
+    <p class="subtle" style="margin-bottom:14px;">Conectado como <b>${SESSION.usuario||''}</b>${SESSION.esAdmin?' (Administrador)':''}</p>
+    <div class="btn" id="btnCambiarMiPassword" style="margin-bottom:10px;">Cambiar mi contraseña</div>
+    <div class="btn" id="btnCerrarSesion">Cerrar sesión</div>
+  </div>`;
+  const usuariosHTML = (!CONFIG.API_URL || !SESSION.esAdmin) ? '' : `
+  <div class="card config-card" style="margin-bottom:16px;" id="usuariosCard">
+    <div class="card-head" style="margin-bottom:10px;">
+      <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/></svg>Usuarios del sistema</div>
+      <span class="link-btn" id="btnAgregarUsuario">+ Agregar usuario</span>
+    </div>
+    <div id="usuariosListaBox">
+      ${(DATA.usuarios||[]).map(u=>`
+        <div class="referral-row">
+          <span>${u.Usuario}${u.EsAdmin?' <span class="chip">Admin</span>':''}</span>
+          <span style="display:flex;align-items:center;gap:8px;">
+            <b style="color:${u.Activo?'var(--teal)':'var(--text-mute)'};font-size:12px;">${u.Activo?'Activo':'Inactivo'}</b>
+            <div class="btn sm" data-toggle-usuario="${u.Usuario}" data-activo="${u.Activo}">${u.Activo?'Desactivar':'Activar'}</div>
+            <div class="btn sm" data-reset-usuario="${u.Usuario}">Restablecer contraseña</div>
+          </span>
+        </div>`).join('') || '<div class="empty">Sin usuarios registrados</div>'}
+    </div>
+  </div>`;
   return `
+  ${miCuentaHTML}${usuariosHTML}
   <div class="card config-card" style="margin-bottom:16px;">
     <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/></svg>Datos de la clínica</div>
     <div class="field" style="margin-bottom:12px;"><label>Consultorio</label><input value="${DATA.clienteNombreConsultorio || 'Sin definir — contacta a soporte'}" readonly></div>
@@ -3728,8 +3931,92 @@ function afterRenderHooks(){
       else { DATA.horario = nuevoHorario; }
       showToast('Horario guardado'); render();
     });
+
+    // Fase 2 (usuarios/login) — estos botones solo existen en el DOM
+    // cuando CONFIG.API_URL esta definido (ver renderConfiguracionHTML,
+    // miCuentaHTML/usuariosHTML se omiten por completo en modo DEMO).
+    if(CONFIG.API_URL){
+      document.getElementById('btnCambiarMiPassword').addEventListener('click', ()=>{
+        openModal(`
+          <h3>Cambiar mi contraseña</h3>
+          <div class="field" style="margin-bottom:12px;"><label>Contraseña actual</label><input id="cpActual" type="password"></div>
+          <div class="field" style="margin-bottom:12px;"><label>Contraseña nueva</label><input id="cpNueva" type="password"></div>
+          <div class="field" style="margin-bottom:18px;"><label>Confirmar contraseña nueva</label><input id="cpConfirmar" type="password"></div>
+          <div class="modal-actions"><div class="btn block" onclick="closeModal()">Cancelar</div><div class="btn primary block" id="btnGuardarCambioPassword">Guardar</div></div>`);
+        document.getElementById('btnGuardarCambioPassword').addEventListener('click', async ()=>{
+          const actual = document.getElementById('cpActual').value;
+          const nueva = document.getElementById('cpNueva').value;
+          const confirmar = document.getElementById('cpConfirmar').value;
+          if(!actual || !nueva) return showToast('Completa todos los campos');
+          if(nueva.length<4) return showToast('La contraseña nueva debe tener al menos 4 caracteres');
+          if(nueva!==confirmar) return showToast('Las contraseñas no coinciden');
+          const json = await apiCall('cambiar_password', { passwordActual: actual, passwordNueva: nueva });
+          if(json && json.ok){ closeModal(); showToast('Contraseña actualizada'); }
+          else showToast(json && json.error ? json.error : 'No se pudo cambiar la contraseña');
+        });
+      });
+      document.getElementById('btnCerrarSesion').addEventListener('click', ()=>{
+        openModal(`
+          <h3>Cerrar sesión</h3>
+          <p style="font-size:13px;margin-bottom:16px;">¿Seguro que deseas cerrar tu sesión?</p>
+          <div class="modal-actions"><div class="btn block" onclick="closeModal()">Cancelar</div><div class="btn primary block" id="btnConfirmarCerrarSesion">Sí, cerrar sesión</div></div>`);
+        document.getElementById('btnConfirmarCerrarSesion').addEventListener('click', ()=>{ closeModal(); logoutUsuario(); });
+      });
+    }
+    // Administracion de usuarios — estos botones solo existen si ademas
+    // el usuario conectado es admin (ver usuariosHTML en renderConfiguracionHTML).
+    if(CONFIG.API_URL && SESSION.esAdmin){
+      document.getElementById('btnAgregarUsuario').addEventListener('click', ()=>{
+        openModal(`
+          <h3>Agregar usuario</h3>
+          <div class="field" style="margin-bottom:12px;"><label>Usuario (máx. 10 caracteres, sin espacios)</label><input id="nuUsuario" maxlength="10" style="text-transform:uppercase;"></div>
+          <div class="field" style="margin-bottom:12px;"><label>Contraseña inicial</label><input id="nuPassword" type="password"></div>
+          <div class="field" style="margin:0 0 20px;"><label style="display:flex;align-items:center;gap:10px;cursor:pointer;"><input type="checkbox" id="nuEsAdmin"> Es administrador</label></div>
+          <div class="modal-actions"><div class="btn block" onclick="closeModal()">Cancelar</div><div class="btn primary block" id="btnGuardarNuevoUsuario">Guardar</div></div>`);
+        document.getElementById('nuUsuario').addEventListener('input', e=>{ e.target.value = e.target.value.toUpperCase().replace(/\s/g,'').slice(0,10); });
+        document.getElementById('btnGuardarNuevoUsuario').addEventListener('click', async ()=>{
+          const usuario = document.getElementById('nuUsuario').value.trim();
+          const password = document.getElementById('nuPassword').value;
+          const esAdmin = document.getElementById('nuEsAdmin').checked;
+          if(!usuario || !password) return showToast('Completa usuario y contraseña');
+          const json = await apiCall('add_usuario', { usuario, password, esAdmin }, ['usuarios']);
+          if(json && json.ok){ closeModal(); showToast('Usuario agregado'); render(); }
+          else showToast(json && json.error ? json.error : 'No se pudo agregar el usuario');
+        });
+      });
+      document.querySelectorAll('[data-toggle-usuario]').forEach(btn=>{
+        btn.addEventListener('click', async ()=>{
+          const usuario = btn.dataset.toggleUsuario;
+          const activoActual = btn.dataset.activo === 'true';
+          const json = await apiCall('set_estado_usuario', { usuario, activo: !activoActual }, ['usuarios']);
+          if(json && json.ok){ showToast(!activoActual ? 'Usuario activado' : 'Usuario desactivado'); render(); }
+          else showToast(json && json.error ? json.error : 'No se pudo actualizar el usuario');
+        });
+      });
+      document.querySelectorAll('[data-reset-usuario]').forEach(btn=>{
+        btn.addEventListener('click', async ()=>{
+          const usuario = btn.dataset.resetUsuario;
+          const json = await apiCall('reset_password_usuario', { usuario }, ['usuarios']);
+          if(!json || !json.ok) return showToast(json && json.error ? json.error : 'No se pudo restablecer la contraseña');
+          // Mismo mecanismo que "Compartir" en Referidos — el sistema no
+          // manda nada por si solo, el admin decide por donde compartirlo.
+          const mensaje = `Tu contraseña temporal para ingresar a Control Dental App es: ${json.passwordTemporal}. No olvides cambiarla.`;
+          openModal(`
+            <h3>Contraseña restablecida</h3>
+            <p class="subtle" style="margin-bottom:12px;">Esta es la única vez que se muestra — compártela con ${usuario} por el medio que prefieras.</p>
+            <div class="referral-code-box"><span class="subtle">Temporal</span><b>${json.passwordTemporal}</b></div>
+            <div class="btn primary block" id="btnCompartirPasswordTemp" style="margin:14px 0 10px;">Compartir</div>
+            <div class="modal-actions"><div class="btn block" onclick="closeModal()">Cerrar</div></div>`);
+          document.getElementById('btnCompartirPasswordTemp').addEventListener('click', async ()=>{
+            if(navigator.share){ try{ await navigator.share({ text: mensaje }); } catch(err){ /* cancelado, no es error real */ } }
+            else { try{ await navigator.clipboard.writeText(mensaje); showToast('Mensaje copiado — pégalo donde quieras'); } catch(err){ showToast('No se pudo copiar. Copia la contraseña a mano: '+json.passwordTemporal); } }
+          });
+        });
+      });
+    }
   }
 }
+
 
 // #57 (auditoria arquitectonica) — buscador + paginador de 5 en 5, mismo
 // patron ya usado en Referidos que en los catalogos principales
@@ -3942,7 +4229,34 @@ function showPendientesModal(){
   initListaPendientes();
 }
 
-(async function init(){ await loadData(); hidratarConfigDesdeSheet(); hideMask(); render(); })();
+// Fase 2 (usuarios/login) — en modo DEMO (sin CONFIG.API_URL) el login
+// se omite por completo, decision explicita de Sergio para no estorbarle
+// a un prospecto viendo la demo. En modo real, se busca una sesion ya
+// guardada en localStorage; si existe se calcula cuanto le queda (ver
+// comentario de fijarSesion/programarAvisoDesdeRestantes arriba) e
+// intenta cargar datos con ella — si el servidor la rechaza,
+// loadData() ya llama a manejarSesionInvalida() sola. Sin sesion
+// guardada, se muestra login de una vez.
+(async function init(){
+  if(!CONFIG.API_URL){ await loadData(); hidratarConfigDesdeSheet(); hideMask(); render(); return; }
+  const guardada = cargarSesionGuardada();
+  if(guardada && guardada.token){
+    SESSION = guardada;
+    const elapsedSeg = (Date.now() - (guardada.renovadaEn||0)) / 1000;
+    const restantes = (guardada.duracionSegundos||0) - elapsedSeg;
+    if(restantes <= 0){ hideMask(); manejarSesionInvalida(); return; }
+    const ok = await loadData();
+    if(!ok){ return; } // loadData ya mostro login o el error correspondiente
+    hidratarConfigDesdeSheet();
+    hideMask();
+    if(SESSION.debeCambiarPassword){ mostrarPantallaCambioForzado(); return; }
+    programarAvisoDesdeRestantes(restantes);
+    render();
+    return;
+  }
+  hideMask();
+  mostrarPantallaLogin();
+})();
 </script>
 </body>
 </html>

@@ -580,7 +580,7 @@
 Chart.defaults.color = '#8FA1AE';
 Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
 
-const CONFIG = { API_URL: "https://script.google.com/macros/s/AKfycbzJw5C1JUer304IuXsJHB_hiYz763aNVjgSXwB9tQ_vfQTMG6vvoLaUd-RvEEwEuoBw/exec", CLIENT_ID: "DEMO", CURRENCY: "MXN", DIAS_SIN_VISITA: 60, PHONE_COUNTRY: "MX", FORMATO_HORA: "24h", FORMATO_FECHA: "iso", SEPARADOR: "es-MX", DECIMALES_PRECIO: false, PRIMER_DIA_SEMANA: "lunes" };
+const CONFIG = { API_URL: "https://script.google.com/macros/s/AKfycbwR0rDkhyIxHbr1_5xamSqDPshyeCBZXzE0mvdVa94zcBCtfVyLRUwzE7hkA9R2T6vF/exec", CLIENT_ID: "DEMO", CURRENCY: "MXN", DIAS_SIN_VISITA: 60, PHONE_COUNTRY: "MX", FORMATO_HORA: "24h", FORMATO_FECHA: "iso", SEPARADOR: "es-MX", DECIMALES_PRECIO: false, PRIMER_DIA_SEMANA: "lunes" };
 const CURRENCIES = {
   MXN:{symbol:'$',nombre:'Peso mexicano'}, USD:{symbol:'$',nombre:'Dólar estadounidense'},
   COP:{symbol:'$',nombre:'Peso colombiano'}, EUR:{symbol:'€',nombre:'Euro'},
@@ -973,6 +973,17 @@ function formatearFechaCorta(fechaISO){
   const usaTexto = CONFIG.FORMATO_FECHA==='iso-texto' || CONFIG.FORMATO_FECHA==='dmy-texto';
   const mesOut = usaTexto ? mesTxt : m;
   return usaDMY ? `${d}-${mesOut}` : `${mesOut}-${d}`;
+}
+// Ronda 6 (30/08-31/08) — "Fecha_Actualizacion" es un timestamp
+// combinado "YYYY-MM-DDTHH:mm" (sin segundos, decision explicita de
+// Sergio). Se separa por la "T" y se reusan formatearFecha()/
+// formatearHora() para respetar el formato de fecha/hora que el doctor
+// ya tiene configurado, en vez de inventar un formato aparte solo para
+// esta columna.
+function formatearFechaActualizacion(timestamp){
+  if(!timestamp) return '—';
+  const [fechaParte, horaParte] = timestamp.split('T');
+  return `${formatearFecha(fechaParte)} ${formatearHora(horaParte)}`;
 }
 function formatearHora(horaHHMM){
   if(!horaHHMM) return '';
@@ -2010,7 +2021,7 @@ function renderPacientesHTML(){
     <div class="btn primary" id="btnAddPaciente">+ Nuevo paciente</div>
   </div>
   <div class="table-card" id="pacTableBlock">
-    <div class="table-scroll"><table><thead><tr>${thSort('pacientes','Paciente','Nombre')}${thSort('pacientes','Telefono','Telefono')}${thSort('pacientes','Ultima visita','Ultima_Visita')}${thSort('pacientes','Tratamientos','Tratamientos')}${thSort('pacientes','Estado','Estado')}${thSort('pacientes','Saldo','Saldo')}</tr></thead><tbody id="pacTbody"></tbody></table></div>
+    <div class="table-scroll"><table><thead><tr>${thSort('pacientes','Paciente','Nombre')}${thSort('pacientes','Telefono','Telefono')}${thSort('pacientes','Ultima visita','Ultima_Visita')}${thSort('pacientes','Tratamientos','Tratamientos')}${thSort('pacientes','Estado','Estado')}${thSort('pacientes','Saldo','Saldo')}${thSort('pacientes','Usuario','Usuario')}${thSort('pacientes','Fecha actualización','Fecha_Actualizacion')}</tr></thead><tbody id="pacTbody"></tbody></table></div>
     <div id="pacPaginador"></div>
   </div>`;
 }
@@ -2152,8 +2163,8 @@ function fillPacientesTable(filter){
     const trats = tratArr(p.Tratamientos);
     const tratLabel = trats.length===0 ? '—' : (trats.length===1 ? trats[0] : `${trats[0]} <span class="subtle">+${trats.length-1}</span>`);
     const estadoBadge = p.Estado==='Inactivo' ? `<span class="badge inactive">Inactivo</span>` : `<span class="badge ok">Activo</span>`;
-    return `<tr class="clickable" data-pac="${p.ID}"><td>${p.Nombre}</td><td>${p.Telefono}</td><td>${formatearFecha(ultimaVisitaEfectiva(p))}</td><td>${tratLabel}</td><td>${estadoBadge}</td><td>${saldo>0?`<span class="badge pend">${fmtMoney(saldo)}</span>`:`<span class="badge ok">Al corriente</span>`}</td></tr>`;
-  }).join('') || '<tr><td colspan="6" class="empty">Sin resultados</td></tr>';
+    return `<tr class="clickable" data-pac="${p.ID}"><td>${p.Nombre}</td><td>${p.Telefono}</td><td>${formatearFecha(ultimaVisitaEfectiva(p))}</td><td>${tratLabel}</td><td>${estadoBadge}</td><td>${saldo>0?`<span class="badge pend">${fmtMoney(saldo)}</span>`:`<span class="badge ok">Al corriente</span>`}</td><td>${p.Usuario||'—'}</td><td>${formatearFechaActualizacion(p.Fecha_Actualizacion)}</td></tr>`;
+  }).join('') || '<tr><td colspan="8" class="empty">Sin resultados</td></tr>';
   tbody.querySelectorAll('tr[data-pac]').forEach(tr=>{ tr.addEventListener('click', ()=> showPacienteDetalle(tr.dataset.pac)); });
   const pagBox = document.getElementById('pacPaginador');
   if(pagBox){ pagBox.innerHTML = renderPaginador('pacientes', total, totalPaginas); attachPaginadorEvents('pacientes', ()=>fillPacientesTable(filter)); }
@@ -2277,7 +2288,7 @@ function renderFinanzasHTML(){
         <div class="btn primary sm" id="btnAddPago">+ Registrar pago</div>
       </div>
       <div class="table-card" id="pagTableBlock">
-        <div class="table-scroll"><table><thead><tr>${thSort('pagos','Paciente','Paciente')}${thSort('pagos','Tratamiento','Tratamiento')}${thSort('pagos','Categoría','Categoria')}${thSort('pagos','Inicio Tratamiento','Inicio_Tratamiento')}${thSort('pagos','Último pago','Ultimo_Pago')}${thSort('pagos','Total','Monto_Total')}${thSort('pagos','Pagado','Monto_Pagado')}${thSort('pagos','Saldo','Saldo')}<th></th></tr></thead><tbody id="pagosTbody"></tbody></table></div>
+        <div class="table-scroll"><table><thead><tr>${thSort('pagos','Paciente','Paciente')}${thSort('pagos','Tratamiento','Tratamiento')}${thSort('pagos','Categoría','Categoria')}${thSort('pagos','Inicio Tratamiento','Inicio_Tratamiento')}${thSort('pagos','Último pago','Ultimo_Pago')}${thSort('pagos','Total','Monto_Total')}${thSort('pagos','Pagado','Monto_Pagado')}${thSort('pagos','Saldo','Saldo')}${thSort('pagos','Usuario','Usuario')}${thSort('pagos','Fecha actualización','Fecha_Actualizacion')}<th></th></tr></thead><tbody id="pagosTbody"></tbody></table></div>
         <div id="pagPaginador"></div>
       </div>
     </div>
@@ -2291,7 +2302,7 @@ function renderFinanzasHTML(){
         <div class="btn primary sm" id="btnAddGasto">+ Registrar gasto</div>
       </div>
       <div class="table-card" id="gastoTableBlock">
-        <div class="table-scroll"><table><thead><tr>${thSort('gastos','Fecha','Fecha')}${thSort('gastos','Concepto','Concepto')}${thSort('gastos','Categoría','Categoria')}${thSort('gastos','Monto','Monto')}</tr></thead><tbody id="gastosTbody"></tbody></table></div>
+        <div class="table-scroll"><table><thead><tr>${thSort('gastos','Fecha','Fecha')}${thSort('gastos','Concepto','Concepto')}${thSort('gastos','Categoría','Categoria')}${thSort('gastos','Monto','Monto')}${thSort('gastos','Usuario','Usuario')}${thSort('gastos','Fecha actualización','Fecha_Actualizacion')}</tr></thead><tbody id="gastosTbody"></tbody></table></div>
         <div id="gastoPaginador"></div>
       </div>
     </div>
@@ -2324,7 +2335,7 @@ function fillPagosTable(filter){
   // los 2 botones SIEMPRE se renderizan, y el que no aplica queda oculto
   // con visibility:hidden (ocupa el mismo espacio, sin verse) — mismo
   // patron que ya usaba "Abonar" para el caso de saldo en $0.
-  tbody.innerHTML = rows.map(p=>`<tr><td>${p.Paciente}</td><td>${p.Tratamiento}</td><td>${p.Categoria||'Otros'}</td><td>${formatearFecha(p.Inicio_Tratamiento)}</td><td>${formatearFecha(p.Ultimo_Pago)}</td><td>${fmtMoney(p.Monto_Total)}</td><td>${fmtMoney(p.Monto_Pagado)}</td><td>${Number(p.Saldo)>0?`<span class="badge pend">${fmtMoney(p.Saldo)}</span>`:`<span class="badge ok">$0</span>`}</td><td><div style="display:flex;gap:6px;align-items:center;"><div class="btn sm" data-abonar="${p.ID}" style="${Number(p.Saldo)>0?'':'visibility:hidden;'}">Abonar</div><div class="btn sm" data-eliminar-pago="${p.ID}" style="color:var(--red);border-color:var(--red);${Number(p.Monto_Pagado)===0?'':'visibility:hidden;'}">Eliminar</div></div></td></tr>`).join('') || '<tr><td colspan="9" class="empty">Sin resultados</td></tr>';
+  tbody.innerHTML = rows.map(p=>`<tr><td>${p.Paciente}</td><td>${p.Tratamiento}</td><td>${p.Categoria||'Otros'}</td><td>${formatearFecha(p.Inicio_Tratamiento)}</td><td>${formatearFecha(p.Ultimo_Pago)}</td><td>${fmtMoney(p.Monto_Total)}</td><td>${fmtMoney(p.Monto_Pagado)}</td><td>${Number(p.Saldo)>0?`<span class="badge pend">${fmtMoney(p.Saldo)}</span>`:`<span class="badge ok">$0</span>`}</td><td>${p.Usuario||'—'}</td><td>${formatearFechaActualizacion(p.Fecha_Actualizacion)}</td><td><div style="display:flex;gap:6px;align-items:center;"><div class="btn sm" data-abonar="${p.ID}" style="${Number(p.Saldo)>0?'':'visibility:hidden;'}">Abonar</div><div class="btn sm" data-eliminar-pago="${p.ID}" style="color:var(--red);border-color:var(--red);${Number(p.Monto_Pagado)===0?'':'visibility:hidden;'}">Eliminar</div></div></td></tr>`).join('') || '<tr><td colspan="11" class="empty">Sin resultados</td></tr>';
   tbody.querySelectorAll('[data-abonar]').forEach(btn=>{ btn.addEventListener('click', ()=> openAbonoModal(btn.dataset.abonar, ()=>{ fillPagosTable(document.getElementById('pagoSearch').value); })); });
   tbody.querySelectorAll('[data-eliminar-pago]').forEach(btn=>{ btn.addEventListener('click', ()=> confirmarEliminarPago(btn.dataset.eliminarPago)); });
   const pagBox = document.getElementById('pagPaginador');
@@ -2340,7 +2351,7 @@ function fillGastosTable(filter){
   const { pageItems: rows, total, totalPaginas } = paginar('gastos', filtrados);
   // Ciclo 2 (Grupo 2) — cada fila es clickeable, igual que Pacientes,
   // para abrir el detalle/edicion de ese gasto.
-  tbody.innerHTML = rows.map(g=>`<tr class="clickable" data-gasto="${g.ID}"><td>${formatearFecha(g.Fecha)}</td><td>${g.Concepto}</td><td>${g.Categoria}</td><td>${fmtMoney(g.Monto)}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">Sin resultados</td></tr>';
+  tbody.innerHTML = rows.map(g=>`<tr class="clickable" data-gasto="${g.ID}"><td>${formatearFecha(g.Fecha)}</td><td>${g.Concepto}</td><td>${g.Categoria}</td><td>${fmtMoney(g.Monto)}</td><td>${g.Usuario||'—'}</td><td>${formatearFechaActualizacion(g.Fecha_Actualizacion)}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">Sin resultados</td></tr>';
   tbody.querySelectorAll('[data-gasto]').forEach(tr=>{ tr.addEventListener('click', ()=> abrirEdicionGasto(tr.dataset.gasto)); });
   const pagBox = document.getElementById('gastoPaginador');
   if(pagBox){ pagBox.innerHTML = renderPaginador('gastos', total, totalPaginas); attachPaginadorEvents('gastos', ()=>fillGastosTable(filter)); }
@@ -2632,7 +2643,7 @@ function renderTratamientosHTML(){
     <div class="btn primary" id="btnAddTratamiento">+ Nuevo tratamiento</div>
   </div>
   <div class="table-card" id="tratTableBlock">
-    <div class="table-scroll"><table><thead><tr>${thSort('tratamientos','Tratamiento','Nombre')}${thSort('tratamientos','Categoría','Categoria')}${thSort('tratamientos','Precio','Precio_MXN')}${thSort('tratamientos','Duración','Duracion_Min')}${thSort('tratamientos','Estado','Estado')}</tr></thead><tbody id="tratTbody"></tbody></table></div>
+    <div class="table-scroll"><table><thead><tr>${thSort('tratamientos','Tratamiento','Nombre')}${thSort('tratamientos','Categoría','Categoria')}${thSort('tratamientos','Precio','Precio_MXN')}${thSort('tratamientos','Duración','Duracion_Min')}${thSort('tratamientos','Estado','Estado')}${thSort('tratamientos','Usuario','Usuario')}${thSort('tratamientos','Fecha actualización','Fecha_Actualizacion')}</tr></thead><tbody id="tratTbody"></tbody></table></div>
     <div id="tratPaginador"></div>
   </div>`;
 }
@@ -2644,7 +2655,7 @@ function fillTratamientosTable(filter){
   const { pageItems: rows, total, totalPaginas } = paginar('tratamientos', filtrados);
   // Ciclo 2 (Grupo 2) — fila clickeable para editar; badge de estado
   // igual que Pacientes.
-  tbody.innerHTML = rows.map(t=>`<tr class="clickable" data-trat="${t.ID}"><td>${t.Nombre}</td><td>${t.Categoria}</td><td>${fmtMoney(t.Precio_MXN)}</td><td>${t.Duracion_Min||30} min</td><td>${t.Estado==='Inactivo'?'<span class="badge inactive">Inactivo</span>':'<span class="badge ok">Activo</span>'}</td></tr>`).join('') || '<tr><td colspan="5" class="empty">Sin resultados</td></tr>';
+  tbody.innerHTML = rows.map(t=>`<tr class="clickable" data-trat="${t.ID}"><td>${t.Nombre}</td><td>${t.Categoria}</td><td>${fmtMoney(t.Precio_MXN)}</td><td>${t.Duracion_Min||30} min</td><td>${t.Estado==='Inactivo'?'<span class="badge inactive">Inactivo</span>':'<span class="badge ok">Activo</span>'}</td><td>${t.Usuario||'—'}</td><td>${formatearFechaActualizacion(t.Fecha_Actualizacion)}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">Sin resultados</td></tr>';
   tbody.querySelectorAll('[data-trat]').forEach(tr=>{ tr.addEventListener('click', ()=> abrirEdicionTratamiento(tr.dataset.trat)); });
   const pagBox = document.getElementById('tratPaginador');
   if(pagBox){ pagBox.innerHTML = renderPaginador('tratamientos', total, totalPaginas); attachPaginadorEvents('tratamientos', ()=>fillTratamientosTable(filter)); }
@@ -3504,7 +3515,7 @@ function renderCitasListHTML(){
       : esPasada
       ? `<div style="display:flex;gap:6px;margin-top:6px;"><div class="btn sm" data-reagendar="${c.ID}">Reagendar</div></div>`
       : `<div style="display:flex;gap:6px;margin-top:6px;"><div class="btn sm" data-reagendar="${c.ID}">Reagendar</div><div class="btn sm danger" data-cancelar="${c.ID}">Cancelar</div></div>`;
-    return `<div class="appt" data-appt-id="${c.ID}" style="${esCancelada?'opacity:.6;':''}"><div class="appt-time">${formatearFechaCorta(c.Fecha)}<br>${formatearHora(c.Hora)}</div><div class="appt-info" style="border-left-color:${color}"><b>${c.Paciente}</b>${etiqueta}<span>${tratArr(c.Tratamientos||c.Tratamiento).join(' + ')} · ${dur} min</span>${acciones}</div></div>`;
+    return `<div class="appt" data-appt-id="${c.ID}" style="${esCancelada?'opacity:.6;':''}"><div class="appt-time">${formatearFechaCorta(c.Fecha)}<br>${formatearHora(c.Hora)}</div><div class="appt-info" style="border-left-color:${color}"><b>${c.Paciente}</b>${etiqueta}<span>${tratArr(c.Tratamientos||c.Tratamiento).join(' + ')} · ${dur} min</span><br><span class="subtle">Registrado por: ${c.Usuario||'—'}</span>${acciones}</div></div>`;
   }).join('') || '<div class="empty">Sin citas</div>';
 }
 /* Vuelve a conectar los botones Reagendar/Cancelar de la lista de Citas —

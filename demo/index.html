@@ -346,7 +346,12 @@
      (z-index:150 de .modal-overlay). loginScreen ademas por encima del
      aviso de sesion (si el aviso llegara a dispararse justo cuando ya se
      esta mostrando login, login gana). */
-  #loginScreen{z-index:600;}
+  /* #74b (reporte del 30/08) — fondo SOLIDO (no translucido como los
+     modales normales) para que el placeholder "Cargando informacion..."
+     de #content no se alcance a ver de fondo mientras no hay sesion
+     iniciada. Los modales normales SI quieren mostrar el dashboard
+     detrás, atenuado — estas 2 pantallas, a proposito, no. */
+  #loginScreen{z-index:600;background:var(--bg);}
   #sessionWarningOverlay{z-index:500;}
   /* #10 (auditoria arquitectonica) — la unidad "vh" en moviles (Chrome/
      Safari) se calcula contra la altura MAXIMA posible de la pantalla,
@@ -379,7 +384,14 @@
   .cat-icon{cursor:pointer;padding:6px 8px;font-size:13px;color:var(--text-dim);border-radius:6px;}
   .cat-icon:hover{background:var(--border);}
   .picker-item:hover{background:#132135;}
-  .blocking-mask{position:fixed;inset:0;background:rgba(11,20,32,.72);z-index:200;display:none;align-items:center;justify-content:center;flex-direction:column;gap:14px;}
+  /* #74b (reporte del 30/08) — z-index subido de 200 a 700: antes
+     quedaba TAPADA por completo detras de #loginScreen (600), asi que
+     showMask() durante el login (ej. "Verificando...") no se alcanzaba
+     a ver nunca, dando la impresion de que no habia pasado nada al dar
+     clic en "Entrar". Esta mascara debe ser SIEMPRE lo mas alto en
+     pantalla, sin importar que otra cosa este abierta, porque su
+     proposito es bloquear cualquier interaccion mientras algo carga. */
+  .blocking-mask{position:fixed;inset:0;background:rgba(11,20,32,.72);z-index:700;display:none;align-items:center;justify-content:center;flex-direction:column;gap:14px;}
   .blocking-mask.show{display:flex;}
   .spinner{width:34px;height:34px;border:3px solid var(--border);border-top-color:var(--teal);border-radius:50%;animation:spin .8s linear infinite;}
   @keyframes spin{to{transform:rotate(360deg);}}
@@ -544,7 +556,7 @@
 Chart.defaults.color = '#8FA1AE';
 Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
 
-const CONFIG = { API_URL: "https://script.google.com/macros/s/AKfycbzRZNH4oGQWZOsEIRJltg0t7mhSCl47pgHo03inQpRkI142jN5Q0HIKua3wxiwSi978wQ/exec", CLIENT_ID: "DEMO", CURRENCY: "MXN", DIAS_SIN_VISITA: 60, PHONE_COUNTRY: "MX", FORMATO_HORA: "24h", FORMATO_FECHA: "iso", SEPARADOR: "es-MX", DECIMALES_PRECIO: false, PRIMER_DIA_SEMANA: "lunes" };
+const CONFIG = { API_URL: "https://script.google.com/macros/s/AKfycbzJw5C1JUer304IuXsJHB_hiYz763aNVjgSXwB9tQ_vfQTMG6vvoLaUd-RvEEwEuoBw/exec", CLIENT_ID: "DEMO", CURRENCY: "MXN", DIAS_SIN_VISITA: 60, PHONE_COUNTRY: "MX", FORMATO_HORA: "24h", FORMATO_FECHA: "iso", SEPARADOR: "es-MX", DECIMALES_PRECIO: false, PRIMER_DIA_SEMANA: "lunes" };
 const CURRENCIES = {
   MXN:{symbol:'$',nombre:'Peso mexicano'}, USD:{symbol:'$',nombre:'Dólar estadounidense'},
   COP:{symbol:'$',nombre:'Peso colombiano'}, EUR:{symbol:'€',nombre:'Euro'},
@@ -671,7 +683,7 @@ function mostrarPantallaLogin(mensajeError){
     <div class="field" style="margin-bottom:12px;"><label>Usuario</label><input id="loginUsuario" autocomplete="username" maxlength="10" style="text-transform:uppercase;"></div>
     <div class="field" style="margin-bottom:18px;"><label>Contraseña</label><input id="loginPassword" type="password" autocomplete="current-password"></div>
     <div class="btn primary block" id="btnHacerLogin">Entrar</div>`;
-  document.getElementById('loginUsuario').addEventListener('input', e=>{ e.target.value = e.target.value.toUpperCase(); });
+  document.getElementById('loginUsuario').addEventListener('input', e=>{ e.target.value = e.target.value.toUpperCase().replace(/\s/g,'').slice(0,10); });
   const intentarLogin = async ()=>{
     const usuario = document.getElementById('loginUsuario').value.trim();
     const password = document.getElementById('loginPassword').value;
@@ -683,6 +695,17 @@ function mostrarPantallaLogin(mensajeError){
       json = await res.json();
     }catch(err){ hideMask(); mostrarPantallaLogin('No se pudo conectar. Intenta de nuevo.'); return; }
     hideMask();
+    // #74c (reporte del 30/08) — "accion no reconocida" durante LOGIN es
+    // un caso especial: significa que el backend contestando esa URL
+    // todavia no tiene la accion "login" en su codigo — casi siempre por
+    // apuntar a la URL de un deployment viejo/equivocado, o por no haber
+    // publicado una Nueva version despues de pegar el Code.gs de esta
+    // ronda. Se reemplaza por un mensaje que señala la causa real, en vez
+    // del generico que no dice nada sobre qué hacer al respecto.
+    if(json && json.error==='accion no reconocida'){
+      mostrarPantallaLogin('Este backend no reconoce el inicio de sesión. Verifica que CONFIG.API_URL apunte al deployment más reciente de este cliente y que se haya publicado una Nueva versión después de actualizar Code.gs.');
+      return;
+    }
     if(!json || json.error){ mostrarPantallaLogin(json && json.error ? json.error : 'No se pudo iniciar sesión.'); return; }
     fijarSesion(json.token, json.usuario, json.esAdmin, json.debeCambiarPassword, json.expiraEnSegundos);
     document.getElementById('loginScreen').classList.remove('open');

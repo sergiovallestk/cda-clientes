@@ -371,11 +371,23 @@
      misma regla a proposito: los navegadores que no soportan "dvh"
      ignoran esa linea y se quedan con el valor "vh" de respaldo; los que
      si la soportan, usan "dvh" por ser la ultima declaracion valida. */
-  .modal{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:22px;width:460px;max-width:100%;max-height:95vh;overflow-y:auto;}
+  .modal{position:relative;background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:22px;width:460px;max-width:100%;max-height:95vh;overflow-y:auto;}
+  /* #74g (reporte del 30/08) — X de cierre para el modal de "Mi cuenta":
+     REEMPLAZA el boton inferior "Cerrar" (no coexisten) para no tener 2
+     formas de "salir sin hacer nada" compitiendo visualmente con las
+     acciones reales (Cambiar contraseña / Cerrar sesion). */
+  .modal-close-x{position:absolute;top:14px;right:14px;background:none;border:none;color:var(--text-mute);font-size:22px;line-height:1;cursor:pointer;padding:4px 8px;}
+  .modal-close-x:hover{color:var(--text);}
   .modal.wide{width:640px;}
   .modal h3{font-size:16px;margin-bottom:16px;}
   .modal-actions{display:flex;gap:10px;margin-top:18px;}
-  .toast{position:fixed;bottom:24px;right:24px;left:24px;background:var(--teal);color:#04241C;padding:12px 18px;border-radius:10px;font-size:13px;font-weight:600;display:none;z-index:160;text-align:center;}
+  /* #74i (reporte del 30/08) — z-index subido de 160 a 800: mismo tipo de
+     bug que .blocking-mask (#8, ronda anterior). El toast SI se disparaba
+     (ej. "Completa usuario y contraseña" al dar clic en Entrar sin datos)
+     pero quedaba tapado detras de #loginScreen (600) y #sessionWarningOverlay
+     (500), dando la impresion de que no habia pasado nada. El toast debe
+     verse SIEMPRE, sin importar que otra cosa este abierta. */
+  .toast{position:fixed;bottom:24px;right:24px;left:24px;background:var(--teal);color:#04241C;padding:12px 18px;border-radius:10px;font-size:13px;font-weight:600;display:none;z-index:800;text-align:center;}
   .toast.show{display:block;}
   .empty{color:var(--text-mute);font-size:13px;padding:24px;text-align:center;}
   .config-card{max-width:560px;}
@@ -1089,41 +1101,58 @@ document.getElementById('navSincronizar').addEventListener('click', ()=>{
 // sistema", que sí se reconectan en cada render() de Configuracion.
 // En modo DEMO (sin CONFIG.API_URL) este icono no existe: no hay ningun
 // concepto de sesion/usuario conectado que mostrar ahi.
-if(CONFIG.API_URL){
-  document.getElementById('navMiCuenta').addEventListener('click', ()=>{
+// Ronda 4 (#74h) — "Cambiar mi contraseña" y "Cerrar sesión" ahora usan
+// pushModalState/volverModal (mismo mecanismo ya usado en Pendientes):
+// al dar "Cancelar" en cualquiera de los 2, se regresa a la tarjeta de
+// Mi cuenta en vez de cerrar todo el modal — es el estandar del sistema
+// para cualquier accion de "segundo nivel" abierta desde otro modal.
+function renderMiCuentaHTML(){
+  return `
+    <button class="modal-close-x" id="btnCerrarMiCuenta" aria-label="Cerrar">&times;</button>
+    <h3>Mi cuenta</h3>
+    <p class="subtle" style="margin-bottom:16px;">Conectado como <b>${SESSION.usuario||''}</b>${SESSION.esAdmin?' (Administrador)':''}</p>
+    <div class="btn" id="btnCambiarMiPassword" style="margin-bottom:10px;">Cambiar mi contraseña</div>
+    <div class="btn" id="btnCerrarSesion">Cerrar sesión</div>`;
+}
+function wireMiCuentaModal(){
+  document.getElementById('btnCerrarMiCuenta').addEventListener('click', closeModal);
+  document.getElementById('btnCambiarMiPassword').addEventListener('click', ()=>{
+    pushModalState(wireMiCuentaModal);
     openModal(`
-      <h3>Mi cuenta</h3>
-      <p class="subtle" style="margin-bottom:16px;">Conectado como <b>${SESSION.usuario||''}</b>${SESSION.esAdmin?' (Administrador)':''}</p>
-      <div class="btn" id="btnCambiarMiPassword" style="margin-bottom:10px;">Cambiar mi contraseña</div>
-      <div class="btn" id="btnCerrarSesion">Cerrar sesión</div>
-      <div class="modal-actions" style="margin-top:14px;"><div class="btn block" onclick="closeModal()">Cerrar</div></div>`);
-    document.getElementById('btnCambiarMiPassword').addEventListener('click', ()=>{
-      openModal(`
-        <h3>Cambiar mi contraseña</h3>
-        <div class="field" style="margin-bottom:12px;"><label>Contraseña actual</label><input id="cpActual" type="password"></div>
-        <div class="field" style="margin-bottom:12px;"><label>Contraseña nueva</label><input id="cpNueva" type="password"></div>
-        <div class="field" style="margin-bottom:18px;"><label>Confirmar contraseña nueva</label><input id="cpConfirmar" type="password"></div>
-        <div class="modal-actions"><div class="btn block" onclick="closeModal()">Cancelar</div><div class="btn primary block" id="btnGuardarCambioPassword">Guardar</div></div>`);
-      document.getElementById('btnGuardarCambioPassword').addEventListener('click', async ()=>{
-        const actual = document.getElementById('cpActual').value;
-        const nueva = document.getElementById('cpNueva').value;
-        const confirmar = document.getElementById('cpConfirmar').value;
-        if(!actual || !nueva) return showToast('Completa todos los campos');
-        if(nueva.length<4) return showToast('La contraseña nueva debe tener al menos 4 caracteres');
-        if(nueva!==confirmar) return showToast('Las contraseñas no coinciden');
-        const json = await apiCall('cambiar_password', { passwordActual: actual, passwordNueva: nueva });
-        if(json && json.ok){ closeModal(); showToast('Contraseña actualizada'); }
-        else showToast(json && json.error ? json.error : 'No se pudo cambiar la contraseña');
-      });
-    });
-    document.getElementById('btnCerrarSesion').addEventListener('click', ()=>{
-      openModal(`
-        <h3>Cerrar sesión</h3>
-        <p style="font-size:13px;margin-bottom:16px;">¿Seguro que deseas cerrar tu sesión?</p>
-        <div class="modal-actions"><div class="btn block" onclick="closeModal()">Cancelar</div><div class="btn primary block" id="btnConfirmarCerrarSesion">Sí, cerrar sesión</div></div>`);
-      document.getElementById('btnConfirmarCerrarSesion').addEventListener('click', ()=>{ closeModal(); logoutUsuario(); });
+      <h3>Cambiar mi contraseña</h3>
+      <div class="field" style="margin-bottom:12px;"><label>Contraseña actual</label><input id="cpActual" type="password"></div>
+      <div class="field" style="margin-bottom:12px;"><label>Contraseña nueva</label><input id="cpNueva" type="password"></div>
+      <div class="field" style="margin-bottom:18px;"><label>Confirmar contraseña nueva</label><input id="cpConfirmar" type="password"></div>
+      <div class="modal-actions"><div class="btn block" id="btnCancelarCambioPassword">Cancelar</div><div class="btn primary block" id="btnGuardarCambioPassword">Guardar</div></div>`);
+    document.getElementById('btnCancelarCambioPassword').addEventListener('click', volverModal);
+    document.getElementById('btnGuardarCambioPassword').addEventListener('click', async ()=>{
+      const actual = document.getElementById('cpActual').value;
+      const nueva = document.getElementById('cpNueva').value;
+      const confirmar = document.getElementById('cpConfirmar').value;
+      if(!actual || !nueva) return showToast('Completa todos los campos');
+      if(nueva.length<4) return showToast('La contraseña nueva debe tener al menos 4 caracteres');
+      if(nueva!==confirmar) return showToast('Las contraseñas no coinciden');
+      const json = await apiCall('cambiar_password', { passwordActual: actual, passwordNueva: nueva });
+      if(json && json.ok){ closeModal(); showToast('Contraseña actualizada'); }
+      else showToast(json && json.error ? json.error : 'No se pudo cambiar la contraseña');
     });
   });
+  document.getElementById('btnCerrarSesion').addEventListener('click', ()=>{
+    pushModalState(wireMiCuentaModal);
+    openModal(`
+      <h3>Cerrar sesión</h3>
+      <p style="font-size:13px;margin-bottom:16px;">¿Seguro que deseas cerrar tu sesión?</p>
+      <div class="modal-actions"><div class="btn block" id="btnCancelarCerrarSesion">Cancelar</div><div class="btn primary block" id="btnConfirmarCerrarSesion">Sí, cerrar sesión</div></div>`);
+    document.getElementById('btnCancelarCerrarSesion').addEventListener('click', volverModal);
+    document.getElementById('btnConfirmarCerrarSesion').addEventListener('click', ()=>{ closeModal(); logoutUsuario(); });
+  });
+}
+if(CONFIG.API_URL){
+  document.getElementById('navMiCuenta').addEventListener('click', ()=>{
+    openModal(renderMiCuentaHTML());
+    wireMiCuentaModal();
+  });
+
 } else {
   document.getElementById('navMiCuenta').style.display = 'none';
 }

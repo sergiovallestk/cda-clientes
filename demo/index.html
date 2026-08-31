@@ -623,7 +623,7 @@ function emptyShell(){
  * completo — decision explicita de Sergio, para no estorbarle a un
  * prospecto viendo la demo con datos falsos. */
 const SESION_STORAGE_KEY = 'cda_sesion';
-const SESION_AVISO_ANTES_SEGUNDOS = 60; // aviso "tu sesion esta por terminar" con este margen antes de expirar
+const SESION_AVISO_ANTES_SEGUNDOS = 120; // aviso "tu sesion esta por terminar" con este margen antes de expirar — #74j (30/08), ampliado de 60 a 120 a peticion de Sergio
 let SESSION = { token:null, usuario:null, esAdmin:false, debeCambiarPassword:false, duracionSegundos:0, renovadaEn:0 };
 let sessionWarningTimer = null;
 let sessionExpireTimer = null;
@@ -654,17 +654,34 @@ function programarAvisoDesdeRestantes(segundosRestantes){
 // Vive en su PROPIO overlay (sessionWarningOverlay), no en el modal
 // normal del sistema, para no reemplazar algo que el usuario tuviera
 // abierto en ese momento (ej. un formulario a medio llenar).
+// #74j (30/08) — contador visible agregado: un setInterval de 1s
+// actualiza el texto mientras el aviso esta abierto, puramente cosmetico
+// (no cambia cuando expira de verdad — eso lo sigue controlando
+// sessionExpireTimer, igual que antes). countdownInterval se limpia en
+// los 3 casos en que este aviso puede terminar: "Si", "No", o que se
+// agote el tiempo solo.
+let sessionCountdownInterval = null;
 function mostrarAvisoExpiracion(){
+  let segundosRestantes = SESION_AVISO_ANTES_SEGUNDOS;
   document.getElementById('sessionWarningBody').innerHTML = `
     <h3>Tu sesión está por terminar</h3>
-    <p style="font-size:13px;margin-bottom:16px;">¿Deseas continuar conectado?</p>
+    <p style="font-size:13px;margin-bottom:16px;">¿Deseas continuar conectado? Se cerrará en <b id="sessionCountdownText">${segundosRestantes}</b> segundos.</p>
     <div class="modal-actions"><div class="btn block" id="btnNoExtenderSesion">No</div><div class="btn primary block" id="btnExtenderSesion">Sí, continuar</div></div>`;
   document.getElementById('sessionWarningOverlay').classList.add('open');
+  clearInterval(sessionCountdownInterval);
+  sessionCountdownInterval = setInterval(()=>{
+    segundosRestantes--;
+    const el = document.getElementById('sessionCountdownText');
+    if(el) el.textContent = Math.max(segundosRestantes, 0);
+    if(segundosRestantes <= 0) clearInterval(sessionCountdownInterval);
+  }, 1000);
   sessionExpireTimer = setTimeout(()=>{
+    clearInterval(sessionCountdownInterval);
     document.getElementById('sessionWarningOverlay').classList.remove('open');
     manejarSesionInvalida();
   }, SESION_AVISO_ANTES_SEGUNDOS*1000);
   document.getElementById('btnExtenderSesion').addEventListener('click', async ()=>{
+    clearInterval(sessionCountdownInterval);
     document.getElementById('sessionWarningOverlay').classList.remove('open');
     clearTimeout(sessionExpireTimer);
     const json = await apiCall('renovar_sesion', {}, [], 'Extendiendo sesión...');
@@ -672,6 +689,7 @@ function mostrarAvisoExpiracion(){
     else { manejarSesionInvalida(); }
   });
   document.getElementById('btnNoExtenderSesion').addEventListener('click', ()=>{
+    clearInterval(sessionCountdownInterval);
     document.getElementById('sessionWarningOverlay').classList.remove('open');
     clearTimeout(sessionExpireTimer);
     logoutUsuario();
@@ -681,7 +699,7 @@ function mostrarAvisoExpiracion(){
 // Se llama en cuanto CUALQUIER peticion (GET o POST) regresa
 // "session_invalid" — token vencido, borrado, o nunca existio.
 function manejarSesionInvalida(mensaje){
-  clearTimeout(sessionWarningTimer); clearTimeout(sessionExpireTimer);
+  clearTimeout(sessionWarningTimer); clearTimeout(sessionExpireTimer); clearInterval(sessionCountdownInterval);
   document.getElementById('sessionWarningOverlay').classList.remove('open');
   SESSION = { token:null, usuario:null, esAdmin:false, debeCambiarPassword:false, duracionSegundos:0, renovadaEn:0 };
   borrarSesionGuardada();
@@ -689,7 +707,7 @@ function manejarSesionInvalida(mensaje){
 }
 
 async function logoutUsuario(){
-  clearTimeout(sessionWarningTimer); clearTimeout(sessionExpireTimer);
+  clearTimeout(sessionWarningTimer); clearTimeout(sessionExpireTimer); clearInterval(sessionCountdownInterval);
   try{ await apiCall('logout', {}, [], 'Cerrando sesión...'); }catch(err){ /* si no hay conexion, se limpia igual del lado del navegador */ }
   SESSION = { token:null, usuario:null, esAdmin:false, debeCambiarPassword:false, duracionSegundos:0, renovadaEn:0 };
   borrarSesionGuardada();

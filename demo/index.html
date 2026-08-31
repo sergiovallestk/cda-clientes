@@ -353,6 +353,12 @@
      detrás, atenuado — estas 2 pantallas, a proposito, no. */
   #loginScreen{z-index:600;background:var(--bg);}
   #sessionWarningOverlay{z-index:500;}
+  /* #74e (reporte del 30/08) — titulo, subtitulo y mensajes de error de
+     estas 2 pantallas centrados; los campos del formulario (etiqueta +
+     input) quedan a la izquierda por legibilidad, como cualquier
+     formulario normal. */
+  #loginBody{text-align:center;}
+  #loginBody .field{text-align:left;}
   /* #10 (auditoria arquitectonica) — la unidad "vh" en moviles (Chrome/
      Safari) se calcula contra la altura MAXIMA posible de la pantalla,
      como si la barra de direcciones ya estuviera oculta — pero justo al
@@ -529,6 +535,12 @@
   <div class="nav-item" data-tab="agendar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>Agenda</div>
   <div class="nav-item" id="navSincronizar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12a9 9 0 0 1-9 9c-2.52 0-4.93-1-6.7-2.8L3 16"/><path d="M3 12a9 9 0 0 1 9-9c2.52 0 4.93 1 6.7 2.8L21 8"/><path d="M3 21v-5h5"/><path d="M21 3v5h-5"/></svg>Sincronizar</div>
   <div class="nav-item" data-tab="configuracion"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9c.2.7.7 1.2 1.5 1.3H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Configuración</div>
+  <!-- #74f (reporte del 30/08) — "Mi cuenta" al final del menu, separado
+       de las pestañas de trabajo (Dashboard/Pacientes/etc), igual que
+       Sincronizar: no navega a ninguna pestaña, abre un modal propio.
+       Se oculta con JS en modo DEMO (sin CONFIG.API_URL), donde no existe
+       ningun concepto de sesion/usuario conectado. -->
+  <div class="nav-item" id="navMiCuenta"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg>Mi cuenta</div>
 </div>
 
 <div class="main">
@@ -683,7 +695,7 @@ function mostrarPantallaLogin(mensajeError){
     <div class="field" style="margin-bottom:12px;"><label>Usuario</label><input id="loginUsuario" autocomplete="username" maxlength="10" style="text-transform:uppercase;"></div>
     <div class="field" style="margin-bottom:18px;"><label>Contraseña</label><input id="loginPassword" type="password" autocomplete="current-password"></div>
     <div class="btn primary block" id="btnHacerLogin">Entrar</div>`;
-  document.getElementById('loginUsuario').addEventListener('input', e=>{ e.target.value = e.target.value.toUpperCase().replace(/\s/g,'').slice(0,10); });
+  document.getElementById('loginUsuario').addEventListener('input', e=>{ e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,10); });
   const intentarLogin = async ()=>{
     const usuario = document.getElementById('loginUsuario').value.trim();
     const password = document.getElementById('loginPassword').value;
@@ -1069,6 +1081,52 @@ document.getElementById('navSincronizar').addEventListener('click', ()=>{
     await sincronizarTodo();
   });
 });
+// Fase 2 (usuarios/login), ronda 3 — "Mi cuenta" vive en el menu, no
+// dentro de Configuracion. Mismo patron que "Sincronizar": no navega a
+// ninguna pestaña, abre su propio modal. Wireado UNA sola vez aqui (el
+// menu lateral es estatico, no se vuelve a renderizar al cambiar de
+// tab) — a diferencia de los botones de la tarjeta "Usuarios del
+// sistema", que sí se reconectan en cada render() de Configuracion.
+// En modo DEMO (sin CONFIG.API_URL) este icono no existe: no hay ningun
+// concepto de sesion/usuario conectado que mostrar ahi.
+if(CONFIG.API_URL){
+  document.getElementById('navMiCuenta').addEventListener('click', ()=>{
+    openModal(`
+      <h3>Mi cuenta</h3>
+      <p class="subtle" style="margin-bottom:16px;">Conectado como <b>${SESSION.usuario||''}</b>${SESSION.esAdmin?' (Administrador)':''}</p>
+      <div class="btn" id="btnCambiarMiPassword" style="margin-bottom:10px;">Cambiar mi contraseña</div>
+      <div class="btn" id="btnCerrarSesion">Cerrar sesión</div>
+      <div class="modal-actions" style="margin-top:14px;"><div class="btn block" onclick="closeModal()">Cerrar</div></div>`);
+    document.getElementById('btnCambiarMiPassword').addEventListener('click', ()=>{
+      openModal(`
+        <h3>Cambiar mi contraseña</h3>
+        <div class="field" style="margin-bottom:12px;"><label>Contraseña actual</label><input id="cpActual" type="password"></div>
+        <div class="field" style="margin-bottom:12px;"><label>Contraseña nueva</label><input id="cpNueva" type="password"></div>
+        <div class="field" style="margin-bottom:18px;"><label>Confirmar contraseña nueva</label><input id="cpConfirmar" type="password"></div>
+        <div class="modal-actions"><div class="btn block" onclick="closeModal()">Cancelar</div><div class="btn primary block" id="btnGuardarCambioPassword">Guardar</div></div>`);
+      document.getElementById('btnGuardarCambioPassword').addEventListener('click', async ()=>{
+        const actual = document.getElementById('cpActual').value;
+        const nueva = document.getElementById('cpNueva').value;
+        const confirmar = document.getElementById('cpConfirmar').value;
+        if(!actual || !nueva) return showToast('Completa todos los campos');
+        if(nueva.length<4) return showToast('La contraseña nueva debe tener al menos 4 caracteres');
+        if(nueva!==confirmar) return showToast('Las contraseñas no coinciden');
+        const json = await apiCall('cambiar_password', { passwordActual: actual, passwordNueva: nueva });
+        if(json && json.ok){ closeModal(); showToast('Contraseña actualizada'); }
+        else showToast(json && json.error ? json.error : 'No se pudo cambiar la contraseña');
+      });
+    });
+    document.getElementById('btnCerrarSesion').addEventListener('click', ()=>{
+      openModal(`
+        <h3>Cerrar sesión</h3>
+        <p style="font-size:13px;margin-bottom:16px;">¿Seguro que deseas cerrar tu sesión?</p>
+        <div class="modal-actions"><div class="btn block" onclick="closeModal()">Cancelar</div><div class="btn primary block" id="btnConfirmarCerrarSesion">Sí, cerrar sesión</div></div>`);
+      document.getElementById('btnConfirmarCerrarSesion').addEventListener('click', ()=>{ closeModal(); logoutUsuario(); });
+    });
+  });
+} else {
+  document.getElementById('navMiCuenta').style.display = 'none';
+}
 document.getElementById('hamburgerBtn').addEventListener('click', ()=>{
   const sb = document.getElementById('sidebar'); const ov = document.getElementById('sidebarOverlay');
   sb.classList.toggle('open'); ov.classList.toggle('open');
@@ -3466,16 +3524,10 @@ function renderConfiguracionHTML(){
   const porDia = {};
   DIAS_ORDEN.forEach(d=>porDia[d]=[]);
   dias.forEach(d=>{ if(!porDia[d.Dia]) porDia[d.Dia]=[]; porDia[d.Dia].push(d); });
-  // Fase 2 (usuarios/login) — estas 2 tarjetas solo existen en modo real
-  // (con sesion activa) — en modo DEMO no hay ningun concepto de usuario
-  // conectado que mostrar.
-  const miCuentaHTML = !CONFIG.API_URL ? '' : `
-  <div class="card config-card" style="margin-bottom:16px;" id="miCuentaCard">
-    <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg>Mi cuenta</div>
-    <p class="subtle" style="margin-bottom:14px;">Conectado como <b>${SESSION.usuario||''}</b>${SESSION.esAdmin?' (Administrador)':''}</p>
-    <div class="btn" id="btnCambiarMiPassword" style="margin-bottom:10px;">Cambiar mi contraseña</div>
-    <div class="btn" id="btnCerrarSesion">Cerrar sesión</div>
-  </div>`;
+  // Fase 2 (usuarios/login), ronda 3 — "Mi cuenta" se movio al icono
+  // propio del menu lateral (navMiCuenta) — ya no vive en Configuracion,
+  // ver decision de Sergio del 30/08. Solo queda aqui la administracion
+  // de usuarios (accion sobre OTROS, no sobre uno mismo).
   const usuariosHTML = (!CONFIG.API_URL || !SESSION.esAdmin) ? '' : `
   <div class="card config-card" style="margin-bottom:16px;" id="usuariosCard">
     <div class="card-head" style="margin-bottom:10px;">
@@ -3495,7 +3547,7 @@ function renderConfiguracionHTML(){
     </div>
   </div>`;
   return `
-  ${miCuentaHTML}${usuariosHTML}
+  ${usuariosHTML}
   <div class="card config-card" style="margin-bottom:16px;">
     <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/></svg>Datos de la clínica</div>
     <div class="field" style="margin-bottom:12px;"><label>Consultorio</label><input value="${DATA.clienteNombreConsultorio || 'Sin definir — contacta a soporte'}" readonly></div>
@@ -3955,39 +4007,10 @@ function afterRenderHooks(){
       showToast('Horario guardado'); render();
     });
 
-    // Fase 2 (usuarios/login) — estos botones solo existen en el DOM
-    // cuando CONFIG.API_URL esta definido (ver renderConfiguracionHTML,
-    // miCuentaHTML/usuariosHTML se omiten por completo en modo DEMO).
-    if(CONFIG.API_URL){
-      document.getElementById('btnCambiarMiPassword').addEventListener('click', ()=>{
-        openModal(`
-          <h3>Cambiar mi contraseña</h3>
-          <div class="field" style="margin-bottom:12px;"><label>Contraseña actual</label><input id="cpActual" type="password"></div>
-          <div class="field" style="margin-bottom:12px;"><label>Contraseña nueva</label><input id="cpNueva" type="password"></div>
-          <div class="field" style="margin-bottom:18px;"><label>Confirmar contraseña nueva</label><input id="cpConfirmar" type="password"></div>
-          <div class="modal-actions"><div class="btn block" onclick="closeModal()">Cancelar</div><div class="btn primary block" id="btnGuardarCambioPassword">Guardar</div></div>`);
-        document.getElementById('btnGuardarCambioPassword').addEventListener('click', async ()=>{
-          const actual = document.getElementById('cpActual').value;
-          const nueva = document.getElementById('cpNueva').value;
-          const confirmar = document.getElementById('cpConfirmar').value;
-          if(!actual || !nueva) return showToast('Completa todos los campos');
-          if(nueva.length<4) return showToast('La contraseña nueva debe tener al menos 4 caracteres');
-          if(nueva!==confirmar) return showToast('Las contraseñas no coinciden');
-          const json = await apiCall('cambiar_password', { passwordActual: actual, passwordNueva: nueva });
-          if(json && json.ok){ closeModal(); showToast('Contraseña actualizada'); }
-          else showToast(json && json.error ? json.error : 'No se pudo cambiar la contraseña');
-        });
-      });
-      document.getElementById('btnCerrarSesion').addEventListener('click', ()=>{
-        openModal(`
-          <h3>Cerrar sesión</h3>
-          <p style="font-size:13px;margin-bottom:16px;">¿Seguro que deseas cerrar tu sesión?</p>
-          <div class="modal-actions"><div class="btn block" onclick="closeModal()">Cancelar</div><div class="btn primary block" id="btnConfirmarCerrarSesion">Sí, cerrar sesión</div></div>`);
-        document.getElementById('btnConfirmarCerrarSesion').addEventListener('click', ()=>{ closeModal(); logoutUsuario(); });
-      });
-    }
-    // Administracion de usuarios — estos botones solo existen si ademas
-    // el usuario conectado es admin (ver usuariosHTML en renderConfiguracionHTML).
+    // Fase 2 (usuarios/login), ronda 3 — "Cambiar mi contraseña" y
+    // "Cerrar sesión" se movieron al icono "Mi cuenta" del menu lateral
+    // (wireado una sola vez junto con Sincronizar, no aqui). Solo queda
+    // la administracion de usuarios (accion del admin sobre OTROS).
     if(CONFIG.API_URL && SESSION.esAdmin){
       document.getElementById('btnAgregarUsuario').addEventListener('click', ()=>{
         openModal(`
@@ -3996,7 +4019,7 @@ function afterRenderHooks(){
           <div class="field" style="margin-bottom:12px;"><label>Contraseña inicial</label><input id="nuPassword" type="password"></div>
           <div class="field" style="margin:0 0 20px;"><label style="display:flex;align-items:center;gap:10px;cursor:pointer;"><input type="checkbox" id="nuEsAdmin"> Es administrador</label></div>
           <div class="modal-actions"><div class="btn block" onclick="closeModal()">Cancelar</div><div class="btn primary block" id="btnGuardarNuevoUsuario">Guardar</div></div>`);
-        document.getElementById('nuUsuario').addEventListener('input', e=>{ e.target.value = e.target.value.toUpperCase().replace(/\s/g,'').slice(0,10); });
+        document.getElementById('nuUsuario').addEventListener('input', e=>{ e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,10); });
         document.getElementById('btnGuardarNuevoUsuario').addEventListener('click', async ()=>{
           const usuario = document.getElementById('nuUsuario').value.trim();
           const password = document.getElementById('nuPassword').value;

@@ -1560,6 +1560,11 @@ function renderDashboardHTML(){
   const topSaldos = calcularTopSaldos(3);
   const activos = DATA.pacientes.filter(p=>p.Estado!=='Inactivo').length;
   const inactivos = DATA.pacientes.filter(p=>p.Estado==='Inactivo').length;
+  // Ronda 10 (01/09) — usado para el estado vacio de "Tratamientos mas
+  // solicitados" y "Pacientes nuevos vs. recurrentes": ambas graficas
+  // parten exactamente del mismo filtro base (citas no canceladas del
+  // mes en curso), asi que una sola bandera compartida basta para las 2.
+  const hayCitasEsteMes = DATA.citas.some(c=>c.Estado!=='Cancelada' && esMesActual(c.Fecha, now));
   // Ronda 9 (01/09) — antes sumaba TODOS los pagos de siempre (sin
   // filtrar por mes), aunque su vecina "Tratamientos mas solicitados" (en
   // la misma tarjeta) si esta filtrada al mes en curso y dice
@@ -1608,12 +1613,14 @@ function renderDashboardHTML(){
     <div class="card">
       <div class="card-title" style="margin-bottom:8px;">Tratamientos más rentables (por categoría, mes en curso)</div>
       <div class="donut-wrap" style="justify-content:center;">
+        ${catEntries.length ? `
         <div class="donut-canvas-wrap"><canvas id="donutChart"></canvas></div>
         <div class="legend">${catEntries.map((e,i)=>`<div class="legend-item"><span class="dot" style="background:${colors[i]}"></span>${e[0]}: ${fmtMoney(e[1])} (${Math.round(e[1]/catTotal*100)}%)</div>`).join('')}</div>
+        ` : `<div class="empty" style="width:100%;">Aún no hay pagos registrados este mes.</div>`}
       </div>
       <div class="card-title" style="margin:16px 0 2px;">Tratamientos más solicitados</div>
       <p class="subtle" style="margin:0 0 6px;">Por cantidad de citas este mes — complementa la rentabilidad por categoría</p>
-      <div class="mini-chart-wrap" style="height:130px;"><canvas id="tratSolicitadosChart"></canvas></div>
+      ${hayCitasEsteMes ? `<div class="mini-chart-wrap" style="height:130px;"><canvas id="tratSolicitadosChart"></canvas></div>` : `<div class="empty">Aún no hay citas registradas este mes.</div>`}
     </div>
   </div>
   <div class="row2">
@@ -1635,7 +1642,7 @@ function renderDashboardHTML(){
   <div class="card" style="margin-top:16px;">
     <div class="card-head"><div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/></svg>Pacientes nuevos vs. recurrentes</div></div>
     <p class="subtle" style="margin:-4px 0 6px;">Por semana del mes en curso (S1-S5 = días 1-7, 8-14, 15-21, 22-28, 29-31) — un paciente cuenta una sola vez por semana</p>
-    <div class="mini-chart-wrap" style="height:160px;"><canvas id="nuevosRecurrentesChart"></canvas></div>
+    ${hayCitasEsteMes ? `<div class="mini-chart-wrap" style="height:160px;"><canvas id="nuevosRecurrentesChart"></canvas></div>` : `<div class="empty">Aún no hay citas registradas este mes.</div>`}
   </div>`;
 }
 /* ============ CALCULOS PARA GRAFICAS COMPLEMENTARIAS (dashboard y finanzas) ============ */
@@ -2048,7 +2055,12 @@ function drawDashboardCharts(){
   const weeks=['S1','S2','S3','S4','S5'];
   const cashEl = document.getElementById('cashChart');
   if(cashEl){ let running=0; const cum=weeks.map(w=>{running+=byWeek[w]||0;return running;});
-    nuevoChart(cashEl,{type:'line',data:{labels:weeks,datasets:[{data:cum,borderColor:'#2FD8B0',borderWidth:2,tension:.35,pointRadius:4,pointBackgroundColor:'#2FD8B0',fill:true,backgroundColor:'rgba(47,216,176,0.10)'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false,callbacks:{label:c=>fmtMoney(c.raw)}}},interaction:{mode:'index',intersect:false},scales:{x:{grid:{display:false},ticks:{color:'#5B6D7A',font:{size:11}}},y:{grid:{color:'#1E2E42'},ticks:{color:'#5B6D7A',font:{size:11},callback:v=>'$'+Number(v).toLocaleString('es-MX')}}}}}); }
+    // Ronda 10 (01/09) — se agrega y.min:0: sin esto, cuando todas las
+    // semanas estan en $0 (mes recien empezado, sin pagos todavia),
+    // Chart.js autoescalaba el eje simetrico alrededor de 0 (mostraba
+    // -$1 a $1), dando la impresion de rangos negativos que no existen
+    // en un flujo de caja real (los ingresos nunca son negativos).
+    nuevoChart(cashEl,{type:'line',data:{labels:weeks,datasets:[{data:cum,borderColor:'#2FD8B0',borderWidth:2,tension:.35,pointRadius:4,pointBackgroundColor:'#2FD8B0',fill:true,backgroundColor:'rgba(47,216,176,0.10)'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false,callbacks:{label:c=>fmtMoney(c.raw)}}},interaction:{mode:'index',intersect:false},scales:{x:{grid:{display:false},ticks:{color:'#5B6D7A',font:{size:11}}},y:{min:0,grid:{color:'#1E2E42'},ticks:{color:'#5B6D7A',font:{size:11},callback:v=>'$'+Number(v).toLocaleString('es-MX')}}}}}); }
   const donutEl = document.getElementById('donutChart');
   // Ronda 9 (01/09) — misma correccion que en el numero de texto de esta
   // tarjeta (renderDashboardHTML): antes sumaba pagos de siempre, ahora

@@ -580,7 +580,7 @@
 Chart.defaults.color = '#8FA1AE';
 Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
 
-const CONFIG = { API_URL: "https://script.google.com/macros/s/AKfycbwrMgxsO705X0XNThcYOfSlUNMwd6FkQkEUI0LBQ_Bwt3tLUMARohsPLL7Z0B66YLjR/exec", CLIENT_ID: "DEMO", CURRENCY: "MXN", DIAS_SIN_VISITA: 60, PHONE_COUNTRY: "MX", FORMATO_HORA: "24h", FORMATO_FECHA: "iso", SEPARADOR: "es-MX", DECIMALES_PRECIO: false, PRIMER_DIA_SEMANA: "lunes" };
+const CONFIG = { API_URL: "https://script.google.com/macros/s/AKfycbxoboos7m-NizfwrdywqjU0x-34g5v05dQa68HvQ7eUgo5gSSWGm8Sdya-pZYWHWysVNw/exec", CLIENT_ID: "DEMO", CURRENCY: "MXN", DIAS_SIN_VISITA: 60, PHONE_COUNTRY: "MX", FORMATO_HORA: "24h", FORMATO_FECHA: "iso", SEPARADOR: "es-MX", DECIMALES_PRECIO: false, PRIMER_DIA_SEMANA: "lunes" };
 const CURRENCIES = {
   MXN:{symbol:'$',nombre:'Peso mexicano'}, USD:{symbol:'$',nombre:'Dólar estadounidense'},
   COP:{symbol:'$',nombre:'Peso colombiano'}, EUR:{symbol:'€',nombre:'Euro'},
@@ -712,6 +712,15 @@ function forzarTabDashboardTrasLogin(){
   document.querySelectorAll('.nav-item').forEach(i=>i.classList.remove('active'));
   const navDash = document.querySelector('.nav-item[data-tab="dashboard"]');
   if(navDash) navDash.classList.add('active');
+  // Ronda 8 (31/08) — antes solo se cambiaba ACTIVE_TAB sin volver a
+  // dibujar #content, asi que se seguia viendo la pestaña anterior (ej.
+  // Tratamientos) por detras de la mascara de login hasta que el login
+  // exitoso volvia a llamar render() por su cuenta. Se llama aqui de una
+  // vez (con los datos que ya estan en memoria, aunque esten un poco
+  // desactualizados) solo para que NUNCA se alcance a ver la pantalla
+  // vieja — en cuanto el login real termine, el flujo normal ya trae los
+  // datos frescos del servidor y vuelve a dibujar con eso.
+  render();
 }
 
 function manejarSesionInvalida(mensaje){
@@ -3546,11 +3555,15 @@ function renderCitasListHTML(){
     // en Code.gs). No aplica en modo DEMO (sin backend no hay Calendar).
     const pendienteCalendar = !!c.Calendar_Sync_Pendiente && !!CONFIG.API_URL;
     const btnReintentoCalendar = pendienteCalendar ? `<div class="btn sm" data-reintentar-calendar="${c.ID}">↻ Reintentar Calendar</div>` : '';
+    // Ronda 8 (31/08) — flex-wrap:wrap agregado: en movil vertical, con
+    // los 3 botones (Reagendar/Cancelar + Reintentar Calendar) juntos no
+    // cabian en una sola fila y el ultimo se salia de la tarjeta. Ahora
+    // el que no quepa baja a una segunda linea en vez de desbordarse.
     const acciones = esCancelada
-      ? (btnReintentoCalendar ? `<div style="display:flex;gap:6px;margin-top:6px;">${btnReintentoCalendar}</div>` : '')
+      ? (btnReintentoCalendar ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;">${btnReintentoCalendar}</div>` : '')
       : esPasada
-      ? `<div style="display:flex;gap:6px;margin-top:6px;"><div class="btn sm" data-reagendar="${c.ID}">Reagendar</div>${btnReintentoCalendar}</div>`
-      : `<div style="display:flex;gap:6px;margin-top:6px;"><div class="btn sm" data-reagendar="${c.ID}">Reagendar</div><div class="btn sm danger" data-cancelar="${c.ID}">Cancelar</div>${btnReintentoCalendar}</div>`;
+      ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;"><div class="btn sm" data-reagendar="${c.ID}">Reagendar</div>${btnReintentoCalendar}</div>`
+      : `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;"><div class="btn sm" data-reagendar="${c.ID}">Reagendar</div><div class="btn sm danger" data-cancelar="${c.ID}">Cancelar</div>${btnReintentoCalendar}</div>`;
     return `<div class="appt" data-appt-id="${c.ID}" style="${esCancelada?'opacity:.6;':''}"><div class="appt-time">${formatearFechaCorta(c.Fecha)}<br>${formatearHora(c.Hora)}</div><div class="appt-info" style="border-left-color:${color}"><b>${c.Paciente}</b>${etiqueta}<span>${tratArr(c.Tratamientos||c.Tratamiento).join(' + ')} · ${dur} min</span><br><span class="subtle">Registrado por: ${c.Usuario||'—'}</span>${acciones}</div></div>`;
   }).join('') || '<div class="empty">Sin citas</div>';
 }
@@ -3607,6 +3620,13 @@ function attachCitasListHandlers(){
       const res = await apiCall('reintentar_calendar_cita', { citaId }, ['citas']);
       if(res && res.ok) showToast('Sincronizado con Google Calendar');
       else if(res && res.error) showToast(res.error);
+      // Ronda 8 (31/08) — antes faltaba esto: los datos ya se
+      // actualizaban (syncData via apiCall), pero la tarjeta no se
+      // volvia a dibujar hasta cambiar de pestaña y regresar, asi que el
+      // boton parecia no desaparecer de inmediato tras un reintento
+      // exitoso.
+      render();
+      ubicarCitaEnListaSiAplica(citaId); // #22
     });
   });
 }
@@ -4344,7 +4364,12 @@ async function intentarReagendar(citaId, nuevaFecha, nuevaHora, forzar){
     return;
   }
   if(res && res.ok){
-    closeModal(); showToast('Cita reagendada y actualizada en Google Calendar'); render();
+    // Ronda 8 (31/08) — antes este mensaje era fijo ("...actualizada en
+    // Google Calendar") sin importar si Calendar realmente se sincronizo
+    // o no; ahora se distingue igual que en la creacion de citas.
+    closeModal();
+    showToast(res.calendarOk===false ? 'Cita reagendada. No se sincronizó con Google Calendar — puedes reintentar desde la cita.' : 'Cita reagendada y actualizada en Google Calendar');
+    render();
     ubicarCitaEnListaSiAplica(citaId); // #22
   } else {
     showToast('No se pudo reagendar. Intenta de nuevo.');

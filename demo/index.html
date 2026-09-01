@@ -580,7 +580,7 @@
 Chart.defaults.color = '#8FA1AE';
 Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
 
-const CONFIG = { API_URL: "https://script.google.com/macros/s/AKfycbwR0rDkhyIxHbr1_5xamSqDPshyeCBZXzE0mvdVa94zcBCtfVyLRUwzE7hkA9R2T6vF/exec", CLIENT_ID: "DEMO", CURRENCY: "MXN", DIAS_SIN_VISITA: 60, PHONE_COUNTRY: "MX", FORMATO_HORA: "24h", FORMATO_FECHA: "iso", SEPARADOR: "es-MX", DECIMALES_PRECIO: false, PRIMER_DIA_SEMANA: "lunes" };
+const CONFIG = { API_URL: "https://script.google.com/macros/s/AKfycbwrMgxsO705X0XNThcYOfSlUNMwd6FkQkEUI0LBQ_Bwt3tLUMARohsPLL7Z0B66YLjR/exec", CLIENT_ID: "DEMO", CURRENCY: "MXN", DIAS_SIN_VISITA: 60, PHONE_COUNTRY: "MX", FORMATO_HORA: "24h", FORMATO_FECHA: "iso", SEPARADOR: "es-MX", DECIMALES_PRECIO: false, PRIMER_DIA_SEMANA: "lunes" };
 const CURRENCIES = {
   MXN:{symbol:'$',nombre:'Peso mexicano'}, USD:{symbol:'$',nombre:'Dólar estadounidense'},
   COP:{symbol:'$',nombre:'Peso colombiano'}, EUR:{symbol:'€',nombre:'Euro'},
@@ -698,11 +698,28 @@ function mostrarAvisoExpiracion(){
 
 // Se llama en cuanto CUALQUIER peticion (GET o POST) regresa
 // "session_invalid" — token vencido, borrado, o nunca existio.
+// Ronda 7 (31/08) — se fuerza el Dashboard SOLO cuando la sesion termina
+// de verdad (expiro sola o el usuario cerro sesion explicitamente), NUNCA
+// cuando el usuario simplemente extiende su sesion desde el aviso "tipo
+// banco" (fijarSesion() no llama a esto, y no debe hacerlo — si esta a
+// medio registrar/editar algo, moverlo de pestaña seria contraproducente).
+// Motivo: evita exponer de entrada informacion especifica (ej. el
+// expediente de un paciente) a quien retome el dispositivo tras una
+// sesion vencida, y evita la falsa sensacion de "seguir donde me quede"
+// con datos que ya pueden estar desactualizados tras el tiempo muerto.
+function forzarTabDashboardTrasLogin(){
+  ACTIVE_TAB = 'dashboard';
+  document.querySelectorAll('.nav-item').forEach(i=>i.classList.remove('active'));
+  const navDash = document.querySelector('.nav-item[data-tab="dashboard"]');
+  if(navDash) navDash.classList.add('active');
+}
+
 function manejarSesionInvalida(mensaje){
   clearTimeout(sessionWarningTimer); clearTimeout(sessionExpireTimer); clearInterval(sessionCountdownInterval);
   document.getElementById('sessionWarningOverlay').classList.remove('open');
   SESSION = { token:null, usuario:null, esAdmin:false, debeCambiarPassword:false, duracionSegundos:0, renovadaEn:0 };
   borrarSesionGuardada();
+  forzarTabDashboardTrasLogin();
   mostrarPantallaLogin(mensaje || 'Tu sesión terminó. Vuelve a iniciar sesión.');
 }
 
@@ -711,6 +728,7 @@ async function logoutUsuario(){
   try{ await apiCall('logout', {}, [], 'Cerrando sesión...'); }catch(err){ /* si no hay conexion, se limpia igual del lado del navegador */ }
   SESSION = { token:null, usuario:null, esAdmin:false, debeCambiarPassword:false, duracionSegundos:0, renovadaEn:0 };
   borrarSesionGuardada();
+  forzarTabDashboardTrasLogin();
   mostrarPantallaLogin();
 }
 
@@ -913,7 +931,16 @@ async function apiCall(action, payload, syncKeys, maskText){
       repintarGraficasConDatosActuales();
     }
     return json;
-  }catch(err){ console.error('Error de API en '+action, err); showToast('Sin conexion — el cambio quedo solo en este dispositivo'); return null; }
+  }catch(err){
+    // Ronda 7 (31/08) — el texto anterior ("el cambio quedo solo en este
+    // dispositivo") era falso: en produccion, cuando esta funcion cae
+    // aqui, NADA se guarda en ningun lado (ni Sheet ni el navegador) —
+    // confundio a Sergio en pruebas reales. Se corrige a un mensaje que
+    // no promete una persistencia que no existe.
+    console.error('Error de API en '+action, err);
+    showToast('No se pudo conectar con el servidor. Verifica tu conexión e inténtalo de nuevo — nada se guardó.');
+    return null;
+  }
   finally{ hideMask(); }
 }
 
@@ -3511,10 +3538,19 @@ function renderCitasListHTML(){
     const esPasada = !esCancelada && ((c.Fecha < hoy) || (esHoy && yaConcluida));
     const etiqueta = esCancelada ? '<br><span class="subtle" style="color:var(--red);">· Cancelada</span><br>' : ((esHoy && yaConcluida) ? '<br><span class="subtle">· Concluida hoy</span><br>' : '');
     const color = esCancelada ? 'var(--red)' : (esPasada ? 'var(--text-mute)' : (esHoy ? 'var(--amber)' : 'var(--teal)'));
-    const acciones = esCancelada ? ''
+    // Ronda 7 (31/08) — boton "Reintentar Calendar", visible en CUALQUIER
+    // estado (incluida Cancelada) mientras Calendar_Sync_Pendiente siga
+    // en TRUE: cubre los 3 escenarios (creacion, reagendo o cancelacion
+    // que no se reflejaron en Google Calendar) con un solo boton — el
+    // backend decide cual de los 3 reintentar (ver reintentarCalendarCita
+    // en Code.gs). No aplica en modo DEMO (sin backend no hay Calendar).
+    const pendienteCalendar = !!c.Calendar_Sync_Pendiente && !!CONFIG.API_URL;
+    const btnReintentoCalendar = pendienteCalendar ? `<div class="btn sm" data-reintentar-calendar="${c.ID}">↻ Reintentar Calendar</div>` : '';
+    const acciones = esCancelada
+      ? (btnReintentoCalendar ? `<div style="display:flex;gap:6px;margin-top:6px;">${btnReintentoCalendar}</div>` : '')
       : esPasada
-      ? `<div style="display:flex;gap:6px;margin-top:6px;"><div class="btn sm" data-reagendar="${c.ID}">Reagendar</div></div>`
-      : `<div style="display:flex;gap:6px;margin-top:6px;"><div class="btn sm" data-reagendar="${c.ID}">Reagendar</div><div class="btn sm danger" data-cancelar="${c.ID}">Cancelar</div></div>`;
+      ? `<div style="display:flex;gap:6px;margin-top:6px;"><div class="btn sm" data-reagendar="${c.ID}">Reagendar</div>${btnReintentoCalendar}</div>`
+      : `<div style="display:flex;gap:6px;margin-top:6px;"><div class="btn sm" data-reagendar="${c.ID}">Reagendar</div><div class="btn sm danger" data-cancelar="${c.ID}">Cancelar</div>${btnReintentoCalendar}</div>`;
     return `<div class="appt" data-appt-id="${c.ID}" style="${esCancelada?'opacity:.6;':''}"><div class="appt-time">${formatearFechaCorta(c.Fecha)}<br>${formatearHora(c.Hora)}</div><div class="appt-info" style="border-left-color:${color}"><b>${c.Paciente}</b>${etiqueta}<span>${tratArr(c.Tratamientos||c.Tratamiento).join(' + ')} · ${dur} min</span><br><span class="subtle">Registrado por: ${c.Usuario||'—'}</span>${acciones}</div></div>`;
   }).join('') || '<div class="empty">Sin citas</div>';
 }
@@ -3559,6 +3595,18 @@ function attachCitasListHandlers(){
         showToast('Cita cancelada'); render();
         ubicarCitaEnListaSiAplica(citaId); // #22
       });
+    });
+  });
+  // Ronda 7 (31/08) — boton "Reintentar Calendar", un solo handler para
+  // los 3 escenarios (creacion/reagendo/cancelacion sin sincronizar); el
+  // backend (reintentarCalendarCita) decide cual aplica segun el Estado
+  // actual de la cita.
+  document.querySelectorAll('[data-reintentar-calendar]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const citaId = btn.dataset.reintentarCalendar;
+      const res = await apiCall('reintentar_calendar_cita', { citaId }, ['citas']);
+      if(res && res.ok) showToast('Sincronizado con Google Calendar');
+      else if(res && res.error) showToast(res.error);
     });
   });
 }
@@ -4245,7 +4293,23 @@ async function guardarCitaNueva(pac, trats, fecha, hora, forzar){
       return;
     }
     if(res && res.id) id = res.id; // #22 — id real asignado por el servidor, no el calculado localmente
-    showToast(res ? 'Cita creada y agregada a Google Calendar' : 'Cita guardada localmente (sin conexion)');
+    // Ronda 7 (31/08) — antes este toast asumia que "res falsy" siempre
+    // significaba exito y mostraba "guardada localmente (sin conexion)",
+    // un mensaje FALSO (en produccion no se guarda nada localmente si la
+    // peticion truena) y que ademas pisaba el toast que apiCall() ya
+    // habia mostrado en su propio catch (doble mensaje, solo se veia el
+    // ultimo). Ahora: si res viene null, apiCall ya informo la falla de
+    // conexion — no se repite aqui. Si res.ok, se distingue si Calendar
+    // si se sincronizo o no (ver addCita en Code.gs — la cita ya quedo
+    // guardada en el Sheet en cualquier caso).
+    if(res && res.ok){
+      showToast(res.calendarOk===false ? 'Cita guardada. No se sincronizó con Google Calendar — puedes reintentar desde la cita.' : 'Cita creada y agregada a Google Calendar');
+    } else if(res && res.error){
+      showToast(res.error);
+    }
+    // Ronda 7 — si no se guardo nada (res null, o res.error), no tiene
+    // caso intentar ubicar/resaltar una cita que nunca existio.
+    if(!res || res.error){ render(); return; }
   } else {
     // Ciclo 2 (Grupo 2) — Duracion_Min queda congelada con lo que dura
     // el tratamiento AHORA MISMO en el catalogo, igual que hace el

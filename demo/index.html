@@ -1548,13 +1548,28 @@ function renderDashboardHTML(){
   const proximasCitas = proximasHoy.length ? [] : calcularProximasCitas(4);
   const semanaActual = 'S'+Math.ceil(diaDelMes(hoy)/7);
   const citasEstaSemana = DATA.citas.filter(c=>c.Estado!=='Cancelada' && esMesActual(c.Fecha) && ('S'+Math.ceil(diaDelMes(c.Fecha)/7))===semanaActual).length;
-  const ingresosMes = DATA.pagos.reduce((s,p)=>s+Number(p.Monto_Pagado),0);
+  // Ronda 9 (01/09) — antes sumaba TODOS los pagos de siempre, sin
+  // filtrar por mes (bug: el numero decia "Ingresos del mes" pero era en
+  // realidad un acumulado de toda la vida — la grafica de flujo de caja
+  // de abajo SI ya filtraba bien desde el fix #60, asi que ambos datos se
+  // contradecian entre si). Ahora usa el mismo filtro que ya usan la
+  // grafica de flujo de caja y Finanzas (esMesActual sobre Ultimo_Pago).
+  const now = new Date();
+  const ingresosMes = DATA.pagos.filter(p=>esMesActual(p.Ultimo_Pago, now)).reduce((s,p)=>s+Number(p.Monto_Pagado),0);
   const pendiente = DATA.pagos.reduce((s,p)=>s+Number(p.Saldo),0);
   const topSaldos = calcularTopSaldos(3);
   const activos = DATA.pacientes.filter(p=>p.Estado!=='Inactivo').length;
   const inactivos = DATA.pacientes.filter(p=>p.Estado==='Inactivo').length;
+  // Ronda 9 (01/09) — antes sumaba TODOS los pagos de siempre (sin
+  // filtrar por mes), aunque su vecina "Tratamientos mas solicitados" (en
+  // la misma tarjeta) si esta filtrada al mes en curso y dice
+  // explicitamente "complementa la rentabilidad por categoria" — asi que
+  // ambas deben cubrir el mismo periodo para que esa frase sea cierta.
+  // Se deja fijo en Top 3 por ahora (parametrizar la cantidad y agregar
+  // una vista de "toda la vida" queda documentado como pendiente futuro
+  // en este archivo — ver seccion correspondiente mas abajo).
   const porCategoria = {};
-  DATA.pagos.forEach(p=>{ const t=DATA.tratamientos.find(t=>t.Nombre===p.Tratamiento); const cat=t?t.Categoria:'Otros'; porCategoria[cat]=(porCategoria[cat]||0)+Number(p.Monto_Pagado); });
+  DATA.pagos.filter(p=>esMesActual(p.Ultimo_Pago, now)).forEach(p=>{ const t=DATA.tratamientos.find(t=>t.Nombre===p.Tratamiento); const cat=t?t.Categoria:'Otros'; porCategoria[cat]=(porCategoria[cat]||0)+Number(p.Monto_Pagado); });
   const catEntries = Object.entries(porCategoria).sort((a,b)=>b[1]-a[1]).slice(0,3);
   const catTotal = catEntries.reduce((s,e)=>s+e[1],0) || 1;
   const colors = ['#2FD8B0','#1B6E5C','#3A4E60'];
@@ -1591,7 +1606,7 @@ function renderDashboardHTML(){
       </div>
     </div>
     <div class="card">
-      <div class="card-title" style="margin-bottom:8px;">Tratamientos más rentables (por categoría)</div>
+      <div class="card-title" style="margin-bottom:8px;">Tratamientos más rentables (por categoría, mes en curso)</div>
       <div class="donut-wrap" style="justify-content:center;">
         <div class="donut-canvas-wrap"><canvas id="donutChart"></canvas></div>
         <div class="legend">${catEntries.map((e,i)=>`<div class="legend-item"><span class="dot" style="background:${colors[i]}"></span>${e[0]}: ${fmtMoney(e[1])} (${Math.round(e[1]/catTotal*100)}%)</div>`).join('')}</div>
@@ -2035,7 +2050,11 @@ function drawDashboardCharts(){
   if(cashEl){ let running=0; const cum=weeks.map(w=>{running+=byWeek[w]||0;return running;});
     nuevoChart(cashEl,{type:'line',data:{labels:weeks,datasets:[{data:cum,borderColor:'#2FD8B0',borderWidth:2,tension:.35,pointRadius:4,pointBackgroundColor:'#2FD8B0',fill:true,backgroundColor:'rgba(47,216,176,0.10)'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false,callbacks:{label:c=>fmtMoney(c.raw)}}},interaction:{mode:'index',intersect:false},scales:{x:{grid:{display:false},ticks:{color:'#5B6D7A',font:{size:11}}},y:{grid:{color:'#1E2E42'},ticks:{color:'#5B6D7A',font:{size:11},callback:v=>'$'+Number(v).toLocaleString('es-MX')}}}}}); }
   const donutEl = document.getElementById('donutChart');
-  if(donutEl){ const porCategoria={}; DATA.pagos.forEach(p=>{const t=DATA.tratamientos.find(t=>t.Nombre===p.Tratamiento);const cat=t?t.Categoria:'Otros';porCategoria[cat]=(porCategoria[cat]||0)+Number(p.Monto_Pagado);});
+  // Ronda 9 (01/09) — misma correccion que en el numero de texto de esta
+  // tarjeta (renderDashboardHTML): antes sumaba pagos de siempre, ahora
+  // solo los del mes en curso, para que sea consistente con "Tratamientos
+  // mas solicitados" (que dice explicitamente que la complementa).
+  if(donutEl){ const porCategoria={}; DATA.pagos.filter(p=>esMesActual(p.Ultimo_Pago, now)).forEach(p=>{const t=DATA.tratamientos.find(t=>t.Nombre===p.Tratamiento);const cat=t?t.Categoria:'Otros';porCategoria[cat]=(porCategoria[cat]||0)+Number(p.Monto_Pagado);});
     const entries=Object.entries(porCategoria).sort((a,b)=>b[1]-a[1]).slice(0,3);
     nuevoChart(donutEl,{type:'doughnut',data:{labels:entries.map(e=>e[0]),datasets:[{data:entries.map(e=>e[1]),backgroundColor:['#2FD8B0','#1B6E5C','#3A4E60'],borderColor:'#101C2C',borderWidth:3}]},options:{responsive:true,maintainAspectRatio:false,cutout:'62%',plugins:{legend:{display:false},tooltip:{enabled:false,external:chartTooltipHandler}}}}); }
   const tratSolEl = document.getElementById('tratSolicitadosChart');

@@ -580,7 +580,7 @@
 Chart.defaults.color = '#8FA1AE';
 Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
 
-const CONFIG = { API_URL: "https://script.google.com/macros/s/AKfycbxoboos7m-NizfwrdywqjU0x-34g5v05dQa68HvQ7eUgo5gSSWGm8Sdya-pZYWHWysVNw/exec", CLIENT_ID: "DEMO", CURRENCY: "MXN", DIAS_SIN_VISITA: 60, PHONE_COUNTRY: "MX", FORMATO_HORA: "24h", FORMATO_FECHA: "iso", SEPARADOR: "es-MX", DECIMALES_PRECIO: false, PRIMER_DIA_SEMANA: "lunes" };
+const CONFIG = { API_URL: "https://script.google.com/macros/s/AKfycbxlIdBOiVSiw3S1g4tW4qahzZ1FRromjaOHbFbbi2JfFoCA9Bg1L27Pk6pmpzP3x1Cvyg/exec", CLIENT_ID: "DEMO", CURRENCY: "MXN", DIAS_SIN_VISITA: 60, PHONE_COUNTRY: "MX", ZONA_HORARIA: "America/Mexico_City", FORMATO_HORA: "24h", FORMATO_FECHA: "iso", SEPARADOR: "es-MX", DECIMALES_PRECIO: false, PRIMER_DIA_SEMANA: "lunes" };
 const CURRENCIES = {
   MXN:{symbol:'$',nombre:'Peso mexicano'}, USD:{symbol:'$',nombre:'Dólar estadounidense'},
   COP:{symbol:'$',nombre:'Peso colombiano'}, EUR:{symbol:'€',nombre:'Euro'},
@@ -599,6 +599,41 @@ const PHONE_COUNTRIES = {
   GT:{nombre:'Guatemala', prefijo:'502', longitud:8},
 };
 function telefonoInfo(){ return PHONE_COUNTRIES[CONFIG.PHONE_COUNTRY] || PHONE_COUNTRIES.MX; }
+// Ronda 11 (01/09) — zonas horarias agrupadas por pais, para el campo
+// "Zona horaria" de Configuracion. Varios paises de la lista de arriba
+// (Mexico, Estados Unidos, España) tienen mas de una zona horaria real
+// dentro de su propio territorio — por eso esto NO es un simple mapa
+// pais->zona como PHONE_COUNTRIES, sino pais->lista de opciones. Los
+// paises con una sola zona (Colombia, Argentina, Peru, Guatemala) solo
+// traen 1 elemento en su lista. Usado para nowFechaActualizacion() del
+// lado del servidor (Code.gs lee el mismo identificador IANA desde
+// Config) — todas las claves "value" deben ser nombres de zona horaria
+// IANA validos (los que entiende Utilities.formatDate en Apps Script).
+const TIMEZONES = {
+  MX:{nombre:'México', zonas:[
+    {value:'America/Mexico_City', label:'Centro (CDMX, Michoacán, Jalisco y la mayoría del país)'},
+    {value:'America/Mazatlan', label:'Pacífico (Sinaloa, Nayarit, Baja California Sur, Sonora)'},
+    {value:'America/Tijuana', label:'Noroeste (Baja California)'},
+    {value:'America/Cancun', label:'Sureste (Quintana Roo)'},
+  ]},
+  US:{nombre:'Estados Unidos', zonas:[
+    {value:'America/New_York', label:'Este (Nueva York, Florida)'},
+    {value:'America/Chicago', label:'Central (Texas, Illinois)'},
+    {value:'America/Denver', label:'Montaña (Colorado, Utah)'},
+    {value:'America/Phoenix', label:'Arizona (sin horario de verano)'},
+    {value:'America/Los_Angeles', label:'Pacífico (California, Washington)'},
+    {value:'America/Anchorage', label:'Alaska'},
+    {value:'Pacific/Honolulu', label:'Hawái'},
+  ]},
+  CO:{nombre:'Colombia', zonas:[{value:'America/Bogota', label:'Colombia'}]},
+  ES:{nombre:'España', zonas:[
+    {value:'Europe/Madrid', label:'Peninsular y Baleares'},
+    {value:'Atlantic/Canary', label:'Canarias'},
+  ]},
+  AR:{nombre:'Argentina', zonas:[{value:'America/Argentina/Buenos_Aires', label:'Argentina'}]},
+  PE:{nombre:'Perú', zonas:[{value:'America/Lima', label:'Perú'}]},
+  GT:{nombre:'Guatemala', zonas:[{value:'America/Guatemala', label:'Guatemala'}]},
+};
 const DIAS_ORDEN = ["Lunes","Martes","Miercoles","Jueves","Viernes","Sabado","Domingo"];
 const DEMO_DATA = {"pacientes": [], "tratamientos": [], "citas": [], "pagos": [], "gastos": [], "categorias_tratamiento": [], "categorias_gasto": [], "horario": [], "config": [], "referidos": [], "usuarios": [], "comisionMoneda": "MXN", "comisionMonto": 300};
 let DATA = JSON.parse(JSON.stringify(DEMO_DATA));
@@ -721,6 +756,13 @@ function forzarTabDashboardTrasLogin(){
   // vieja — en cuanto el login real termine, el flujo normal ya trae los
   // datos frescos del servidor y vuelve a dibujar con eso.
   render();
+  // Ronda 11 (01/09) — faltaba esto: render() cambia el CONTENIDO, pero
+  // no reinicia la posicion del scroll. Si la pestaña anterior tenia
+  // scroll recorrido (ej. Finanzas a la mitad), al volver a iniciar
+  // sesion el Dashboard aparecia ya "recorrido" sin que el usuario
+  // tocara nada — mismo scroll-to-top que ya usa setTab() en cambios de
+  // pestaña normales, aplicado aqui tambien.
+  window.scrollTo(0,0);
 }
 
 function manejarSesionInvalida(mensaje){
@@ -865,6 +907,11 @@ function hidratarConfigDesdeSheet(){
   if(mapa.Moneda && CURRENCIES[mapa.Moneda]) CONFIG.CURRENCY = mapa.Moneda;
   if(mapa.DiasSinVisita) CONFIG.DIAS_SIN_VISITA = Number(mapa.DiasSinVisita) || 60;
   if(mapa.PaisTelefono && PHONE_COUNTRIES[mapa.PaisTelefono]) CONFIG.PHONE_COUNTRY = mapa.PaisTelefono; // #71
+  // Ronda 11 (01/09) — Zona horaria del consultorio (para que
+  // Fecha_Actualizacion se muestre en la hora del cliente, no siempre en
+  // la de Mexico). Se valida contra la lista conocida de TIMEZONES antes
+  // de aplicarla, por si el Sheet trajera un valor viejo/invalido.
+  if(mapa.ZonaHoraria && Object.values(TIMEZONES).some(p=>p.zonas.some(z=>z.value===mapa.ZonaHoraria))) CONFIG.ZONA_HORARIA = mapa.ZonaHoraria;
   // Grupo 1 (#27/#28/#34/#35) — formato regional configurable
   if(mapa.FormatoHora==='12h' || mapa.FormatoHora==='24h') CONFIG.FORMATO_HORA = mapa.FormatoHora;
   if(['iso','iso-texto','dmy','dmy-texto'].includes(mapa.FormatoFecha)) CONFIG.FORMATO_FECHA = mapa.FormatoFecha;
@@ -3713,6 +3760,9 @@ function renderConfiguracionHTML(){
       <select id="cfgMoneda">${Object.entries(CURRENCIES).map(([code,c])=>`<option value="${code}" ${CONFIG.CURRENCY===code?'selected':''}>${code} — ${c.nombre}</option>`).join('')}</select></div>
     <div class="field" style="margin-bottom:12px;"><label>País (prefijo y formato de teléfono)</label>
       <select id="cfgPaisTelefono">${Object.entries(PHONE_COUNTRIES).map(([code,c])=>`<option value="${code}" ${CONFIG.PHONE_COUNTRY===code?'selected':''}>${c.nombre} (+${c.prefijo}, ${c.longitud} dígitos)</option>`).join('')}</select></div>
+    <div class="field" style="margin-bottom:12px;"><label>Zona horaria del consultorio</label>
+      <select id="cfgZonaHoraria">${Object.values(TIMEZONES).map(p=>`<optgroup label="${p.nombre}">${p.zonas.map(z=>`<option value="${z.value}" ${CONFIG.ZONA_HORARIA===z.value?'selected':''}>${z.label}</option>`).join('')}</optgroup>`).join('')}</select>
+      <p class="subtle" style="margin:4px 0 0;">Se usa para mostrar correctamente la fecha y hora de cada registro — independiente del país de teléfono de arriba.</p></div>
     <div class="field" style="margin-bottom:12px;"><label>Días sin visita para aparecer en "Pacientes que no han vuelto"</label><input id="cfgDiasSinVisita" type="number" min="1" value="${CONFIG.DIAS_SIN_VISITA}"></div>
     <div class="field" style="margin-bottom:12px;"><label>Formato de hora</label>
       <select id="cfgFormatoHora">
@@ -4077,7 +4127,7 @@ function afterRenderHooks(){
     // guardar y evitar peticiones al servidor si el usuario le dio clic a
     // "Guardar cambios" sin haber tocado nada.
     const configOriginal = {
-      CURRENCY: CONFIG.CURRENCY, PHONE_COUNTRY: CONFIG.PHONE_COUNTRY, DIAS_SIN_VISITA: CONFIG.DIAS_SIN_VISITA,
+      CURRENCY: CONFIG.CURRENCY, PHONE_COUNTRY: CONFIG.PHONE_COUNTRY, ZONA_HORARIA: CONFIG.ZONA_HORARIA, DIAS_SIN_VISITA: CONFIG.DIAS_SIN_VISITA,
       FORMATO_HORA: CONFIG.FORMATO_HORA, FORMATO_FECHA: CONFIG.FORMATO_FECHA, SEPARADOR: CONFIG.SEPARADOR,
       DECIMALES_PRECIO: CONFIG.DECIMALES_PRECIO, PRIMER_DIA_SEMANA: CONFIG.PRIMER_DIA_SEMANA,
     };
@@ -4103,6 +4153,7 @@ function afterRenderHooks(){
       const nuevo = {
         CURRENCY: document.getElementById('cfgMoneda').value,
         PHONE_COUNTRY: document.getElementById('cfgPaisTelefono').value,
+        ZONA_HORARIA: document.getElementById('cfgZonaHoraria').value,
         DIAS_SIN_VISITA: Number(document.getElementById('cfgDiasSinVisita').value) || 60,
         FORMATO_HORA: document.getElementById('cfgFormatoHora').value,
         FORMATO_FECHA: document.getElementById('cfgFormatoFecha').value,
@@ -4123,6 +4174,7 @@ function afterRenderHooks(){
         await apiCall('set_config', [
           { clave:'Moneda', valor: CONFIG.CURRENCY },
           { clave:'PaisTelefono', valor: CONFIG.PHONE_COUNTRY },
+          { clave:'ZonaHoraria', valor: CONFIG.ZONA_HORARIA },
           { clave:'DiasSinVisita', valor: CONFIG.DIAS_SIN_VISITA },
           { clave:'FormatoHora', valor: CONFIG.FORMATO_HORA },
           { clave:'FormatoFecha', valor: CONFIG.FORMATO_FECHA },

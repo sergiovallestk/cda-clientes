@@ -3390,19 +3390,30 @@ function ubicarCitaEnListaSiAplica(citaId){
 // la lista para gestionar", hace scroll hasta esa tarjeta especifica
 // dentro de la Lista y la resalta un momento para ubicarla de inmediato.
 function repintarPanelAgenda(citaIdParaUbicar){
-  // Ronda 14 (01/09) — si venimos a "aterrizar" en una cita puntual (ej.
-  // boton "Ir a la lista para gestionar" del detalle del Calendario) y el
-  // filtro de la Lista esta en 'reciente' (ultimos 30 dias + futuras), esa
-  // cita podria caer FUERA de esa ventana y quedar oculta — antes de esta
-  // ronda, ubicarCitaEnListaSiAplica() simplemente no encontraba la fila
-  // (no tronaba, pero tampoco resaltaba nada, dejando al doctor sin saber
-  // por que "desaparecio"). Se detecta ese caso aqui y se cambia el filtro
-  // a 'todo' (historial completo) ANTES de renderizar, para que el
-  // mecanismo de ubicar+resaltar siga funcionando igual que siempre.
-  if(citaIdParaUbicar && AGENDA_LISTA_RANGO === 'reciente'){
+  // Ronda 15 (01/09) — reemplaza el fix de la Ronda 14 (que solo cubria
+  // el caso 'reciente') por una logica de 3 pasos que decide el filtro
+  // correcto SIEMPRE que se aterriza en una cita puntual (ej. boton "Ir a
+  // la lista para gestionar" del detalle del Calendario), sin importar
+  // que filtro estuviera activo antes: (1) si la cita cae dentro de
+  // "Recientes", se usa 'reciente'; (2) si no, pero su mes SI esta entre
+  // los que el selector ofrece como opcion individual (ver
+  // MESES_SELECTOR_AGENDA_MAX arriba), se selecciona ese mes exacto —
+  // mas preciso que mandar siempre a "Todo"; (3) solo si la cita es mas
+  // vieja que el tope de meses que ofrece el selector, se usa 'todo'
+  // (historial completo) como ultimo recurso. Sin esto, el mecanismo de
+  // ubicar+resaltar (ubicarCitaEnListaSiAplica) no encuentra la fila y no
+  // truena, pero tampoco resalta nada — mismo sintoma silencioso que la
+  // Ronda 14 corrigio parcialmente.
+  if(citaIdParaUbicar){
     const citaObjetivo = DATA.citas.find(c=>c.ID===citaIdParaUbicar);
-    if(citaObjetivo && citaObjetivo.Fecha < fechaHaceNDias(30)){
-      AGENDA_LISTA_RANGO = 'todo';
+    if(citaObjetivo){
+      const cutoff = fechaHaceNDias(30);
+      if(citaObjetivo.Fecha >= cutoff){
+        AGENDA_LISTA_RANGO = 'reciente';
+      } else {
+        const mesCita = citaObjetivo.Fecha.slice(0,7);
+        AGENDA_LISTA_RANGO = mesesDisponiblesSelectorAgenda().includes(mesCita) ? mesCita : 'todo';
+      }
     }
   }
   document.querySelectorAll('[data-agenda-vista]').forEach(btn=>{
@@ -3652,22 +3663,44 @@ function abrirModalNuevaCita(){
 // sistema (citas de hoy, citas esta semana, tratamientos mas solicitados,
 // etc.) siguen excluyendolas — ahi si no deben contar como carga de
 // trabajo real; solo esta lista cambio.
+// Ronda 15 (01/09) — tope de meses individuales listados en el selector
+// (evita que crezca sin limite con clientes de varios anos: sin esto,
+// el dropdown terminaria con un mes por cada mes que alguna vez tuvo
+// una cita, potencialmente decenas). Cualquier mes mas viejo que estos
+// 12 solo se alcanza con "Ver historial completo". Factorizado en su
+// propia funcion para que tanto el selector (renderSelectorRangoAgendaHTML)
+// como la logica de "aterrizar en una cita" (repintarPanelAgenda) usen
+// exactamente el mismo criterio sin duplicarlo.
+const MESES_SELECTOR_AGENDA_MAX = 12;
+function mesesDisponiblesSelectorAgenda(){
+  const cutoff = fechaHaceNDias(30);
+  const mesesConDatosAntes = new Set();
+  DATA.citas.forEach(c=>{ if(c.Fecha < cutoff) mesesConDatosAntes.add(c.Fecha.slice(0,7)); });
+  return [...mesesConDatosAntes].sort().reverse().slice(0, MESES_SELECTOR_AGENDA_MAX);
+}
 // Ronda 13 (01/09) — construye el selector "Mostrando" que vive ARRIBA
 // de la lista (fuera de #agendaCitasList, para que no se pierda al hacer
 // scroll dentro de la lista larga). Las opciones de mes solo incluyen
 // meses que de verdad tienen alguna cita ANTES de la ventana de
-// "Recientes" (nunca se listan meses vacios) — "Ver historial completo"
-// siempre esta disponible como valvula de escape al comportamiento de
-// antes de esta ronda (sin ningun filtro).
+// "Recientes" (nunca se listan meses vacios), acotadas al tope de
+// MESES_SELECTOR_AGENDA_MAX y agrupadas por año (Ronda 15) — "Ver
+// historial completo" sigue disponible como valvula de escape para
+// cualquier cosa mas vieja que ese tope, igual que desde la Ronda 13.
 function renderSelectorRangoAgendaHTML(){
-  const cutoff = fechaHaceNDias(30);
-  const mesesConDatosAntes = new Set();
-  DATA.citas.forEach(c=>{ if(c.Fecha < cutoff) mesesConDatosAntes.add(c.Fecha.slice(0,7)); });
-  const mesesOrdenados = [...mesesConDatosAntes].sort().reverse();
-  const opcionesMeses = mesesOrdenados.map(m=>{
-    const mesNum = Number(m.split('-')[1]);
+  const mesesLimitados = mesesDisponiblesSelectorAgenda();
+  const porAnio = {};
+  const aniosOrden = [];
+  mesesLimitados.forEach(m=>{
     const anio = m.split('-')[0];
-    return `<option value="${m}" ${AGENDA_LISTA_RANGO===m?'selected':''}>${MESES_LARGOS[mesNum-1]} ${anio}</option>`;
+    if(!porAnio[anio]){ porAnio[anio] = []; aniosOrden.push(anio); }
+    porAnio[anio].push(m);
+  });
+  const opcionesMeses = aniosOrden.map(anio=>{
+    const opts = porAnio[anio].map(m=>{
+      const mesNum = Number(m.split('-')[1]);
+      return `<option value="${m}" ${AGENDA_LISTA_RANGO===m?'selected':''}>${MESES_LARGOS[mesNum-1]} ${anio}</option>`;
+    }).join('');
+    return `<optgroup label="${anio}">${opts}</optgroup>`;
   }).join('');
   return `<select id="agendaRangoSelect" style="background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:6px 8px;color:var(--text);font-size:12.5px;">
     <option value="reciente" ${AGENDA_LISTA_RANGO==='reciente'?'selected':''}>Recientes (últimos 30 días) y futuras</option>

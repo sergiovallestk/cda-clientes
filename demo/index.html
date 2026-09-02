@@ -580,7 +580,7 @@
 Chart.defaults.color = '#8FA1AE';
 Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
 
-const CONFIG = { API_URL: "https://script.google.com/macros/s/AKfycbxlIdBOiVSiw3S1g4tW4qahzZ1FRromjaOHbFbbi2JfFoCA9Bg1L27Pk6pmpzP3x1Cvyg/exec", CLIENT_ID: "DEMO", CURRENCY: "MXN", DIAS_SIN_VISITA: 60, PHONE_COUNTRY: "MX", ZONA_HORARIA: "America/Mexico_City", FORMATO_HORA: "24h", FORMATO_FECHA: "iso", SEPARADOR: "es-MX", DECIMALES_PRECIO: false, PRIMER_DIA_SEMANA: "lunes" };
+const CONFIG = { API_URL: "https://script.google.com/macros/s/AKfycbzJw5C1JUer304IuXsJHB_hiYz763aNVjgSXwB9tQ_vfQTMG6vvoLaUd-RvEEwEuoBw/exec", CLIENT_ID: "DEMO", CURRENCY: "MXN", DIAS_SIN_VISITA: 60, PHONE_COUNTRY: "MX", ZONA_HORARIA: "America/Mexico_City", FORMATO_HORA: "24h", FORMATO_FECHA: "iso", SEPARADOR: "es-MX", DECIMALES_PRECIO: false, PRIMER_DIA_SEMANA: "lunes" };
 const CURRENCIES = {
   MXN:{symbol:'$',nombre:'Peso mexicano'}, USD:{symbol:'$',nombre:'Dólar estadounidense'},
   COP:{symbol:'$',nombre:'Peso colombiano'}, EUR:{symbol:'€',nombre:'Euro'},
@@ -3390,6 +3390,21 @@ function ubicarCitaEnListaSiAplica(citaId){
 // la lista para gestionar", hace scroll hasta esa tarjeta especifica
 // dentro de la Lista y la resalta un momento para ubicarla de inmediato.
 function repintarPanelAgenda(citaIdParaUbicar){
+  // Ronda 14 (01/09) — si venimos a "aterrizar" en una cita puntual (ej.
+  // boton "Ir a la lista para gestionar" del detalle del Calendario) y el
+  // filtro de la Lista esta en 'reciente' (ultimos 30 dias + futuras), esa
+  // cita podria caer FUERA de esa ventana y quedar oculta — antes de esta
+  // ronda, ubicarCitaEnListaSiAplica() simplemente no encontraba la fila
+  // (no tronaba, pero tampoco resaltaba nada, dejando al doctor sin saber
+  // por que "desaparecio"). Se detecta ese caso aqui y se cambia el filtro
+  // a 'todo' (historial completo) ANTES de renderizar, para que el
+  // mecanismo de ubicar+resaltar siga funcionando igual que siempre.
+  if(citaIdParaUbicar && AGENDA_LISTA_RANGO === 'reciente'){
+    const citaObjetivo = DATA.citas.find(c=>c.ID===citaIdParaUbicar);
+    if(citaObjetivo && citaObjetivo.Fecha < fechaHaceNDias(30)){
+      AGENDA_LISTA_RANGO = 'todo';
+    }
+  }
   document.querySelectorAll('[data-agenda-vista]').forEach(btn=>{
     btn.classList.toggle('active', btn.dataset.agendaVista === AGENDA_VISTA);
   });

@@ -1154,6 +1154,11 @@ function refreshScrollHint(el){
   el.onscroll = check;
 }
 function todayStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+// Ronda 13 (01/09) — usada por el filtro por default de la Lista de
+// Agenda (ver renderCitasListHTML): ventana rodante de N dias hacia
+// atras desde hoy, en vez de un corte de "mes calendario" (evita que
+// toda la info reciente desaparezca de golpe el dia 1 de cada mes).
+function fechaHaceNDias(n){ const d=new Date(); d.setDate(d.getDate()-n); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 /* Lectura de fechas SIN pasar por conversion UTC/zona horaria — evita el bug
    clasico de que "2026-08-07" se recorra un dia segun donde este el navegador.
    Trabajamos siempre con los numeros del texto tal cual, nunca con new Date(str). */
@@ -2841,6 +2846,14 @@ function abrirEdicionTratamiento(tratId){
    directo a la Lista desde el detalle de cada cita. */
 let AGENDA_VISTA = 'lista';        // 'lista' | 'calendario'
 let AGENDA_MODO = 'dia';           // 'dia' | 'semana' | 'mes'
+// Ronda 13 (01/09) — filtro de la Lista de Agenda: 'reciente' (default,
+// ultimos 30 dias + todas las futuras), 'todo' (historial completo, sin
+// filtro — comportamiento identico al de antes de esta ronda), o un mes
+// especifico en formato "AAAA-MM" elegido en el selector. NO afecta lo
+// que trae el servidor (Code.gs sigue mandando el historial completo de
+// Citas) — es un filtro solo de presentacion en esta vista, igual que ya
+// hace el Calendario (Dia/Semana/Mes) filtrando DATA.citas client-side.
+let AGENDA_LISTA_RANGO = 'reciente';
 let AGENDA_FECHA_REF = todayStr(); // fecha que esta viendo el calendario
 
 const NOMBRES_DIA_SEMANA = ['Domingo','Lunes','Martes','Miercoles','Jueves','Viernes','Sabado'];
@@ -3390,6 +3403,17 @@ function repintarPanelAgenda(citaIdParaUbicar){
   document.querySelectorAll('[data-agenda-modo]').forEach(btn=>{
     btn.classList.toggle('active', btn.dataset.agendaModo === AGENDA_MODO);
   });
+  // Ronda 13 (01/09) — mismo patron que switchModo arriba: el selector
+  // "Mostrando" vive fuera de #agendaCitasList (para no perderse al hacer
+  // scroll dentro de la lista), asi que su visibilidad Y su contenido
+  // (las opciones de mes pueden cambiar si entraron citas nuevas) se
+  // refrescan aqui cada vez que se repinta el panel, no solo al cambiar
+  // de vista.
+  const rangoWrap = document.getElementById('listaRangoSelectorWrap');
+  if(rangoWrap){
+    rangoWrap.style.display = AGENDA_VISTA==='lista' ? '' : 'none';
+    if(AGENDA_VISTA==='lista') rangoWrap.innerHTML = renderSelectorRangoAgendaHTML();
+  }
   const list = document.getElementById('agendaCitasList');
   if(list){ list.innerHTML = AGENDA_VISTA==='calendario' ? renderCalendarioHTML() : renderCitasListHTML(); }
   attachContenidoAgenda();
@@ -3413,6 +3437,9 @@ function renderAgendarHTML(){
       <div class="cal-switch-btn ${AGENDA_MODO==='dia'?'active':''}" data-agenda-modo="dia">Día</div>
       <div class="cal-switch-btn ${AGENDA_MODO==='semana'?'active':''}" data-agenda-modo="semana">Semana</div>
       <div class="cal-switch-btn ${AGENDA_MODO==='mes'?'active':''}" data-agenda-modo="mes">Mes</div>
+    </div>
+    <div id="listaRangoSelectorWrap" style="${AGENDA_VISTA==='lista'?'':'display:none;'}margin:10px 0;">
+      ${renderSelectorRangoAgendaHTML()}
     </div>
     <div class="appt-list" id="agendaCitasList" style="max-height:620px;">
       ${AGENDA_VISTA==='calendario' ? renderCalendarioHTML() : renderCitasListHTML()}
@@ -3610,9 +3637,50 @@ function abrirModalNuevaCita(){
 // sistema (citas de hoy, citas esta semana, tratamientos mas solicitados,
 // etc.) siguen excluyendolas — ahi si no deben contar como carga de
 // trabajo real; solo esta lista cambio.
+// Ronda 13 (01/09) — construye el selector "Mostrando" que vive ARRIBA
+// de la lista (fuera de #agendaCitasList, para que no se pierda al hacer
+// scroll dentro de la lista larga). Las opciones de mes solo incluyen
+// meses que de verdad tienen alguna cita ANTES de la ventana de
+// "Recientes" (nunca se listan meses vacios) — "Ver historial completo"
+// siempre esta disponible como valvula de escape al comportamiento de
+// antes de esta ronda (sin ningun filtro).
+function renderSelectorRangoAgendaHTML(){
+  const cutoff = fechaHaceNDias(30);
+  const mesesConDatosAntes = new Set();
+  DATA.citas.forEach(c=>{ if(c.Fecha < cutoff) mesesConDatosAntes.add(c.Fecha.slice(0,7)); });
+  const mesesOrdenados = [...mesesConDatosAntes].sort().reverse();
+  const opcionesMeses = mesesOrdenados.map(m=>{
+    const mesNum = Number(m.split('-')[1]);
+    const anio = m.split('-')[0];
+    return `<option value="${m}" ${AGENDA_LISTA_RANGO===m?'selected':''}>${MESES_LARGOS[mesNum-1]} ${anio}</option>`;
+  }).join('');
+  return `<select id="agendaRangoSelect" style="background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:6px 8px;color:var(--text);font-size:12.5px;">
+    <option value="reciente" ${AGENDA_LISTA_RANGO==='reciente'?'selected':''}>Recientes (últimos 30 días) y futuras</option>
+    ${opcionesMeses}
+    <option value="todo" ${AGENDA_LISTA_RANGO==='todo'?'selected':''}>Ver historial completo</option>
+  </select>`;
+}
+// Ronda 13 (01/09) — antes se mostraban TODAS las citas de toda la vida
+// del consultorio sin ningun filtro, a diferencia del Calendario
+// (Dia/Semana/Mes) que siempre filtra DATA.citas por la fecha que le
+// toca mostrar. Con meses/anos de uso eso se vuelve un scroll
+// interminable (reportado por Sergio). Ahora, por default
+// (AGENDA_LISTA_RANGO==='reciente') solo se muestran los ultimos 30 dias
+// (ventana rodante, ver fechaHaceNDias) MAS todas las citas futuras sin
+// limite (nunca se oculta nada agendado a futuro). El selector de arriba
+// permite ver un mes especifico anterior, o el historial completo
+// (AGENDA_LISTA_RANGO==='todo', identico al comportamiento de antes).
+// El servidor NO cambia: Code.gs sigue mandando el historial completo de
+// Citas en cada carga — este filtro es solo de presentacion en esta
+// vista.
 function renderCitasListHTML(){
   const hoy = todayStr();
-  const citasOrdenadas = [...DATA.citas].sort((a,b)=>(a.Fecha+a.Hora).localeCompare(b.Fecha+b.Hora));
+  const cutoff = fechaHaceNDias(30);
+  let citasFiltradas;
+  if(AGENDA_LISTA_RANGO === 'todo') citasFiltradas = DATA.citas;
+  else if(AGENDA_LISTA_RANGO === 'reciente') citasFiltradas = DATA.citas.filter(c=>c.Fecha >= cutoff);
+  else citasFiltradas = DATA.citas.filter(c=>c.Fecha.slice(0,7) === AGENDA_LISTA_RANGO);
+  const citasOrdenadas = [...citasFiltradas].sort((a,b)=>(a.Fecha+a.Hora).localeCompare(b.Fecha+b.Hora));
   return citasOrdenadas.map(c=>{
     // Duracion_Min congelada al agendar (Ciclo 2); si una cita vieja no
     // la tiene todavia (antes de que existiera esta columna), se calcula
@@ -3643,11 +3711,23 @@ function renderCitasListHTML(){
       ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;"><div class="btn sm" data-reagendar="${c.ID}">Reagendar</div>${btnReintentoCalendar}</div>`
       : `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;"><div class="btn sm" data-reagendar="${c.ID}">Reagendar</div><div class="btn sm danger" data-cancelar="${c.ID}">Cancelar</div>${btnReintentoCalendar}</div>`;
     return `<div class="appt" data-appt-id="${c.ID}" style="${esCancelada?'opacity:.6;':''}"><div class="appt-time">${formatearFechaCorta(c.Fecha)}<br>${formatearHora(c.Hora)}</div><div class="appt-info" style="border-left-color:${color}"><b>${c.Paciente}</b>${etiqueta}<span>${tratArr(c.Tratamientos||c.Tratamiento).join(' + ')} · ${dur} min</span><br><span class="subtle">Registrado por: ${c.Usuario||'—'}</span>${acciones}</div></div>`;
-  }).join('') || '<div class="empty">Sin citas</div>';
+  }).join('') || `<div class="empty">${AGENDA_LISTA_RANGO==='reciente' ? 'Sin citas en los últimos 30 días ni futuras — usa el selector "Mostrando" de arriba para ver un mes anterior o el historial completo.' : 'Sin citas'}</div>`;
 }
 /* Vuelve a conectar los botones Reagendar/Cancelar de la lista de Citas —
    hay que llamarla de nuevo cada vez que se repinta esa lista sola. */
 function attachCitasListHandlers(){
+  // Ronda 13 (01/09) — selector "Mostrando" (filtro de rango de la
+  // Lista). Vive fuera de #agendaCitasList, pero su listener se conecta
+  // aqui porque esta funcion ya se re-ejecuta cada vez que la Lista
+  // vuelve a estar activa (ver attachContenidoAgenda), que es exactamente
+  // cuando este selector es visible.
+  const selRango = document.getElementById('agendaRangoSelect');
+  if(selRango){
+    selRango.addEventListener('change', ()=>{
+      AGENDA_LISTA_RANGO = selRango.value;
+      repintarPanelAgenda();
+    });
+  }
   document.querySelectorAll('[data-reagendar]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       const citaId = btn.dataset.reagendar;

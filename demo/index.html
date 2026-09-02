@@ -1046,8 +1046,16 @@ function formatearFecha(fechaISO){
     default: return `${y}-${m}-${d}`;
   }
 }
-/* Version sin año, para tarjetas compactas (ej. "próximas citas") que ya
-   dan por hecho que es el año en curso. */
+/* Version compacta para tarjetas (ej. "próximas citas", Lista de
+   Agenda). Ronda 16 (01/09) — antes SIEMPRE omitia el año, bajo la
+   asuncion de que "ya se sabe que es el año en curso" — asuncion que
+   dejo de ser cierta para la Lista de Agenda desde que existen "Ver
+   historial completo" y el selector de meses de años anteriores
+   (Rondas 13-15): una fecha como "27-Jun" ya es ambigua, puede ser de
+   este año o de uno anterior. Ahora el año se agrega SOLO cuando la
+   fecha NO es del año en curso, para no meterle ruido visual al caso
+   comun (que sigue siendo la mayoria de las citas) y a la vez resolver
+   la ambiguedad real cuando si hace falta. */
 function formatearFechaCorta(fechaISO){
   if(!fechaISO) return '';
   const [y,m,d] = fechaISO.split('-');
@@ -1055,7 +1063,9 @@ function formatearFechaCorta(fechaISO){
   const usaDMY = CONFIG.FORMATO_FECHA==='dmy' || CONFIG.FORMATO_FECHA==='dmy-texto';
   const usaTexto = CONFIG.FORMATO_FECHA==='iso-texto' || CONFIG.FORMATO_FECHA==='dmy-texto';
   const mesOut = usaTexto ? mesTxt : m;
-  return usaDMY ? `${d}-${mesOut}` : `${mesOut}-${d}`;
+  const base = usaDMY ? `${d}-${mesOut}` : `${mesOut}-${d}`;
+  const esOtroAnio = y !== todayStr().slice(0,4);
+  return esOtroAnio ? `${base}-${y}` : base;
 }
 // Ronda 6 (30/08-31/08) — "Fecha_Actualizacion" es un timestamp
 // combinado "YYYY-MM-DDTHH:mm" (sin segundos, decision explicita de

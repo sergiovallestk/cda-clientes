@@ -580,7 +580,7 @@
 Chart.defaults.color = '#8FA1AE';
 Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
 
-const CONFIG = { API_URL: "https://script.google.com/macros/s/AKfycbxlIdBOiVSiw3S1g4tW4qahzZ1FRromjaOHbFbbi2JfFoCA9Bg1L27Pk6pmpzP3x1Cvyg/exec", CLIENT_ID: "DEMO", CURRENCY: "MXN", DIAS_SIN_VISITA: 60, PHONE_COUNTRY: "MX", ZONA_HORARIA: "America/Mexico_City", FORMATO_HORA: "24h", FORMATO_FECHA: "iso", SEPARADOR: "es-MX", DECIMALES_PRECIO: false, PRIMER_DIA_SEMANA: "lunes" };
+const CONFIG = { API_URL: "https://script.google.com/macros/s/AKfycbxxNt2px1OUFy_32kGPnba8h-dykcQw-84nLVTisOVbb6ZMvFcOX1VdNCfobrAovoArOA/exec", CLIENT_ID: "DEMO", CURRENCY: "MXN", DIAS_SIN_VISITA: 60, PHONE_COUNTRY: "MX", ZONA_HORARIA: "America/Mexico_City", FORMATO_HORA: "24h", FORMATO_FECHA: "iso", SEPARADOR: "es-MX", DECIMALES_PRECIO: false, PRIMER_DIA_SEMANA: "lunes" };
 const CURRENCIES = {
   MXN:{symbol:'$',nombre:'Peso mexicano'}, USD:{symbol:'$',nombre:'Dólar estadounidense'},
   COP:{symbol:'$',nombre:'Peso colombiano'}, EUR:{symbol:'€',nombre:'Euro'},
@@ -765,7 +765,21 @@ function forzarTabDashboardTrasLogin(){
   window.scrollTo(0,0);
 }
 
+// Ronda 18 (02/09) — hideMask() centralizado aqui, en vez de depender de
+// que cada quien llame a esta funcion se acuerde de ocultar la mascara
+// antes. Bug real encontrado: al detectar sesion invalida DURANTE el
+// arranque (loadData(), llamada desde init() al recargar la pagina con
+// un token invalido/vencido), nadie llamaba hideMask() en ese camino —
+// la mascara empieza visible por default en el HTML
+// ("blocking-mask show") y con z-index mas alto que la pantalla de
+// login, asi que se quedaba pegada tapando y bloqueando el formulario de
+// login para siempre, obligando a recargar de nuevo para poder escribir.
+// El camino de apiCall() (sesion invalida mientras la app ya estaba
+// abierta) si llamaba hideMask() antes de esto — quedaba inconsistente
+// entre los 2 caminos. Centralizarlo aqui cubre ambos y cualquier futuro
+// llamador sin tener que acordarse cada vez.
 function manejarSesionInvalida(mensaje){
+  hideMask();
   clearTimeout(sessionWarningTimer); clearTimeout(sessionExpireTimer); clearInterval(sessionCountdownInterval);
   document.getElementById('sessionWarningOverlay').classList.remove('open');
   SESSION = { token:null, usuario:null, esAdmin:false, debeCambiarPassword:false, duracionSegundos:0, renovadaEn:0 };
@@ -1510,8 +1524,10 @@ function abrirRenombrarCategoria(nombreActual, esGasto, onVolver){
     if(lista.some(c=>normalize(c.Categoria)===normalize(nuevoNombre))) return showToast('Ya existe una categoría con ese nombre');
     const accion = esGasto ? 'edit_categoria_gasto' : 'edit_categoria';
     const syncKey = esGasto ? 'categorias_gasto' : 'categorias_tratamiento';
-    if(CONFIG.API_URL){ await apiCall(accion, { nombreActual, nombreNuevo: nuevoNombre }, [syncKey]); }
-    else { const c = lista.find(x=>x.Categoria===nombreActual); if(c) c.Categoria = nuevoNombre; }
+    if(CONFIG.API_URL){
+      const res = await apiCall(accion, { nombreActual, nombreNuevo: nuevoNombre }, [syncKey]);
+      if(!res || res.error) return showToast(res && res.error ? res.error : 'No se pudo renombrar la categoría');
+    } else { const c = lista.find(x=>x.Categoria===nombreActual); if(c) c.Categoria = nuevoNombre; }
     showToast('Categoría renombrada'); onVolver();
   });
 }
@@ -1566,8 +1582,10 @@ function openCategoryPicker(current, onSelect){
     const item = e.target.closest('.picker-item'); if(!item) return;
     if(item.dataset.newcat){
       const nuevaCategoria = item.dataset.newcat;
-      if(CONFIG.API_URL){ await apiCall('add_categoria', { categoria: nuevaCategoria }, ['categorias_tratamiento']); }
-      else { DATA.categorias_tratamiento.push({Categoria:nuevaCategoria}); }
+      if(CONFIG.API_URL){
+        const res = await apiCall('add_categoria', { categoria: nuevaCategoria }, ['categorias_tratamiento']);
+        if(!res || res.error) return showToast(res && res.error ? res.error : 'No se pudo agregar la categoría');
+      } else { DATA.categorias_tratamiento.push({Categoria:nuevaCategoria}); }
       closePicker(); onSelect(nuevaCategoria); showToast('Categoria agregada al catalogo');
     }
     else if(item.dataset.cat){ closePicker(); onSelect(item.dataset.cat); }
@@ -1600,8 +1618,10 @@ function openGastoCategoryPicker(current, onSelect){
     const item = e.target.closest('.picker-item'); if(!item) return;
     if(item.dataset.newcat){
       const nuevaCategoria = item.dataset.newcat;
-      if(CONFIG.API_URL){ await apiCall('add_categoria_gasto', { categoria: nuevaCategoria }, ['categorias_gasto']); }
-      else { DATA.categorias_gasto.push({Categoria:nuevaCategoria}); }
+      if(CONFIG.API_URL){
+        const res = await apiCall('add_categoria_gasto', { categoria: nuevaCategoria }, ['categorias_gasto']);
+        if(!res || res.error) return showToast(res && res.error ? res.error : 'No se pudo agregar la categoría');
+      } else { DATA.categorias_gasto.push({Categoria:nuevaCategoria}); }
       closePicker(); onSelect(nuevaCategoria); showToast('Categoria agregada al catalogo');
     }
     else if(item.dataset.cat){ closePicker(); onSelect(item.dataset.cat); }
@@ -2328,8 +2348,10 @@ function showPacienteDetalle(pacId){
   document.getElementById('btnToggleEstado').addEventListener('click', async ()=>{
     if(esActivo && saldo>0){ if(!confirm(`${p.Nombre} tiene un saldo pendiente de ${fmtMoney(saldo)}. ¿Marcarlo como inactivo de todas formas?`)) return; }
     const nuevoEstado = esActivo ? 'Inactivo' : 'Activo';
-    if(CONFIG.API_URL){ await apiCall('set_estado_paciente', { pacienteId: p.ID, estado: nuevoEstado }, ['pacientes']); }
-    else { p.Estado = nuevoEstado; }
+    if(CONFIG.API_URL){
+      const res = await apiCall('set_estado_paciente', { pacienteId: p.ID, estado: nuevoEstado }, ['pacientes']);
+      if(!res || res.error) return showToast(res && res.error ? res.error : 'No se pudo cambiar el estado del paciente');
+    } else { p.Estado = nuevoEstado; }
     closeModal(); showToast(esActivo?'Paciente marcado como inactivo':'Paciente reactivado'); render();
   });
 }
@@ -2362,8 +2384,10 @@ function abrirEdicionPaciente(p){
     const cambios = {};
     Object.keys(actual).forEach(k=>{ if(actual[k] !== original[k]) cambios[k] = actual[k]; });
     if(Object.keys(cambios).length === 0){ showToast('Sin cambios que guardar'); volverModal(); return; }
-    if(CONFIG.API_URL){ await apiCall('edit_paciente', { pacienteId: p.ID, cambios }, ['pacientes']); }
-    else { Object.assign(p, cambios); }
+    if(CONFIG.API_URL){
+      const res = await apiCall('edit_paciente', { pacienteId: p.ID, cambios }, ['pacientes']);
+      if(!res || res.error) return showToast(res && res.error ? res.error : 'No se pudo actualizar el paciente');
+    } else { Object.assign(p, cambios); }
     showToast('Paciente actualizado'); closeModal(); render();
   });
 }
@@ -2547,8 +2571,10 @@ function abrirEdicionGasto(gastoId){
     const cambios = {};
     Object.keys(actual).forEach(k=>{ if(actual[k] !== original[k]) cambios[k] = actual[k]; });
     if(Object.keys(cambios).length === 0){ showToast('Sin cambios que guardar'); closeModal(); return; }
-    if(CONFIG.API_URL){ await apiCall('edit_gasto', { gastoId: g.ID, cambios }, ['gastos']); }
-    else { Object.assign(g, cambios); }
+    if(CONFIG.API_URL){
+      const res = await apiCall('edit_gasto', { gastoId: g.ID, cambios }, ['gastos']);
+      if(!res || res.error) return showToast(res && res.error ? res.error : 'No se pudo actualizar el gasto');
+    } else { Object.assign(g, cambios); }
     showToast('Gasto actualizado'); closeModal(); render();
   });
 }
@@ -2578,7 +2604,8 @@ async function guardarPagoNuevo(selPac, selTrat, total, pagado, inicioTrat){
     // asignarle el tratamiento al paciente si todavia no lo tenia (ver
     // addPago en Code.gs) — sin esto, el FE se quedaria con la lista de
     // tratamientos del paciente desactualizada hasta el proximo refresco.
-    await apiCall('add_pago', { inicioTratamiento:inicio, ultimoPago, pacienteId:selPac.ID, paciente:selPac.Nombre, tratamiento:selTrat.nombre, categoria, montoTotal:total, montoPagado:pagado }, ['pagos','pacientes']);
+    const res = await apiCall('add_pago', { inicioTratamiento:inicio, ultimoPago, pacienteId:selPac.ID, paciente:selPac.Nombre, tratamiento:selTrat.nombre, categoria, montoTotal:total, montoPagado:pagado }, ['pagos','pacientes']);
+    if(!res || res.error) return showToast(res && res.error ? res.error : 'No se pudo registrar el pago');
   } else {
     DATA.pagos.push({ID:id, Inicio_Tratamiento:inicio, Ultimo_Pago:ultimoPago, Paciente_ID:selPac.ID, Paciente:selPac.Nombre, Tratamiento:selTrat.nombre, Categoria:categoria, Monto_Total:total, Monto_Pagado:pagado, Saldo:total-pagado});
     // #13 (modo demo) — mismo criterio que agregarTratamientosAlPaciente
@@ -2828,8 +2855,10 @@ function abrirEdicionTratamiento(tratId){
   });
   document.getElementById('etToggleActivo').addEventListener('click', async ()=>{
     const nuevoEstado = esActivo ? 'Inactivo' : 'Activo';
-    if(CONFIG.API_URL){ await apiCall('edit_tratamiento', { tratamientoId: t.ID, cambios: { Estado: nuevoEstado } }, ['tratamientos']); }
-    else { t.Estado = nuevoEstado; }
+    if(CONFIG.API_URL){
+      const res = await apiCall('edit_tratamiento', { tratamientoId: t.ID, cambios: { Estado: nuevoEstado } }, ['tratamientos']);
+      if(!res || res.error) return showToast(res && res.error ? res.error : 'No se pudo cambiar el estado del tratamiento');
+    } else { t.Estado = nuevoEstado; }
     closeModal(); showToast(esActivo?'Tratamiento marcado como inactivo':'Tratamiento reactivado'); render();
   });
   document.getElementById('etGuardar').addEventListener('click', async ()=>{
@@ -2842,8 +2871,10 @@ function abrirEdicionTratamiento(tratId){
     const cambios = {};
     Object.keys(actual).forEach(k=>{ if(actual[k] !== original[k]) cambios[k] = actual[k]; });
     if(Object.keys(cambios).length === 0){ showToast('Sin cambios que guardar'); closeModal(); return; }
-    if(CONFIG.API_URL){ await apiCall('edit_tratamiento', { tratamientoId: t.ID, cambios }, ['tratamientos']); }
-    else { Object.assign(t, cambios); }
+    if(CONFIG.API_URL){
+      const res = await apiCall('edit_tratamiento', { tratamientoId: t.ID, cambios }, ['tratamientos']);
+      if(!res || res.error) return showToast(res && res.error ? res.error : 'No se pudo actualizar el tratamiento');
+    } else { Object.assign(t, cambios); }
     showToast('Tratamiento actualizado'); closeModal(); render();
   });
 }
@@ -3826,8 +3857,10 @@ function attachCitasListHandlers(){
       document.getElementById('btnConfirmarCancelar').addEventListener('click', async ()=>{
         const motivo = document.getElementById('motivoCancelacion').value.trim();
         closeModal();
-        if(CONFIG.API_URL){ await apiCall('cancelar_cita', { citaId, motivo }, ['citas']); }
-        else { cita.Estado = 'Cancelada'; }
+        if(CONFIG.API_URL){
+          const res = await apiCall('cancelar_cita', { citaId, motivo }, ['citas']);
+          if(!res || res.error) return showToast(res && res.error ? res.error : 'No se pudo cancelar la cita');
+        } else { cita.Estado = 'Cancelada'; }
         showToast('Cita cancelada'); render();
         ubicarCitaEnListaSiAplica(citaId); // #22
       });
@@ -4026,7 +4059,8 @@ function afterRenderHooks(){
         if(!/^\d+$/.test(tel) || tel.length!==infoTel.longitud) return showToast(`El teléfono debe tener exactamente ${infoTel.longitud} dígitos (sin prefijo)`);
         let id = 'P' + String(DATA.pacientes.length+1).padStart(3,'0');
         if(CONFIG.API_URL){
-          await apiCall('add_paciente', { nombre, telefono:tel, tratamientos: selectedTrats.join(', '), ultimaVisitaAnterior, historialPrevio }, ['pacientes']);
+          const res = await apiCall('add_paciente', { nombre, telefono:tel, tratamientos: selectedTrats.join(', '), ultimaVisitaAnterior, historialPrevio }, ['pacientes']);
+          if(!res || res.error) return showToast(res && res.error ? res.error : 'No se pudo agregar el paciente');
         } else {
           DATA.pacientes.push({ID:id, Nombre:nombre, Telefono:tel, Ultima_Visita: ultimaVisitaAnterior || '—', Tratamientos: selectedTrats.join(', '), Estado:'Activo', HistorialPrevio: historialPrevio?'Si':''});
         }
@@ -4203,7 +4237,8 @@ function afterRenderHooks(){
         document.getElementById('gConfirmar').addEventListener('click', async ()=>{
           let id = 'G' + String(DATA.gastos.length+1).padStart(3,'0');
           if(CONFIG.API_URL){
-            await apiCall('add_gasto', { fecha:todayStr(), concepto, categoria, monto }, ['gastos']);
+            const res = await apiCall('add_gasto', { fecha:todayStr(), concepto, categoria, monto }, ['gastos']);
+            if(!res || res.error) return showToast(res && res.error ? res.error : 'No se pudo registrar el gasto');
           } else {
             DATA.gastos.push({ID:id, Fecha:todayStr(), Concepto:concepto, Categoria:categoria, Monto:monto});
           }
@@ -4238,7 +4273,8 @@ function afterRenderHooks(){
         if(faltanTrat.length) return showToast('Completa: '+faltanTrat.join(', '));
         let id = 'T' + String(DATA.tratamientos.length+1).padStart(2,'0');
         if(CONFIG.API_URL){
-          await apiCall('add_tratamiento', { nombre, categoria:categoriaSel, precio, duracionMin }, ['tratamientos']);
+          const res = await apiCall('add_tratamiento', { nombre, categoria:categoriaSel, precio, duracionMin }, ['tratamientos']);
+          if(!res || res.error) return showToast(res && res.error ? res.error : 'No se pudo agregar el tratamiento');
         } else {
           DATA.tratamientos.push({ID:id, Nombre:nombre, Categoria:categoriaSel, Precio_MXN:precio, Duracion_Min:duracionMin});
         }
@@ -4356,8 +4392,10 @@ function afterRenderHooks(){
     document.getElementById('btnGuardarHorario').addEventListener('click', async ()=>{
       const nuevoHorario = construirHorarioDesdeDOM();
       if(JSON.stringify(nuevoHorario) === horarioOriginal){ showToast('Sin cambios que guardar'); return; }
-      if(CONFIG.API_URL){ await apiCall('update_horario', { dias: nuevoHorario }, ['horario']); }
-      else { DATA.horario = nuevoHorario; }
+      if(CONFIG.API_URL){
+        const res = await apiCall('update_horario', { dias: nuevoHorario }, ['horario']);
+        if(!res || res.error) return showToast(res && res.error ? res.error : 'No se pudo guardar el horario');
+      } else { DATA.horario = nuevoHorario; }
       showToast('Horario guardado'); render();
     });
 

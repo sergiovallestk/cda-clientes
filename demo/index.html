@@ -867,7 +867,7 @@ function mostrarPantallaCambioForzado(){
     <div class="field" style="margin-bottom:12px;"><label>Contraseña nueva</label><input id="cpfNueva" type="password"></div>
     <div class="field" style="margin-bottom:18px;"><label>Confirmar contraseña nueva</label><input id="cpfConfirmar" type="password"></div>
     <div class="btn primary block" id="btnGuardarCambioForzado">Guardar y continuar</div>`;
-  document.getElementById('btnGuardarCambioForzado').addEventListener('click', async ()=>{
+  const intentarCambioForzado = async ()=>{
     const nueva = document.getElementById('cpfNueva').value;
     const confirmar = document.getElementById('cpfConfirmar').value;
     if(!nueva || nueva.length<4) return showToast('La contraseña debe tener al menos 4 caracteres');
@@ -879,7 +879,12 @@ function mostrarPantallaCambioForzado(){
     showMask('Cargando información...');
     await loadData(); hidratarConfigDesdeSheet(); hideMask(); render();
     showToast('Contraseña actualizada');
-  });
+  };
+  document.getElementById('btnGuardarCambioForzado').addEventListener('click', intentarCambioForzado);
+  // Ronda 20 (02/09) — Enter en el ultimo campo dispara el mismo submit
+  // que el boton, igual que ya hacia el login normal (unico campo con
+  // este listener, no el primero, mismo patron que login).
+  document.getElementById('cpfConfirmar').addEventListener('keydown', e=>{ if(e.key==='Enter') intentarCambioForzado(); });
 }
 
 /* Ciclo 1 / Ronda 3 (5c), vigente en Ronda 4 — bug real encontrado:
@@ -1286,7 +1291,7 @@ function wireMiCuentaModal(){
       <div class="field" style="margin-bottom:18px;"><label>Confirmar contraseña nueva</label><input id="cpConfirmar" type="password"></div>
       <div class="modal-actions"><div class="btn block" id="btnCancelarCambioPassword">Cancelar</div><div class="btn primary block" id="btnGuardarCambioPassword">Guardar</div></div>`);
     document.getElementById('btnCancelarCambioPassword').addEventListener('click', volverModal);
-    document.getElementById('btnGuardarCambioPassword').addEventListener('click', async ()=>{
+    const intentarCambioPropio = async ()=>{
       const actual = document.getElementById('cpActual').value;
       const nueva = document.getElementById('cpNueva').value;
       const confirmar = document.getElementById('cpConfirmar').value;
@@ -1296,7 +1301,10 @@ function wireMiCuentaModal(){
       const json = await apiCall('cambiar_password', { passwordActual: actual, passwordNueva: nueva });
       if(json && json.ok){ closeModal(); showToast('Contraseña actualizada'); }
       else showToast(json && json.error ? json.error : 'No se pudo cambiar la contraseña');
-    });
+    };
+    document.getElementById('btnGuardarCambioPassword').addEventListener('click', intentarCambioPropio);
+    // Ronda 20 (02/09) — mismo patron: Enter solo en el ultimo campo.
+    document.getElementById('cpConfirmar').addEventListener('keydown', e=>{ if(e.key==='Enter') intentarCambioPropio(); });
   });
   document.getElementById('btnCerrarSesion').addEventListener('click', ()=>{
     pushModalState(wireMiCuentaModal);
@@ -3935,7 +3943,7 @@ function renderConfiguracionHTML(){
           <span>${u.Usuario}${u.EsAdmin?' <span class="chip">Admin</span>':''}</span>
           <span style="display:flex;align-items:center;gap:8px;">
             <b style="color:${u.Activo?'var(--teal)':'var(--text-mute)'};font-size:12px;">${u.Activo?'Activo':'Inactivo'}</b>
-            <div class="btn sm" data-toggle-usuario="${u.Usuario}" data-activo="${u.Activo}">${u.Activo?'Desactivar':'Activar'}</div>
+            ${u.Usuario===SESSION.usuario ? '' : `<div class="btn sm" data-toggle-usuario="${u.Usuario}" data-activo="${u.Activo}">${u.Activo?'Desactivar':'Activar'}</div>`}
             <div class="btn sm" data-reset-usuario="${u.Usuario}">Restablecer contraseña</div>
           </span>
         </div>`).join('') || '<div class="empty">Sin usuarios registrados</div>'}

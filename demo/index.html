@@ -782,6 +782,19 @@ function manejarSesionInvalida(mensaje){
   hideMask();
   clearTimeout(sessionWarningTimer); clearTimeout(sessionExpireTimer); clearInterval(sessionCountdownInterval);
   document.getElementById('sessionWarningOverlay').classList.remove('open');
+  // Ronda 19 (02/09) — cerrar cualquier modal/selector que hubiera quedado
+  // abierto a medio uso (ej. "Editar paciente" con cambios sin guardar) al
+  // momento de invalidarse la sesion. Antes, forzarTabDashboardTrasLogin()
+  // solo volvia a dibujar #content por detras — el modal (#modalOverlay) y
+  // el selector de tratamientos (#pickerOverlay), al vivir en contenedores
+  // aparte, nunca se cerraban: quedaban tapados momentaneamente por la
+  // pantalla de login (z-index mas alto) y reaparecian tal cual al volver
+  // a iniciar sesion, con datos potencialmente obsoletos o a medio guardar.
+  // Decision de Sergio: solo se cierra esto (lo "inseguro"); los filtros de
+  // vista de cada pestaña (ej. Pacientes) NO se resetean aqui a proposito,
+  // se conservan como comodidad de navegacion.
+  closeModal();
+  closePicker();
   SESSION = { token:null, usuario:null, esAdmin:false, debeCambiarPassword:false, duracionSegundos:0, renovadaEn:0 };
   borrarSesionGuardada();
   forzarTabDashboardTrasLogin();

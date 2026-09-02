@@ -1065,7 +1065,14 @@ function formatearFechaCorta(fechaISO){
   const mesOut = usaTexto ? mesTxt : m;
   const base = usaDMY ? `${d}-${mesOut}` : `${mesOut}-${d}`;
   const esOtroAnio = y !== todayStr().slice(0,4);
-  return esOtroAnio ? `${base}-${y}` : base;
+  if(!esOtroAnio) return base;
+  // Ronda 17 (01/09) — el año se agrega en la MISMA posicion que ya usa
+  // formatearFecha() (version completa) segun el formato: PRIMERO para
+  // ISO/ISO-texto (asi se ve un ISO real: "2025-Jun-27", no
+  // "Jun-27-2025"), AL FINAL para DMY/DMY-texto ("27-Jun-2025"). Antes
+  // siempre se pegaba al final sin importar el formato, lo cual rompia
+  // el orden ISO cuando si se mostraba el año.
+  return usaDMY ? `${base}-${y}` : `${y}-${base}`;
 }
 // Ronda 6 (30/08-31/08) — "Fecha_Actualizacion" es un timestamp
 // combinado "YYYY-MM-DDTHH:mm" (sin segundos, decision explicita de

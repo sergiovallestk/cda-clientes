@@ -588,7 +588,7 @@
 Chart.defaults.color = '#8FA1AE';
 Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
 
-const CONFIG = { API_URL: "https://script.google.com/macros/s/AKfycbxxNt2px1OUFy_32kGPnba8h-dykcQw-84nLVTisOVbb6ZMvFcOX1VdNCfobrAovoArOA/exec", CLIENT_ID: "DEMO", CURRENCY: "MXN", DIAS_SIN_VISITA: 60, PHONE_COUNTRY: "MX", ZONA_HORARIA: "America/Mexico_City", FORMATO_HORA: "24h", FORMATO_FECHA: "iso", SEPARADOR: "es-MX", DECIMALES_PRECIO: false, PRIMER_DIA_SEMANA: "lunes" };
+const CONFIG = { API_URL: "https://script.google.com/macros/s/AKfycbxxNt2px1OUFy_32kGPnba8h-dykcQw-84nLVTisOVbb6ZMvFcOX1VdNCfobrAovoArOA/exec", CLIENT_ID: "DEMO", CURRENCY: "MXN", DIAS_SIN_VISITA: 60, PHONE_COUNTRY: "MX", ZONA_HORARIA: "America/Mexico_City", FORMATO_HORA: "24h", FORMATO_FECHA: "iso", SEPARADOR: "es-MX", DECIMALES_PRECIO: false, PRIMER_DIA_SEMANA: "lunes", UMBRAL_INACTIVIDAD_MINUTOS: 30 };
 const CURRENCIES = {
   MXN:{symbol:'$',nombre:'Peso mexicano'}, USD:{symbol:'$',nombre:'Dólar estadounidense'},
   COP:{symbol:'$',nombre:'Peso colombiano'}, EUR:{symbol:'€',nombre:'Euro'},
@@ -654,22 +654,57 @@ function emptyShell(){
 /* ==================== Fase 2 (Grupo 3) — Sesion / Login ====================
  * Apps Script no tiene sesion nativa — el token que regresa login() se
  * guarda en localStorage del navegador y se manda en CADA peticion futura
- * (GET y POST). "renovadaEn" + "duracionSegundos" permiten calcular, al
- * recargar la pagina con una sesion ya guardada, cuanto tiempo le queda
- * de verdad sin tener que preguntarle al servidor (CacheService no
- * expone su tiempo restante) — es una estimacion conservadora del lado
- * del navegador, el servidor sigue siendo la autoridad final: si esta
- * estimacion se equivoca por poco, la siguiente peticion real
- * simplemente regresa "session_invalid" y se maneja igual que cualquier
- * expiracion real.
+ * (GET y POST).
+ *
+ * Ronda 22 (02/09) — REDISEÑO COMPLETO a "sesion por inactividad real"
+ * (ver LEEME para el diseño completo acordado con Sergio, con ejemplos).
+ * Resumen de los 2 mecanismos, que corren en paralelo y NUNCA se cruzan
+ * entre si (a diferencia de un primer diseño descartado en la
+ * conversacion, que los mezclaba y resultaba confuso):
+ *
+ * 1) AVISO VISIBLE ("tu sesion esta por terminar") — se dispara
+ *    UNICAMENTE comparando inactividad real (ultimaActividad) contra el
+ *    umbral configurable (CONFIG.UMBRAL_INACTIVIDAD_MINUTOS, editable
+ *    solo por un ADMIN desde Configuracion). Sin importar cuanto le
+ *    quede al token tecnico. Si no se responde en
+ *    SESION_AVISO_ANTES_SEGUNDOS, se fuerza el cierre de sesion.
+ * 2) RENOVACION SILENCIOSA del token en CacheService — mientras el
+ *    usuario siga activo (por debajo del umbral), el sistema renueva el
+ *    token solo, en segundo plano, cada vez que este se acerca a su
+ *    limite tecnico (SESION_DURACION_SEGUNDOS en el backend) — para que
+ *    una sesion usada de forma continua nunca se caiga por ese limite,
+ *    sin importar cuantas horas lleve abierta.
+ *
+ * Una revision periodica local (cada REVISION_INACTIVIDAD_MS, 100%
+ * gratis, sin tocar el backend) decide en cada ciclo cual de los 2
+ * mecanismos aplica. Ademas, un listener de visibilitychange/focus
+ * recalcula todo con tiempo REAL en cuanto la pestaña/app recupera el
+ * foco — esto corrige el bug documentado en LEEME de minimizar/
+ * backgrounding (los navegadores pausan setTimeout/setInterval en 2do
+ * plano; confiar solo en ellos producia conteos regresivos incorrectos
+ * al volver).
+ *
+ * Aparte de estos 2, sigue existiendo un TOPE ABSOLUTO de 24h desde el
+ * login original (TOPE_ABSOLUTO_SESION_SEGUNDOS en Code.gs) — fijo, NO
+ * configurable, decision explicita de Sergio: aunque el usuario este
+ * activo sin parar, a las 24h se fuerza un re-login de todos modos. Esto
+ * se aplica 100% del lado del servidor (validarSesion en Code.gs), asi
+ * que no requiere nada especial aqui — cualquier accion (incluida la
+ * renovacion silenciosa) simplemente regresa "session_invalid" cuando se
+ * cumple, y el manejo ya existente de ese error se encarga del resto.
+ *
  * En modo DEMO (sin CONFIG.API_URL) todo este mecanismo se omite por
  * completo — decision explicita de Sergio, para no estorbarle a un
  * prospecto viendo la demo con datos falsos. */
 const SESION_STORAGE_KEY = 'cda_sesion';
-const SESION_AVISO_ANTES_SEGUNDOS = 120; // aviso "tu sesion esta por terminar" con este margen antes de expirar — #74j (30/08), ampliado de 60 a 120 a peticion de Sergio
+const SESION_AVISO_ANTES_SEGUNDOS = 120; // margen de respuesta al aviso visible antes de forzar el cierre — sin cambios en esta ronda
+const REVISION_INACTIVIDAD_MS = 2*60*1000; // Ronda 22 (02/09) — cada 2 min, revision 100% local (ver comentario de arriba)
 let SESSION = { token:null, usuario:null, esAdmin:false, debeCambiarPassword:false, duracionSegundos:0, renovadaEn:0 };
-let sessionWarningTimer = null;
+let ultimaActividad = Date.now();
+let revisionInactividadInterval = null;
 let sessionExpireTimer = null;
+let avisoActivo = false; // true mientras el aviso "tu sesion esta por terminar" esta en pantalla
+let avisoAbiertoEn = 0; // marca de tiempo real de cuando se abrio el aviso — usada por el fix de backgrounding
 
 function cargarSesionGuardada(){
   try{ const raw = localStorage.getItem(SESION_STORAGE_KEY); return raw ? JSON.parse(raw) : null; }
@@ -687,34 +722,74 @@ function actualizarUsuarioMenu(){
   const el = document.getElementById('navMiCuentaUsuario');
   if(el) el.textContent = SESSION.usuario || '';
 }
-// Se llama cada vez que el servidor confirma una sesion nueva o renovada
-// (login o renovar_sesion) — reinicia el reloj de "cuanto le queda".
+
+// Ronda 22 (02/09) — actividad real del usuario (clic/tecla/toque),
+// registrada UNA sola vez a nivel documento, valida para cualquier
+// pantalla/modal sin tener que reconectar nada en cada render(). Se
+// registra siempre (incluso en DEMO) porque es gratis — el mecanismo que
+// la usa (revisarInactividad) ya se encarga de no hacer nada si no hay
+// CONFIG.API_URL o no hay sesion activa.
+['click','keydown','touchstart'].forEach(evt=>{
+  document.addEventListener(evt, ()=>{ ultimaActividad = Date.now(); }, {passive:true});
+});
+
+function iniciarRevisionInactividad(){
+  if(revisionInactividadInterval) return; // ya esta corriendo, no duplicar
+  revisionInactividadInterval = setInterval(revisarInactividad, REVISION_INACTIVIDAD_MS);
+}
+function detenerRevisionInactividad(){
+  clearInterval(revisionInactividadInterval); revisionInactividadInterval = null;
+}
+
+// Corazon del mecanismo — ver el comentario largo al inicio de esta
+// seccion para el diseño completo. Se llama cada REVISION_INACTIVIDAD_MS
+// Y tambien al recuperar el foco (recalcularAlRecuperarFoco), para no
+// depender solo de que el setInterval se dispare puntualmente.
+function revisarInactividad(){
+  if(!CONFIG.API_URL || !SESSION.token) return;
+  if(avisoActivo) return; // ya se esta preguntando "¿sigues ahi?" — no hacer nada mas hasta que se resuelva
+  const umbralSeg = (CONFIG.UMBRAL_INACTIVIDAD_MINUTOS || 30) * 60;
+  const inactivoSeg = (Date.now() - ultimaActividad) / 1000;
+  if(inactivoSeg >= umbralSeg){ mostrarAvisoExpiracion(); return; }
+  // Sigue activo (por debajo del umbral) — renovar el token en silencio
+  // si ya lleva un buen tramo de su vida tecnica (80%), para que nunca
+  // llegue a expirar solo mientras haya actividad real.
+  const tokenAgeSeg = (Date.now() - SESSION.renovadaEn) / 1000;
+  if(tokenAgeSeg >= SESSION.duracionSegundos * 0.8) renovarSesionSilenciosa();
+}
+
+// Renovacion en segundo plano — SIN mascara, SIN toast, el usuario nunca
+// se entera. Si falla (red o session_invalid), no se hace nada especial
+// aqui: session_invalid ya lo maneja apiCall() directamente forzando el
+// login (aplica igual al tope absoluto de 24h); un fallo de red simplemente
+// se reintenta solo en el siguiente ciclo de revisarInactividad().
+async function renovarSesionSilenciosa(){
+  const json = await apiCall('renovar_sesion', {}, [], null, true);
+  if(json && json.ok){ SESSION.duracionSegundos = json.expiraEnSegundos; SESSION.renovadaEn = Date.now(); guardarSesion(); }
+}
+
+// Se llama cada vez que el servidor confirma una sesion nueva (login) o
+// tras extenderla desde el aviso visible. NO se usa para la renovacion
+// silenciosa (ver renovarSesionSilenciosa, que actualiza SESSION
+// directo) para no reiniciar ultimaActividad artificialmente ahi.
 function fijarSesion(token, usuario, esAdmin, debeCambiarPassword, duracionSegundos){
   SESSION = { token, usuario, esAdmin, debeCambiarPassword, duracionSegundos, renovadaEn: Date.now() };
   guardarSesion();
   actualizarUsuarioMenu();
-  programarAvisoDesdeRestantes(duracionSegundos);
-}
-
-function programarAvisoDesdeRestantes(segundosRestantes){
-  clearTimeout(sessionWarningTimer); clearTimeout(sessionExpireTimer);
-  if(segundosRestantes <= 0){ manejarSesionInvalida(); return; }
-  const avisoEnSeg = Math.max(segundosRestantes - SESION_AVISO_ANTES_SEGUNDOS, 2);
-  sessionWarningTimer = setTimeout(mostrarAvisoExpiracion, avisoEnSeg*1000);
+  ultimaActividad = Date.now(); // login/extension de sesion cuenta como actividad real
+  iniciarRevisionInactividad();
 }
 
 // Aviso tipo banco: "tu sesion esta por terminar, ¿deseas continuar?".
 // Vive en su PROPIO overlay (sessionWarningOverlay), no en el modal
 // normal del sistema, para no reemplazar algo que el usuario tuviera
-// abierto en ese momento (ej. un formulario a medio llenar).
-// #74j (30/08) — contador visible agregado: un setInterval de 1s
-// actualiza el texto mientras el aviso esta abierto, puramente cosmetico
-// (no cambia cuando expira de verdad — eso lo sigue controlando
-// sessionExpireTimer, igual que antes). countdownInterval se limpia en
-// los 3 casos en que este aviso puede terminar: "Si", "No", o que se
-// agote el tiempo solo.
+// abierto en ese momento (ej. un formulario a medio llenar). Ronda 22
+// (02/09) — ahora se dispara por inactividad real, no por cercania al
+// limite tecnico del token (ver revisarInactividad).
 let sessionCountdownInterval = null;
 function mostrarAvisoExpiracion(){
+  avisoActivo = true;
+  avisoAbiertoEn = Date.now();
   let segundosRestantes = SESION_AVISO_ANTES_SEGUNDOS;
   document.getElementById('sessionWarningBody').innerHTML = `
     <h3>Tu sesión está por terminar</h3>
@@ -731,12 +806,14 @@ function mostrarAvisoExpiracion(){
   sessionExpireTimer = setTimeout(()=>{
     clearInterval(sessionCountdownInterval);
     document.getElementById('sessionWarningOverlay').classList.remove('open');
+    avisoActivo = false;
     manejarSesionInvalida();
   }, SESION_AVISO_ANTES_SEGUNDOS*1000);
   document.getElementById('btnExtenderSesion').addEventListener('click', async ()=>{
     clearInterval(sessionCountdownInterval);
     document.getElementById('sessionWarningOverlay').classList.remove('open');
     clearTimeout(sessionExpireTimer);
+    avisoActivo = false;
     const json = await apiCall('renovar_sesion', {}, [], 'Extendiendo sesión...');
     if(json && json.ok){ fijarSesion(SESSION.token, SESSION.usuario, SESSION.esAdmin, SESSION.debeCambiarPassword, json.expiraEnSegundos); showToast('Sesión extendida'); }
     else { manejarSesionInvalida(); }
@@ -745,9 +822,43 @@ function mostrarAvisoExpiracion(){
     clearInterval(sessionCountdownInterval);
     document.getElementById('sessionWarningOverlay').classList.remove('open');
     clearTimeout(sessionExpireTimer);
+    avisoActivo = false;
     logoutUsuario();
   });
 }
+
+// Ronda 22 (02/09) — fix del bug de minimizar/backgrounding documentado en
+// LEEME: los navegadores pausan setTimeout/setInterval en 2do plano, asi
+// que al recuperar el foco puede haber pasado mucho mas tiempo REAL del
+// que esos temporizadores alcanzaron a contar. En vez de confiar en que
+// se disparen puntualmente, se recalcula todo con Date.now() apenas la
+// pestaña/app vuelve a primer plano.
+function recalcularAlRecuperarFoco(){
+  if(!CONFIG.API_URL || !SESSION.token) return;
+  if(avisoActivo){
+    const restanteReal = SESION_AVISO_ANTES_SEGUNDOS - (Date.now() - avisoAbiertoEn)/1000;
+    clearTimeout(sessionExpireTimer);
+    if(restanteReal <= 0){
+      clearInterval(sessionCountdownInterval);
+      document.getElementById('sessionWarningOverlay').classList.remove('open');
+      avisoActivo = false;
+      manejarSesionInvalida();
+    } else {
+      const el = document.getElementById('sessionCountdownText');
+      if(el) el.textContent = Math.max(Math.round(restanteReal), 0);
+      sessionExpireTimer = setTimeout(()=>{
+        clearInterval(sessionCountdownInterval);
+        document.getElementById('sessionWarningOverlay').classList.remove('open');
+        avisoActivo = false;
+        manejarSesionInvalida();
+      }, restanteReal*1000);
+    }
+  } else {
+    revisarInactividad(); // re-evalua de inmediato en vez de esperar al proximo ciclo de 2 min
+  }
+}
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') recalcularAlRecuperarFoco(); });
+window.addEventListener('focus', recalcularAlRecuperarFoco);
 
 // Se llama en cuanto CUALQUIER peticion (GET o POST) regresa
 // "session_invalid" — token vencido, borrado, o nunca existio.
@@ -798,7 +909,12 @@ function forzarTabDashboardTrasLogin(){
 // llamador sin tener que acordarse cada vez.
 function manejarSesionInvalida(mensaje){
   hideMask();
-  clearTimeout(sessionWarningTimer); clearTimeout(sessionExpireTimer); clearInterval(sessionCountdownInterval);
+  // Ronda 22 (02/09) — sessionWarningTimer ya no existe (reemplazado por
+  // revisionInactividadInterval); se detiene el intervalo de revision y
+  // se limpia cualquier aviso/temporizador que hubiera quedado a medias.
+  detenerRevisionInactividad();
+  clearTimeout(sessionExpireTimer); clearInterval(sessionCountdownInterval);
+  avisoActivo = false;
   document.getElementById('sessionWarningOverlay').classList.remove('open');
   // Ronda 19 (02/09) — cerrar cualquier modal/selector que hubiera quedado
   // abierto a medio uso (ej. "Editar paciente" con cambios sin guardar) al
@@ -821,7 +937,10 @@ function manejarSesionInvalida(mensaje){
 }
 
 async function logoutUsuario(){
-  clearTimeout(sessionWarningTimer); clearTimeout(sessionExpireTimer); clearInterval(sessionCountdownInterval);
+  detenerRevisionInactividad();
+  clearTimeout(sessionExpireTimer); clearInterval(sessionCountdownInterval);
+  avisoActivo = false;
+  document.getElementById('sessionWarningOverlay').classList.remove('open');
   try{ await apiCall('logout', {}, [], 'Cerrando sesión...'); }catch(err){ /* si no hay conexion, se limpia igual del lado del navegador */ }
   SESSION = { token:null, usuario:null, esAdmin:false, debeCambiarPassword:false, duracionSegundos:0, renovadaEn:0 };
   borrarSesionGuardada();
@@ -831,7 +950,9 @@ async function logoutUsuario(){
 }
 
 function mostrarPantallaLogin(mensajeError){
-  clearTimeout(sessionWarningTimer); clearTimeout(sessionExpireTimer);
+  detenerRevisionInactividad();
+  clearTimeout(sessionExpireTimer); clearInterval(sessionCountdownInterval);
+  avisoActivo = false;
   document.getElementById('sessionWarningOverlay').classList.remove('open');
   document.getElementById('loginScreen').classList.add('open');
   document.getElementById('loginBody').innerHTML = `
@@ -977,6 +1098,11 @@ function hidratarConfigDesdeSheet(){
   // Code.gs crea la fila sola si no existe — no hizo falta tocar el
   // backend para este ajuste).
   if(mapa.PrimerDiaSemana==='domingo' || mapa.PrimerDiaSemana==='lunes') CONFIG.PRIMER_DIA_SEMANA = mapa.PrimerDiaSemana;
+  // Ronda 22 (02/09) — umbral de inactividad para el rediseno de "sesion
+  // por inactividad real" (ver LEEME). Solo lo puede EDITAR un admin
+  // (verificado en el backend, ver setConfig), pero cualquier usuario lo
+  // LEE igual, porque la duracion de sesion aplica parejo a todos.
+  if(mapa.UmbralInactividadMinutos && Number(mapa.UmbralInactividadMinutos) > 0) CONFIG.UMBRAL_INACTIVIDAD_MINUTOS = Number(mapa.UmbralInactividadMinutos);
 }
 
 /* Mapa entre las claves del JSON del backend y los nombres de hoja que
@@ -1024,16 +1150,27 @@ async function syncData(keys){
    unica forma de traer todo de nuevo es el boton manual de
    "Sincronizar con otros dispositivos" en Configuracion, para cuando de
    verdad hay alguien mas usando el sistema en otro dispositivo. */
-async function apiCall(action, payload, syncKeys, maskText){
+// Ronda 22 (02/09) — parametro "silencioso" agregado (5to, opcional) para
+// la renovacion de sesion en segundo plano (ver renovarSesionSilenciosa):
+// sin este modo, CUALQUIER llamada mostraba la mascara de carga, lo cual
+// hubiera arruinado por completo el proposito de "renovar sin que el
+// usuario se entere". Con silencioso=true se omiten mascara Y el toast de
+// error de red (un fallo aqui simplemente se reintenta solo en el
+// siguiente ciclo de revisarInactividad, no hace falta alarmar al
+// usuario por una renovacion de fondo que fallo una vez).
+async function apiCall(action, payload, syncKeys, maskText, silencioso){
   if(!CONFIG.API_URL) return null;
-  showMask(maskText || 'Guardando...');
+  if(!silencioso) showMask(maskText || 'Guardando...');
   try{
     const res = await fetch(CONFIG.API_URL, { method:'POST', body: JSON.stringify({ token: SESSION.token, client:CONFIG.CLIENT_ID, action, payload }), cache:'no-store' });
     const json = await res.json();
     // Fase 2 — cualquier accion (salvo "login", que nunca llega por esta
     // funcion con token valido de todos modos) puede regresar
     // "session_invalid" si el token vencio entre que se cargo la pantalla
-    // y que se dio clic en algo — se maneja igual en cualquier caso.
+    // y que se dio clic en algo — se maneja igual en cualquier caso,
+    // incluida una renovacion silenciosa (Ronda 22): si el tope absoluto
+    // de 24h ya se cumplio, esto fuerza el login aunque el usuario este
+    // activo, que es la intencion.
     if(json && json.error==='session_invalid'){ hideMask(); manejarSesionInvalida(); return json; }
     if(json && !json.error && !json.conflict && syncKeys && syncKeys.length){
       showMask('Actualizando...');
@@ -1048,10 +1185,10 @@ async function apiCall(action, payload, syncKeys, maskText){
     // confundio a Sergio en pruebas reales. Se corrige a un mensaje que
     // no promete una persistencia que no existe.
     console.error('Error de API en '+action, err);
-    showToast('No se pudo conectar con el servidor. Verifica tu conexión e inténtalo de nuevo — nada se guardó.');
+    if(!silencioso) showToast('No se pudo conectar con el servidor. Verifica tu conexión e inténtalo de nuevo — nada se guardó.');
     return null;
   }
-  finally{ hideMask(); }
+  finally{ if(!silencioso) hideMask(); }
 }
 
 function anyModalOpen(){
@@ -4032,6 +4169,9 @@ function renderConfiguracionHTML(){
         <option value="lunes" ${CONFIG.PRIMER_DIA_SEMANA==='lunes'?'selected':''}>Lunes</option>
         <option value="domingo" ${CONFIG.PRIMER_DIA_SEMANA==='domingo'?'selected':''}>Domingo</option>
       </select></div>
+    <div class="field" style="margin-bottom:16px;"><label>Tiempo de inactividad antes de cerrar sesión (minutos)</label>
+      ${SESSION.esAdmin ? `<input id="cfgUmbralInactividad" type="number" min="5" step="5" value="${CONFIG.UMBRAL_INACTIVIDAD_MINUTOS}">` : `<input value="${CONFIG.UMBRAL_INACTIVIDAD_MINUTOS} minutos" readonly>`}
+      <p class="subtle" style="margin:4px 0 0;">Solo un administrador puede modificar este valor.</p></div>
     <div class="field" style="margin-bottom:16px;"><label>ID de cliente</label><input value="${CONFIG.CLIENT_ID}" readonly></div>
     <div class="btn primary" id="btnGuardarConfig">Guardar cambios</div>
     <p style="color:var(--text-mute);font-size:12px;margin-top:14px;">Modo actual: <b style="color:${CONFIG.API_URL?'var(--teal)':'var(--amber)'}">${CONFIG.API_URL ? 'Conectado a datos reales' : 'Demo (datos de ejemplo)'}</b>.</p>
@@ -4374,6 +4514,7 @@ function afterRenderHooks(){
       CURRENCY: CONFIG.CURRENCY, PHONE_COUNTRY: CONFIG.PHONE_COUNTRY, ZONA_HORARIA: CONFIG.ZONA_HORARIA, DIAS_SIN_VISITA: CONFIG.DIAS_SIN_VISITA,
       FORMATO_HORA: CONFIG.FORMATO_HORA, FORMATO_FECHA: CONFIG.FORMATO_FECHA, SEPARADOR: CONFIG.SEPARADOR,
       DECIMALES_PRECIO: CONFIG.DECIMALES_PRECIO, PRIMER_DIA_SEMANA: CONFIG.PRIMER_DIA_SEMANA,
+      UMBRAL_INACTIVIDAD_MINUTOS: CONFIG.UMBRAL_INACTIVIDAD_MINUTOS,
     };
     // #13 (Ronda 16, parte 2) — mismo patron que configOriginal arriba,
     // pero para el horario de atencion: faltaba la "foto" original, asi
@@ -4405,6 +4546,15 @@ function afterRenderHooks(){
         DECIMALES_PRECIO: document.getElementById('cfgDecimalesPrecio').value === 'true',
         PRIMER_DIA_SEMANA: document.getElementById('cfgPrimerDiaSemana').value,
       };
+      // Ronda 22 (02/09) — el campo de umbral de inactividad solo existe
+      // como <input> editable si SESSION.esAdmin (ver renderConfiguracionHTML);
+      // para un usuario normal es un <input readonly> sin ese id, asi que
+      // ni siquiera se intenta leer ni se manda en el payload — el
+      // backend igual lo rechazaria (ver setConfig), esto es nada mas
+      // para no mandar una clave que ese usuario no tiene forma de editar.
+      if(SESSION.esAdmin){
+        nuevo.UMBRAL_INACTIVIDAD_MINUTOS = Number(document.getElementById('cfgUmbralInactividad').value) || 30;
+      }
       const huboCambios = Object.keys(nuevo).some(k => nuevo[k] !== configOriginal[k]);
       if(!huboCambios){ showToast('Sin cambios que guardar'); return; }
       Object.assign(CONFIG, nuevo);
@@ -4414,8 +4564,8 @@ function afterRenderHooks(){
         // esperando a que la anterior terminara. Cada peticion a Apps
         // Script tiene un costo real solo por arrancar (1-3s tipico) —
         // 7 en fila facilmente se vuelven "minutos". Ahora es 1 sola
-        // peticion con las 7 claves juntas.
-        await apiCall('set_config', [
+        // peticion con las claves juntas.
+        const itemsConfig = [
           { clave:'Moneda', valor: CONFIG.CURRENCY },
           { clave:'PaisTelefono', valor: CONFIG.PHONE_COUNTRY },
           { clave:'ZonaHoraria', valor: CONFIG.ZONA_HORARIA },
@@ -4425,7 +4575,9 @@ function afterRenderHooks(){
           { clave:'Separador', valor: CONFIG.SEPARADOR },
           { clave:'DecimalesPrecio', valor: CONFIG.DECIMALES_PRECIO },
           { clave:'PrimerDiaSemana', valor: CONFIG.PRIMER_DIA_SEMANA },
-        ], ['config']);
+        ];
+        if(SESSION.esAdmin) itemsConfig.push({ clave:'UmbralInactividadMinutos', valor: CONFIG.UMBRAL_INACTIVIDAD_MINUTOS });
+        await apiCall('set_config', itemsConfig, ['config']);
       }
       showToast('Configuración guardada');
       render();
@@ -4755,10 +4907,12 @@ function showPendientesModal(){
 // Fase 2 (usuarios/login) — en modo DEMO (sin CONFIG.API_URL) el login
 // se omite por completo, decision explicita de Sergio para no estorbarle
 // a un prospecto viendo la demo. En modo real, se busca una sesion ya
-// guardada en localStorage; si existe se calcula cuanto le queda (ver
-// comentario de fijarSesion/programarAvisoDesdeRestantes arriba) e
-// intenta cargar datos con ella — si el servidor la rechaza,
-// loadData() ya llama a manejarSesionInvalida() sola. Sin sesion
+// guardada en localStorage; si existe se calcula (con tiempo real, no
+// contando con ningun timer) si el token TECNICO ya se hubiera vencido
+// solo desde la ultima renovacion (ver comentario de fijarSesion/
+// revisarInactividad arriba) e intenta cargar datos con ella — si el
+// servidor la rechaza de todos modos (ej. se cumplio el tope absoluto de
+// 24h), loadData() ya llama a manejarSesionInvalida() sola. Sin sesion
 // guardada, se muestra login de una vez.
 (async function init(){
   if(!CONFIG.API_URL){ await loadData(); hidratarConfigDesdeSheet(); hideMask(); render(); return; }
@@ -4774,7 +4928,11 @@ function showPendientesModal(){
     hidratarConfigDesdeSheet();
     hideMask();
     if(SESSION.debeCambiarPassword){ mostrarPantallaCambioForzado(); return; }
-    programarAvisoDesdeRestantes(restantes);
+    // Ronda 22 (02/09) — recargar la pagina con una sesion valida cuenta
+    // como actividad real (alguien esta ahi, tecleando la URL o dandole
+    // F5), y arranca la revision periodica de inactividad.
+    ultimaActividad = Date.now();
+    iniciarRevisionInactividad();
     render();
     return;
   }

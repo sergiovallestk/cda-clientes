@@ -20,6 +20,8 @@
   .brand svg{color:var(--teal);}
   .brand span{font-weight:600;font-size:15px;letter-spacing:0.3px;}
   .nav-item{display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:8px;color:var(--text-dim);font-size:14px;cursor:pointer;transition:background .15s,color .15s;}
+  .nav-item-text{display:flex;flex-direction:column;gap:2px;min-width:0;}
+  .nav-item-sub{font-size:11px;color:var(--text-dim);opacity:.65;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px;}
   .nav-item:hover{background:#152234;color:var(--text);}
   .nav-item.active{background:var(--teal);color:#04241C;font-weight:600;}
   .nav-item svg{width:17px;height:17px;flex-shrink:0;}
@@ -319,6 +321,12 @@
   .field input[type="checkbox"]{width:16px;height:16px;flex-shrink:0;accent-color:var(--teal);margin:0;}
   .field input:focus,.field select:focus{outline:none;border-color:var(--teal);}
   .field input[readonly]{color:var(--text-dim);background:#0a1420;cursor:not-allowed;}
+  /* Ronda 21 (02/09) — "ojito" para mostrar/ocultar contraseña, reutilizable
+     en cualquier campo de tipo password del sistema (ver wirePasswordToggle). */
+  .pwd-wrap{position:relative;}
+  .pwd-wrap input{padding-right:38px;}
+  .pwd-toggle{position:absolute;right:8px;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--text-dim);display:flex;align-items:center;justify-content:center;padding:4px;}
+  .pwd-toggle:hover{color:var(--text);}
   .picker-btn{background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:9px 11px;color:var(--text-dim);font-size:13px;cursor:pointer;text-align:left;}
   .picker-btn:hover{border-color:var(--teal);}
   .chip-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
@@ -552,7 +560,7 @@
        Sincronizar: no navega a ninguna pestaña, abre un modal propio.
        Se oculta con JS en modo DEMO (sin CONFIG.API_URL), donde no existe
        ningun concepto de sesion/usuario conectado. -->
-  <div class="nav-item" id="navMiCuenta"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg>Mi cuenta</div>
+  <div class="nav-item" id="navMiCuenta"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg><div class="nav-item-text"><div>Mi cuenta</div><div class="nav-item-sub" id="navMiCuentaUsuario"></div></div></div>
 </div>
 
 <div class="main">
@@ -670,11 +678,21 @@ function cargarSesionGuardada(){
 function guardarSesion(){ try{ localStorage.setItem(SESION_STORAGE_KEY, JSON.stringify(SESSION)); }catch(err){} }
 function borrarSesionGuardada(){ try{ localStorage.removeItem(SESION_STORAGE_KEY); }catch(err){} }
 
+// Ronda 21 (02/09) — nombre del usuario conectado visible en el menu
+// lateral, junto a "Mi cuenta" (antes solo se veia dentro del modal "Mi
+// cuenta"). Se llama en cualquier punto donde SESSION.usuario quede
+// establecido o se limpie — login, restaurar sesion guardada al
+// recargar, logout, y sesion invalidada.
+function actualizarUsuarioMenu(){
+  const el = document.getElementById('navMiCuentaUsuario');
+  if(el) el.textContent = SESSION.usuario || '';
+}
 // Se llama cada vez que el servidor confirma una sesion nueva o renovada
 // (login o renovar_sesion) — reinicia el reloj de "cuanto le queda".
 function fijarSesion(token, usuario, esAdmin, debeCambiarPassword, duracionSegundos){
   SESSION = { token, usuario, esAdmin, debeCambiarPassword, duracionSegundos, renovadaEn: Date.now() };
   guardarSesion();
+  actualizarUsuarioMenu();
   programarAvisoDesdeRestantes(duracionSegundos);
 }
 
@@ -797,6 +815,7 @@ function manejarSesionInvalida(mensaje){
   closePicker();
   SESSION = { token:null, usuario:null, esAdmin:false, debeCambiarPassword:false, duracionSegundos:0, renovadaEn:0 };
   borrarSesionGuardada();
+  actualizarUsuarioMenu();
   forzarTabDashboardTrasLogin();
   mostrarPantallaLogin(mensaje || 'Tu sesión terminó. Vuelve a iniciar sesión.');
 }
@@ -806,6 +825,7 @@ async function logoutUsuario(){
   try{ await apiCall('logout', {}, [], 'Cerrando sesión...'); }catch(err){ /* si no hay conexion, se limpia igual del lado del navegador */ }
   SESSION = { token:null, usuario:null, esAdmin:false, debeCambiarPassword:false, duracionSegundos:0, renovadaEn:0 };
   borrarSesionGuardada();
+  actualizarUsuarioMenu();
   forzarTabDashboardTrasLogin();
   mostrarPantallaLogin();
 }
@@ -819,9 +839,10 @@ function mostrarPantallaLogin(mensajeError){
     <p class="subtle" style="margin-bottom:16px;">Control Dental App</p>
     ${mensajeError ? `<p style="color:var(--amber);font-size:13px;margin-bottom:12px;">${mensajeError}</p>` : ''}
     <div class="field" style="margin-bottom:12px;"><label>Usuario</label><input id="loginUsuario" autocomplete="username" maxlength="10" style="text-transform:uppercase;"></div>
-    <div class="field" style="margin-bottom:18px;"><label>Contraseña</label><input id="loginPassword" type="password" autocomplete="current-password"></div>
+    <div class="field" style="margin-bottom:18px;"><label>Contraseña</label><div class="pwd-wrap"><input id="loginPassword" type="password" autocomplete="current-password"><span class="pwd-toggle"></span></div></div>
     <div class="btn primary block" id="btnHacerLogin">Entrar</div>`;
   document.getElementById('loginUsuario').addEventListener('input', e=>{ e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,10); });
+  wirePasswordToggle('loginPassword');
   const intentarLogin = async ()=>{
     const usuario = document.getElementById('loginUsuario').value.trim();
     const password = document.getElementById('loginPassword').value;
@@ -864,9 +885,10 @@ function mostrarPantallaCambioForzado(){
   document.getElementById('loginBody').innerHTML = `
     <h3>Cambia tu contraseña</h3>
     <p class="subtle" style="margin-bottom:16px;">Tu contraseña es temporal. Define una nueva antes de continuar.</p>
-    <div class="field" style="margin-bottom:12px;"><label>Contraseña nueva</label><input id="cpfNueva" type="password"></div>
-    <div class="field" style="margin-bottom:18px;"><label>Confirmar contraseña nueva</label><input id="cpfConfirmar" type="password"></div>
+    <div class="field" style="margin-bottom:12px;"><label>Contraseña nueva</label><div class="pwd-wrap"><input id="cpfNueva" type="password"><span class="pwd-toggle"></span></div></div>
+    <div class="field" style="margin-bottom:18px;"><label>Confirmar contraseña nueva</label><div class="pwd-wrap"><input id="cpfConfirmar" type="password"><span class="pwd-toggle"></span></div></div>
     <div class="btn primary block" id="btnGuardarCambioForzado">Guardar y continuar</div>`;
+  wirePasswordToggle('cpfNueva'); wirePasswordToggle('cpfConfirmar');
   const intentarCambioForzado = async ()=>{
     const nueva = document.getElementById('cpfNueva').value;
     const confirmar = document.getElementById('cpfConfirmar').value;
@@ -1192,6 +1214,25 @@ function volverModal(){
   if(prev.onRestore) prev.onRestore();
 }
 function closePicker(){ document.getElementById('pickerOverlay').classList.remove('open'); }
+// Ronda 21 (02/09) — "ojito" para mostrar/ocultar contraseña. Reutilizable:
+// cada campo de password se envuelve en un <div class="pwd-wrap"> con un
+// <span class="pwd-toggle"></span> al lado, y se llama
+// wirePasswordToggle('idDelInput') justo despues de crear ese HTML — mismo
+// momento en que ya se conectan los demas listeners de esa pantalla/modal.
+const PWD_EYE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="17" height="17"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/></svg>';
+const PWD_EYE_OFF_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="17" height="17"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-7 0-11-7-11-7a20.4 20.4 0 0 1 5.06-5.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 7 11 7a20.4 20.4 0 0 1-2.61 3.68M14.12 14.12a3 3 0 1 1-4.24-4.24"/><path d="M1 1l22 22"/></svg>';
+function wirePasswordToggle(inputId){
+  const input = document.getElementById(inputId);
+  if(!input || !input.parentElement) return;
+  const btn = input.parentElement.querySelector('.pwd-toggle');
+  if(!btn) return;
+  btn.innerHTML = PWD_EYE_SVG;
+  btn.addEventListener('click', ()=>{
+    const showing = input.type === 'text';
+    input.type = showing ? 'password' : 'text';
+    btn.innerHTML = showing ? PWD_EYE_SVG : PWD_EYE_OFF_SVG;
+  });
+}
 /* Señal visual (degradado) de que una lista dentro de un picker tiene mas
    contenido abajo del que cabe — el scrollbar delgado solo no siempre se
    nota, sobre todo cuando el desborde es chico. */
@@ -1286,10 +1327,11 @@ function wireMiCuentaModal(){
     pushModalState(wireMiCuentaModal);
     openModal(`
       <h3>Cambiar mi contraseña</h3>
-      <div class="field" style="margin-bottom:12px;"><label>Contraseña actual</label><input id="cpActual" type="password"></div>
-      <div class="field" style="margin-bottom:12px;"><label>Contraseña nueva</label><input id="cpNueva" type="password"></div>
-      <div class="field" style="margin-bottom:18px;"><label>Confirmar contraseña nueva</label><input id="cpConfirmar" type="password"></div>
+      <div class="field" style="margin-bottom:12px;"><label>Contraseña actual</label><div class="pwd-wrap"><input id="cpActual" type="password"><span class="pwd-toggle"></span></div></div>
+      <div class="field" style="margin-bottom:12px;"><label>Contraseña nueva</label><div class="pwd-wrap"><input id="cpNueva" type="password"><span class="pwd-toggle"></span></div></div>
+      <div class="field" style="margin-bottom:18px;"><label>Confirmar contraseña nueva</label><div class="pwd-wrap"><input id="cpConfirmar" type="password"><span class="pwd-toggle"></span></div></div>
       <div class="modal-actions"><div class="btn block" id="btnCancelarCambioPassword">Cancelar</div><div class="btn primary block" id="btnGuardarCambioPassword">Guardar</div></div>`);
+    wirePasswordToggle('cpActual'); wirePasswordToggle('cpNueva'); wirePasswordToggle('cpConfirmar');
     document.getElementById('btnCancelarCambioPassword').addEventListener('click', volverModal);
     const intentarCambioPropio = async ()=>{
       const actual = document.getElementById('cpActual').value;
@@ -4429,9 +4471,10 @@ function afterRenderHooks(){
         openModal(`
           <h3>Agregar usuario</h3>
           <div class="field" style="margin-bottom:12px;"><label>Usuario (máx. 10 caracteres, sin espacios)</label><input id="nuUsuario" maxlength="10" style="text-transform:uppercase;"></div>
-          <div class="field" style="margin-bottom:12px;"><label>Contraseña inicial</label><input id="nuPassword" type="password"></div>
+          <div class="field" style="margin-bottom:12px;"><label>Contraseña inicial</label><div class="pwd-wrap"><input id="nuPassword" type="password"><span class="pwd-toggle"></span></div></div>
           <div class="field" style="margin:0 0 20px;"><label style="display:flex;align-items:center;gap:10px;cursor:pointer;"><input type="checkbox" id="nuEsAdmin"> Es administrador</label></div>
           <div class="modal-actions"><div class="btn block" onclick="closeModal()">Cancelar</div><div class="btn primary block" id="btnGuardarNuevoUsuario">Guardar</div></div>`);
+        wirePasswordToggle('nuPassword');
         document.getElementById('nuUsuario').addEventListener('input', e=>{ e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,10); });
         document.getElementById('btnGuardarNuevoUsuario').addEventListener('click', async ()=>{
           const usuario = document.getElementById('nuUsuario').value.trim();
@@ -4722,6 +4765,7 @@ function showPendientesModal(){
   const guardada = cargarSesionGuardada();
   if(guardada && guardada.token){
     SESSION = guardada;
+    actualizarUsuarioMenu();
     const elapsedSeg = (Date.now() - (guardada.renovadaEn||0)) / 1000;
     const restantes = (guardada.duracionSegundos||0) - elapsedSeg;
     if(restantes <= 0){ hideMask(); manejarSesionInvalida(); return; }

@@ -588,7 +588,7 @@
 Chart.defaults.color = '#8FA1AE';
 Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
 
-const CONFIG = { API_URL: "https://script.google.com/macros/s/AKfycbxxNt2px1OUFy_32kGPnba8h-dykcQw-84nLVTisOVbb6ZMvFcOX1VdNCfobrAovoArOA/exec", CLIENT_ID: "DEMO", CURRENCY: "MXN", DIAS_SIN_VISITA: 60, PHONE_COUNTRY: "MX", ZONA_HORARIA: "America/Mexico_City", FORMATO_HORA: "24h", FORMATO_FECHA: "iso", SEPARADOR: "es-MX", DECIMALES_PRECIO: false, PRIMER_DIA_SEMANA: "lunes", UMBRAL_INACTIVIDAD_MINUTOS: 30 };
+const CONFIG = { API_URL: "https://script.google.com/macros/s/AKfycby-sxFPQLTp8XsBDHOhKKhejgkg2dWGaEierERUS5Q9f_m4hfVlNJmeGUgVpbzq1ENs/exec", CLIENT_ID: "DEMO", CURRENCY: "MXN", DIAS_SIN_VISITA: 60, PHONE_COUNTRY: "MX", ZONA_HORARIA: "America/Mexico_City", FORMATO_HORA: "24h", FORMATO_FECHA: "iso", SEPARADOR: "es-MX", DECIMALES_PRECIO: false, PRIMER_DIA_SEMANA: "lunes", UMBRAL_INACTIVIDAD_MINUTOS: 30 };
 const CURRENCIES = {
   MXN:{symbol:'$',nombre:'Peso mexicano'}, USD:{symbol:'$',nombre:'Dólar estadounidense'},
   COP:{symbol:'$',nombre:'Peso colombiano'}, EUR:{symbol:'€',nombre:'Euro'},
@@ -667,7 +667,15 @@ function emptyShell(){
  *    umbral configurable (CONFIG.UMBRAL_INACTIVIDAD_MINUTOS, editable
  *    solo por un ADMIN desde Configuracion). Sin importar cuanto le
  *    quede al token tecnico. Si no se responde en
- *    SESION_AVISO_ANTES_SEGUNDOS, se fuerza el cierre de sesion.
+ *    SESION_AVISO_ANTES_SEGUNDOS, se fuerza el cierre de sesion. Ronda 24
+ *    (03/09) — el presupuesto total (umbral + SESION_AVISO_ANTES_SEGUNDOS)
+ *    es siempre el mismo sin importar cuanto tiempo real haya pasado de
+ *    mas mientras se estaba en segundo plano: si al recuperar el foco ya
+ *    se agoto ese presupuesto completo, se cierra la sesion de inmediato
+ *    (sin mostrar el aviso); si sobra parte del margen, se muestra el
+ *    aviso pero con el tiempo restante REAL ya descontado, nunca los
+ *    SESION_AVISO_ANTES_SEGUNDOS completos de regalo (ver revisarInactividad
+ *    y mostrarAvisoExpiracion).
  * 2) RENOVACION SILENCIOSA del token en CacheService — mientras el
  *    usuario siga activo (por debajo del umbral), el sistema renueva el
  *    token solo, en segundo plano, cada vez que este se acerca a su
@@ -750,7 +758,21 @@ function revisarInactividad(){
   if(avisoActivo) return; // ya se esta preguntando "¿sigues ahi?" — no hacer nada mas hasta que se resuelva
   const umbralSeg = (CONFIG.UMBRAL_INACTIVIDAD_MINUTOS || 30) * 60;
   const inactivoSeg = (Date.now() - ultimaActividad) / 1000;
-  if(inactivoSeg >= umbralSeg){ mostrarAvisoExpiracion(); return; }
+  if(inactivoSeg >= umbralSeg){
+    // Ronda 24 (03/09) — antes siempre se regalaban los
+    // SESION_AVISO_ANTES_SEGUNDOS completos al mostrar el aviso, sin
+    // importar cuanto tiempo de mas ya hubiera pasado sobre el umbral
+    // (ej. un backgrounding largo en movil). Ahora se descuenta ese
+    // excedente: si ya se agoto el presupuesto total (umbral + aviso), se
+    // cierra la sesion de inmediato sin mostrar el aviso; si no, se
+    // muestra pero con el tiempo real restante, para mantener la
+    // consistencia de que "el umbral es el umbral" sin importar si el
+    // exceso ocurrio en foreground o en background.
+    const excedenteSeg = inactivoSeg - umbralSeg;
+    if(excedenteSeg >= SESION_AVISO_ANTES_SEGUNDOS){ manejarSesionInvalida(); return; }
+    mostrarAvisoExpiracion(SESION_AVISO_ANTES_SEGUNDOS - excedenteSeg);
+    return;
+  }
   // Sigue activo (por debajo del umbral) — renovar el token en silencio
   // antes de que expire solo. Ronda 23 (03/09) — el margen ya NO es un
   // 80% fijo: con SESION_DURACION_SEGUNDOS chico (300s de PRUEBAS), ese
@@ -766,7 +788,23 @@ function revisarInactividad(){
   // hora de colchon, de sobra); con los 300s de pruebas, el margen
   // minimo garantizado gana y renueva con mucha anticipacion.
   const tokenAgeSeg = (Date.now() - SESSION.renovadaEn) / 1000;
-  const margenSeg = Math.max(SESSION.duracionSegundos * 0.2, (REVISION_INACTIVIDAD_MS/1000) * 3);
+  // Ronda 24 (03/09) — bug real detectado por Sergio: con duracionSegundos
+  // chico (300s de PRUEBAS) el piso de 3x REVISION_INACTIVIDAD_MS (360s)
+  // podia terminar siendo MAYOR que la duracion total del token, dejando
+  // "duracionSegundos - margenSeg" en negativo (acotado a 0) — eso volvia
+  // la condicion de renovar SIEMPRE verdadera desde el segundo 0, sin
+  // importar que tan sano estuviera el token todavia (de ahi las
+  // renovaciones casi seguidas que Sergio vio en la consola). Se agrega un
+  // TECHO adicional: el margen nunca puede pasar del 80% de la duracion
+  // total, para que siempre quede al menos un 20% de "zona tranquila"
+  // real al inicio de la vida del token. En produccion (6h) este techo
+  // (80% = mas de 4h) es mucho mayor que el piso (20% = mas de 1h), asi
+  // que el piso sigue ganando igual que antes — cero cambio de
+  // comportamiento ahi.
+  const margenSeg = Math.min(
+    Math.max(SESSION.duracionSegundos * 0.2, (REVISION_INACTIVIDAD_MS/1000) * 3),
+    SESSION.duracionSegundos * 0.8
+  );
   if(tokenAgeSeg >= Math.max(SESSION.duracionSegundos - margenSeg, 0)) renovarSesionSilenciosa();
 }
 
@@ -811,10 +849,19 @@ let sessionCountdownInterval = null;
 // pisar el texto corregido con el numero desactualizado — de ahi el
 // desface que reporto Sergio (ej. "quedaban 65" y de repente "77").
 let segundosRestantesAviso = 0;
-function mostrarAvisoExpiracion(){
+// Ronda 24 (03/09) — el aviso ya no siempre arranca con
+// SESION_AVISO_ANTES_SEGUNDOS completos (ver revisarInactividad): si ya
+// habia un excedente acumulado sobre el umbral, arranca con menos. Esta
+// variable guarda con CUANTOS segundos arranco ESTA apertura del aviso en
+// particular, para que recalcularAlRecuperarFoco() pueda recalcular el
+// tiempo real restante contra el total correcto (y no siempre contra
+// SESION_AVISO_ANTES_SEGUNDOS, que ya no aplica cuando arranca reducido).
+let segundosInicialesAviso = SESION_AVISO_ANTES_SEGUNDOS;
+function mostrarAvisoExpiracion(segundosIniciales){
   avisoActivo = true;
   avisoAbiertoEn = Date.now();
-  segundosRestantesAviso = SESION_AVISO_ANTES_SEGUNDOS;
+  segundosInicialesAviso = Math.max(Math.round(segundosIniciales != null ? segundosIniciales : SESION_AVISO_ANTES_SEGUNDOS), 0);
+  segundosRestantesAviso = segundosInicialesAviso;
   document.getElementById('sessionWarningBody').innerHTML = `
     <h3>Tu sesión está por terminar</h3>
     <p style="font-size:13px;margin-bottom:16px;">¿Deseas continuar conectado? Se cerrará en <b id="sessionCountdownText">${segundosRestantesAviso}</b> segundos.</p>
@@ -832,7 +879,7 @@ function mostrarAvisoExpiracion(){
     document.getElementById('sessionWarningOverlay').classList.remove('open');
     avisoActivo = false;
     manejarSesionInvalida();
-  }, SESION_AVISO_ANTES_SEGUNDOS*1000);
+  }, segundosRestantesAviso*1000);
   document.getElementById('btnExtenderSesion').addEventListener('click', async ()=>{
     clearInterval(sessionCountdownInterval);
     document.getElementById('sessionWarningOverlay').classList.remove('open');
@@ -860,7 +907,13 @@ function mostrarAvisoExpiracion(){
 function recalcularAlRecuperarFoco(){
   if(!CONFIG.API_URL || !SESSION.token) return;
   if(avisoActivo){
-    const restanteReal = SESION_AVISO_ANTES_SEGUNDOS - (Date.now() - avisoAbiertoEn)/1000;
+    // Ronda 24 (03/09) — se usa "segundosInicialesAviso" (con lo que
+    // realmente arranco ESTA apertura del aviso) y no la constante
+    // SESION_AVISO_ANTES_SEGUNDOS, porque ahora el aviso puede arrancar
+    // con menos si ya habia un excedente acumulado (ver
+    // mostrarAvisoExpiracion/revisarInactividad) — usar la constante aqui
+    // volveria a regalar segundos que ya no correspondian.
+    const restanteReal = segundosInicialesAviso - (Date.now() - avisoAbiertoEn)/1000;
     clearTimeout(sessionExpireTimer);
     if(restanteReal <= 0){
       clearInterval(sessionCountdownInterval);

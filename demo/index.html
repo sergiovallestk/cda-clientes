@@ -752,10 +752,22 @@ function revisarInactividad(){
   const inactivoSeg = (Date.now() - ultimaActividad) / 1000;
   if(inactivoSeg >= umbralSeg){ mostrarAvisoExpiracion(); return; }
   // Sigue activo (por debajo del umbral) — renovar el token en silencio
-  // si ya lleva un buen tramo de su vida tecnica (80%), para que nunca
-  // llegue a expirar solo mientras haya actividad real.
+  // antes de que expire solo. Ronda 23 (03/09) — el margen ya NO es un
+  // 80% fijo: con SESION_DURACION_SEGUNDOS chico (300s de PRUEBAS), ese
+  // 80% dejaba un colchon de solo 60s — MAS CHICO que REVISION_INACTIVIDAD_MS
+  // (2 min) — asi que a veces la siguiente revision llegaba tarde y el
+  // token ya se habia muerto solo en CacheService (bug real que vivio
+  // Sergio: cierre abrupto sin aviso tras usar el sistema activamente).
+  // Ahora el margen es el MAYOR entre 20% de la duracion total y 3 veces
+  // la frecuencia de revision — garantiza que siempre alcancen varios
+  // ciclos de revision antes de que el token expire, sin importar que
+  // tan chico o grande sea SESION_DURACION_SEGUNDOS. Con las 6h de
+  // produccion esto practicamente no cambia nada (20% ya daba mas de una
+  // hora de colchon, de sobra); con los 300s de pruebas, el margen
+  // minimo garantizado gana y renueva con mucha anticipacion.
   const tokenAgeSeg = (Date.now() - SESSION.renovadaEn) / 1000;
-  if(tokenAgeSeg >= SESSION.duracionSegundos * 0.8) renovarSesionSilenciosa();
+  const margenSeg = Math.max(SESSION.duracionSegundos * 0.2, (REVISION_INACTIVIDAD_MS/1000) * 3);
+  if(tokenAgeSeg >= Math.max(SESSION.duracionSegundos - margenSeg, 0)) renovarSesionSilenciosa();
 }
 
 // Renovacion en segundo plano — SIN mascara, SIN toast, el usuario nunca
@@ -787,21 +799,33 @@ function fijarSesion(token, usuario, esAdmin, debeCambiarPassword, duracionSegun
 // (02/09) — ahora se dispara por inactividad real, no por cercania al
 // limite tecnico del token (ver revisarInactividad).
 let sessionCountdownInterval = null;
+// Ronda 23 (03/09) — "segundosRestantesAviso" se saca de adentro de
+// mostrarAvisoExpiracion() y se vuelve compartida (igual que
+// avisoAbiertoEn) para que recalcularAlRecuperarFoco() pueda
+// resincronizarla al recuperar el foco. Antes vivia como variable local
+// dentro del closure del setInterval — recalcularAlRecuperarFoco()
+// corregia el TEXTO en pantalla y el temporizador real
+// (sessionExpireTimer), pero nunca esa variable interna; un segundo
+// despues, el propio setInterval (que seguia contando desde su valor
+// viejo, tambien pausado/atrasado por el backgrounding) volvia a
+// pisar el texto corregido con el numero desactualizado — de ahi el
+// desface que reporto Sergio (ej. "quedaban 65" y de repente "77").
+let segundosRestantesAviso = 0;
 function mostrarAvisoExpiracion(){
   avisoActivo = true;
   avisoAbiertoEn = Date.now();
-  let segundosRestantes = SESION_AVISO_ANTES_SEGUNDOS;
+  segundosRestantesAviso = SESION_AVISO_ANTES_SEGUNDOS;
   document.getElementById('sessionWarningBody').innerHTML = `
     <h3>Tu sesión está por terminar</h3>
-    <p style="font-size:13px;margin-bottom:16px;">¿Deseas continuar conectado? Se cerrará en <b id="sessionCountdownText">${segundosRestantes}</b> segundos.</p>
+    <p style="font-size:13px;margin-bottom:16px;">¿Deseas continuar conectado? Se cerrará en <b id="sessionCountdownText">${segundosRestantesAviso}</b> segundos.</p>
     <div class="modal-actions"><div class="btn block" id="btnNoExtenderSesion">No</div><div class="btn primary block" id="btnExtenderSesion">Sí, continuar</div></div>`;
   document.getElementById('sessionWarningOverlay').classList.add('open');
   clearInterval(sessionCountdownInterval);
   sessionCountdownInterval = setInterval(()=>{
-    segundosRestantes--;
+    segundosRestantesAviso--;
     const el = document.getElementById('sessionCountdownText');
-    if(el) el.textContent = Math.max(segundosRestantes, 0);
-    if(segundosRestantes <= 0) clearInterval(sessionCountdownInterval);
+    if(el) el.textContent = Math.max(segundosRestantesAviso, 0);
+    if(segundosRestantesAviso <= 0) clearInterval(sessionCountdownInterval);
   }, 1000);
   sessionExpireTimer = setTimeout(()=>{
     clearInterval(sessionCountdownInterval);
@@ -844,8 +868,16 @@ function recalcularAlRecuperarFoco(){
       avisoActivo = false;
       manejarSesionInvalida();
     } else {
+      // Ronda 23 (03/09) — fix del desface del contador visual: antes
+      // solo se corregia el TEXTO en pantalla aqui, pero no la variable
+      // "segundosRestantesAviso" que usa el setInterval de 1s para
+      // seguir contando — un segundo despues, ese interval (que tambien
+      // se habia pausado/atrasado en 2do plano) volvia a pisar el texto
+      // corregido con su numero viejo. Ahora se resincronizan los 2 a la
+      // vez, con el mismo valor real.
+      segundosRestantesAviso = Math.round(restanteReal);
       const el = document.getElementById('sessionCountdownText');
-      if(el) el.textContent = Math.max(Math.round(restanteReal), 0);
+      if(el) el.textContent = Math.max(segundosRestantesAviso, 0);
       sessionExpireTimer = setTimeout(()=>{
         clearInterval(sessionCountdownInterval);
         document.getElementById('sessionWarningOverlay').classList.remove('open');
@@ -4170,8 +4202,8 @@ function renderConfiguracionHTML(){
         <option value="domingo" ${CONFIG.PRIMER_DIA_SEMANA==='domingo'?'selected':''}>Domingo</option>
       </select></div>
     <div class="field" style="margin-bottom:16px;"><label>Tiempo de inactividad antes de cerrar sesión (minutos)</label>
-      ${SESSION.esAdmin ? `<input id="cfgUmbralInactividad" type="number" min="5" step="5" value="${CONFIG.UMBRAL_INACTIVIDAD_MINUTOS}">` : `<input value="${CONFIG.UMBRAL_INACTIVIDAD_MINUTOS} minutos" readonly>`}
-      <p class="subtle" style="margin:4px 0 0;">Solo un administrador puede modificar este valor.</p></div>
+      ${SESSION.esAdmin ? `<input id="cfgUmbralInactividad" type="number" min="5" max="60" step="5" value="${CONFIG.UMBRAL_INACTIVIDAD_MINUTOS}">` : `<input value="${CONFIG.UMBRAL_INACTIVIDAD_MINUTOS} minutos" readonly>`}
+      <p class="subtle" style="margin:4px 0 0;">Solo un administrador puede modificar este valor. Debe estar entre 5 y 60 minutos.</p></div>
     <div class="field" style="margin-bottom:16px;"><label>ID de cliente</label><input value="${CONFIG.CLIENT_ID}" readonly></div>
     <div class="btn primary" id="btnGuardarConfig">Guardar cambios</div>
     <p style="color:var(--text-mute);font-size:12px;margin-top:14px;">Modo actual: <b style="color:${CONFIG.API_URL?'var(--teal)':'var(--amber)'}">${CONFIG.API_URL ? 'Conectado a datos reales' : 'Demo (datos de ejemplo)'}</b>.</p>
@@ -4553,7 +4585,14 @@ function afterRenderHooks(){
       // backend igual lo rechazaria (ver setConfig), esto es nada mas
       // para no mandar una clave que ese usuario no tiene forma de editar.
       if(SESSION.esAdmin){
-        nuevo.UMBRAL_INACTIVIDAD_MINUTOS = Number(document.getElementById('cfgUmbralInactividad').value) || 30;
+        // Ronda 23 (03/09) — limite 5-60 min tambien del lado del cliente
+        // (ademas de min/max del <input>, que no protege nada real por si
+        // solo). El backend vuelve a validar este mismo rango de forma
+        // independiente (ver setConfig en Code.gs) — defensa por los 2
+        // lados, igual que el resto de las protecciones de este sistema.
+        let umbralIngresado = Number(document.getElementById('cfgUmbralInactividad').value);
+        if(!Number.isFinite(umbralIngresado)) umbralIngresado = 30;
+        nuevo.UMBRAL_INACTIVIDAD_MINUTOS = Math.min(Math.max(umbralIngresado, 5), 60);
       }
       const huboCambios = Object.keys(nuevo).some(k => nuevo[k] !== configOriginal[k]);
       if(!huboCambios){ showToast('Sin cambios que guardar'); return; }

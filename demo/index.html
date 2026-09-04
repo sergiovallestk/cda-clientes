@@ -713,6 +713,30 @@ let revisionInactividadInterval = null;
 let sessionExpireTimer = null;
 let avisoActivo = false; // true mientras el aviso "tu sesion esta por terminar" esta en pantalla
 let avisoAbiertoEn = 0; // marca de tiempo real de cuando se abrio el aviso — usada por el fix de backgrounding
+// Ronda 25 (03/09) — temporizador EXACTO adicional. Antes, la unica forma
+// de detectar que se cumplio el umbral de inactividad era la revision
+// periodica cada REVISION_INACTIVIDAD_MS (2 min) — eso significa que, en
+// el peor caso, el sistema podia tardar hasta casi 2 minutos en darse
+// cuenta de que ya se cumplio el umbral, y (desde el fix del Punto 4 de
+// la Ronda 24) ese retraso de deteccion se restaba de los
+// SESION_AVISO_ANTES_SEGUNDOS del aviso — aunque la pestaña NUNCA se
+// hubiera minimizado (Sergio lo reporto: 60/79/75/87/64 segundos en vez
+// de 120 fijos, variando segun donde caia el umbral dentro del ciclo de
+// 2 min). Este temporizador se reprograma con setTimeout() cada vez que
+// hay actividad real (ver el listener de click/keydown/touchstart) o
+// cada vez que se fija una sesion (login/extension), para dispararse
+// justo en el segundo exacto en que se cumple el umbral SI la pestaña
+// sigue en foreground todo ese tiempo (los navegadores solo pausan
+// setTimeout en 2do plano, no en foreground). Cuando se dispara, se
+// abre el aviso con los SESION_AVISO_ANTES_SEGUNDOS completos, sin
+// descuento — porque al ser exacto, no hay ningun excedente que
+// descontar. La revision periodica cada 2 min y el fix de excedente de
+// la Ronda 24 se quedan intactos como respaldo especifico para el caso
+// de backgrounding real (celular minimizado), que es para lo que se
+// diseñaron — este temporizador nuevo no los reemplaza, solo evita que
+// se le reste al aviso una latencia de deteccion que no era real cuando
+// nunca hubo backgrounding.
+let avisoTimeoutExacto = null;
 
 function cargarSesionGuardada(){
   try{ const raw = localStorage.getItem(SESION_STORAGE_KEY); return raw ? JSON.parse(raw) : null; }
@@ -738,7 +762,7 @@ function actualizarUsuarioMenu(){
 // la usa (revisarInactividad) ya se encarga de no hacer nada si no hay
 // CONFIG.API_URL o no hay sesion activa.
 ['click','keydown','touchstart'].forEach(evt=>{
-  document.addEventListener(evt, ()=>{ ultimaActividad = Date.now(); }, {passive:true});
+  document.addEventListener(evt, ()=>{ ultimaActividad = Date.now(); reprogramarAvisoExacto(); }, {passive:true});
 });
 
 function iniciarRevisionInactividad(){
@@ -808,6 +832,29 @@ function revisarInactividad(){
   if(tokenAgeSeg >= Math.max(SESSION.duracionSegundos - margenSeg, 0)) renovarSesionSilenciosa();
 }
 
+// Ronda 25 (03/09) — ver el comentario de "avisoTimeoutExacto" arriba
+// para el porque de este mecanismo. Se llama cada vez que hay actividad
+// real y cada vez que se fija una sesion (login/extension). Si la
+// pestaña se minimiza, este setTimeout se pausa igual que cualquier
+// otro (no hay forma de evitarlo, es una limitacion del navegador) —
+// para ese caso sigue existiendo, sin cambios, el mecanismo de
+// recalcularAlRecuperarFoco()+revisarInactividad() de las rondas 22-24,
+// que recalcula todo con Date.now() al recuperar el foco. Este
+// temporizador solo aporta precision al segundo para el caso de
+// pestaña siempre en foreground — nunca reemplaza al mecanismo de
+// backgrounding.
+function reprogramarAvisoExacto(){
+  clearTimeout(avisoTimeoutExacto);
+  if(!CONFIG.API_URL || !SESSION.token || avisoActivo) return; // sin sesion o ya se esta mostrando el aviso — nada que programar
+  const umbralSeg = (CONFIG.UMBRAL_INACTIVIDAD_MINUTOS || 30) * 60;
+  const restanteSeg = umbralSeg - (Date.now() - ultimaActividad) / 1000;
+  if(restanteSeg <= 0) return; // ya se cumplio el umbral en este mismo instante — lo toma la revision normal, no hace falta duplicar aqui
+  avisoTimeoutExacto = setTimeout(()=>{
+    if(avisoActivo) return; // por si acaso ya se abrio por otro camino mientras tanto
+    mostrarAvisoExpiracion(SESION_AVISO_ANTES_SEGUNDOS); // deteccion exacta — siempre los segundos completos, sin descuento
+  }, restanteSeg*1000);
+}
+
 // Renovacion en segundo plano — SIN mascara, SIN toast, el usuario nunca
 // se entera. Si falla (red o session_invalid), no se hace nada especial
 // aqui: session_invalid ya lo maneja apiCall() directamente forzando el
@@ -828,6 +875,7 @@ function fijarSesion(token, usuario, esAdmin, debeCambiarPassword, duracionSegun
   actualizarUsuarioMenu();
   ultimaActividad = Date.now(); // login/extension de sesion cuenta como actividad real
   iniciarRevisionInactividad();
+  reprogramarAvisoExacto(); // Ronda 25 (03/09) — arranca/reinicia el temporizador exacto desde cero en cada login o extension
 }
 
 // Aviso tipo banco: "tu sesion esta por terminar, ¿deseas continuar?".
@@ -858,6 +906,7 @@ let segundosRestantesAviso = 0;
 // SESION_AVISO_ANTES_SEGUNDOS, que ya no aplica cuando arranca reducido).
 let segundosInicialesAviso = SESION_AVISO_ANTES_SEGUNDOS;
 function mostrarAvisoExpiracion(segundosIniciales){
+  clearTimeout(avisoTimeoutExacto); // Ronda 25 (03/09) — el aviso ya se esta mostrando (por este camino o por el otro); que no quede pendiente un disparo duplicado
   avisoActivo = true;
   avisoAbiertoEn = Date.now();
   segundosInicialesAviso = Math.max(Math.round(segundosIniciales != null ? segundosIniciales : SESION_AVISO_ANTES_SEGUNDOS), 0);
@@ -940,6 +989,15 @@ function recalcularAlRecuperarFoco(){
     }
   } else {
     revisarInactividad(); // re-evalua de inmediato en vez de esperar al proximo ciclo de 2 min
+    // Ronda 25 (03/09) — el temporizador exacto que se hubiera programado
+    // antes de perder el foco quedo pausado/desactualizado durante el
+    // backgrounding (igual que cualquier otro setTimeout ahi). Si
+    // revisarInactividad() de arriba no encontro motivo para cerrar la
+    // sesion ni abrir el aviso (avisoActivo sigue false), se reprograma
+    // desde cero contra el ultimaActividad real, para que vuelva a
+    // aportar precision al segundo de aqui en adelante mientras la
+    // pestaña se quede en foreground.
+    if(!avisoActivo) reprogramarAvisoExacto();
   }
 }
 document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') recalcularAlRecuperarFoco(); });
@@ -999,6 +1057,7 @@ function manejarSesionInvalida(mensaje){
   // se limpia cualquier aviso/temporizador que hubiera quedado a medias.
   detenerRevisionInactividad();
   clearTimeout(sessionExpireTimer); clearInterval(sessionCountdownInterval);
+  clearTimeout(avisoTimeoutExacto); // Ronda 25 (03/09)
   avisoActivo = false;
   document.getElementById('sessionWarningOverlay').classList.remove('open');
   // Ronda 19 (02/09) — cerrar cualquier modal/selector que hubiera quedado
@@ -1024,6 +1083,7 @@ function manejarSesionInvalida(mensaje){
 async function logoutUsuario(){
   detenerRevisionInactividad();
   clearTimeout(sessionExpireTimer); clearInterval(sessionCountdownInterval);
+  clearTimeout(avisoTimeoutExacto); // Ronda 25 (03/09)
   avisoActivo = false;
   document.getElementById('sessionWarningOverlay').classList.remove('open');
   try{ await apiCall('logout', {}, [], 'Cerrando sesión...'); }catch(err){ /* si no hay conexion, se limpia igual del lado del navegador */ }
@@ -1037,6 +1097,7 @@ async function logoutUsuario(){
 function mostrarPantallaLogin(mensajeError){
   detenerRevisionInactividad();
   clearTimeout(sessionExpireTimer); clearInterval(sessionCountdownInterval);
+  clearTimeout(avisoTimeoutExacto); // Ronda 25 (03/09)
   avisoActivo = false;
   document.getElementById('sessionWarningOverlay').classList.remove('open');
   document.getElementById('loginScreen').classList.add('open');
@@ -5025,6 +5086,7 @@ function showPendientesModal(){
     // F5), y arranca la revision periodica de inactividad.
     ultimaActividad = Date.now();
     iniciarRevisionInactividad();
+    reprogramarAvisoExacto(); // Ronda 25 (03/09) — tambien arranca al recargar la pagina con una sesion valida, no solo en login/extension
     render();
     return;
   }

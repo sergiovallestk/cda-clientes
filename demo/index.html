@@ -13,6 +13,13 @@
   *{box-sizing:border-box;margin:0;padding:0;}
   body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,-apple-system,Roboto,Arial,sans-serif;display:flex;min-height:100vh;}
   .hamburger{display:none;position:fixed;top:16px;left:16px;z-index:120;width:38px;height:38px;background:var(--panel);border:1px solid var(--border);border-radius:8px;color:var(--text);align-items:center;justify-content:center;cursor:pointer;}
+  /* Ronda 27 (05/09) — con el sidebar abierto en movil, este boton se
+     queda fijo en el mismo lugar de siempre (top:16px;left:16px) y su
+     fondo solido tapaba por completo el icono de marca del sidebar (que
+     arranca casi en las mismas coordenadas). Se oculta mientras el
+     sidebar esta abierto (ver JS de hamburgerBtn/sidebarOverlay/setTab)
+     para que el icono de marca quede visible sin taparse. */
+  .hamburger.hidden{display:none;}
   .sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99;}
   .sidebar-overlay.open{display:block;}
   .sidebar{width:220px;background:var(--panel-2);border-right:1px solid var(--border);padding:24px 16px;display:flex;flex-direction:column;gap:4px;flex-shrink:0;}
@@ -27,6 +34,17 @@
   .nav-item svg{width:17px;height:17px;flex-shrink:0;}
   .main{flex:1;padding:28px 32px;max-width:1550px;overflow-x:hidden;min-width:0;}
   .header{margin-bottom:22px;}
+  /* Ronda 27 (05/09) — versionamiento del sistema (ver LEEME). El tag
+     "Versión" usa el mismo patron de click-to-toggle que ya se usa en
+     otras partes del sistema (no hover, para que funcione igual en
+     escritorio y en movil sin depender de si hay mouse o no). */
+  .header-top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+  .version-tag{position:relative;font-size:12px;color:var(--text-dim);cursor:pointer;padding:4px 9px;border:1px solid var(--border);border-radius:6px;user-select:none;flex-shrink:0;}
+  .version-tag:hover{color:var(--text);border-color:var(--text-dim);}
+  .version-popover{display:none;position:absolute;right:0;top:calc(100% + 6px);background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:10px 12px;min-width:180px;z-index:50;}
+  .version-popover.open{display:block;}
+  .version-row{display:flex;justify-content:space-between;gap:16px;font-size:12px;color:var(--text-dim);padding:3px 0;white-space:nowrap;}
+  .version-row span:last-child{color:var(--text);font-weight:600;}
   .header h1{font-size:22px;font-weight:700;letter-spacing:0.2px;}
   .header h1 .accent{color:var(--teal);}
   .header p{color:var(--text-dim);font-size:13px;margin-top:4px;}
@@ -546,7 +564,7 @@
 <div class="sidebar" id="sidebar">
   <div class="brand">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3c-3 0-5 2-5 5 0 4 1.5 6 1.5 9 0 1.5 1 2 1.5 2s1.2-.7 1.3-2c.2-1.8.5-3 1.7-3s1.5 1.2 1.7 3c.1 1.3.8 2 1.3 2s1.5-.5 1.5-2c0-3 1.5-5 1.5-9 0-3-2-5-5-5z"/></svg>
-    <span>Control</span>
+    <span>CDA</span>
   </div>
   <div class="nav-item active" data-tab="dashboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Dashboard</div>
   <div class="nav-item" data-tab="pacientes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/></svg>Pacientes</div>
@@ -565,7 +583,16 @@
 
 <div class="main">
   <div class="header">
-    <h1 id="clinicName">Control Dental <span class="accent">App</span></h1>
+    <div class="header-top">
+      <h1 id="clinicName">Control Dental <span class="accent">App</span></h1>
+      <div class="version-tag" id="versionTag">Versión
+        <div class="version-popover" id="versionPopover">
+          <div class="version-row"><span>Interfaz</span><span id="verFE">–</span></div>
+          <div class="version-row"><span>Servidor</span><span id="verBE">–</span></div>
+          <div class="version-row"><span>Base de datos</span><span id="verBDD">–</span></div>
+        </div>
+      </div>
+    </div>
     <p id="clinicSub">Cargando…</p>
   </div>
   <div id="content"><div class="empty" style="padding:60px 0;">Cargando información...</div></div>
@@ -588,7 +615,17 @@
 Chart.defaults.color = '#8FA1AE';
 Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
 
-const CONFIG = { API_URL: "https://script.google.com/macros/s/AKfycby-sxFPQLTp8XsBDHOhKKhejgkg2dWGaEierERUS5Q9f_m4hfVlNJmeGUgVpbzq1ENs/exec", CLIENT_ID: "DEMO", CURRENCY: "MXN", DIAS_SIN_VISITA: 60, PHONE_COUNTRY: "MX", ZONA_HORARIA: "America/Mexico_City", FORMATO_HORA: "24h", FORMATO_FECHA: "iso", SEPARADOR: "es-MX", DECIMALES_PRECIO: false, PRIMER_DIA_SEMANA: "lunes", UMBRAL_INACTIVIDAD_MINUTOS: 30 };
+const CONFIG = { API_URL: "https://script.google.com/macros/s/AKfycbzEsdVjsl8QXMcuyZi8RmEqSoZ_JMCnku2lNYjggh7CCpFz_zGXYzmtTk-jKZzuMR7P/exec", CLIENT_ID: "DEMO", CURRENCY: "MXN", DIAS_SIN_VISITA: 60, PHONE_COUNTRY: "MX", ZONA_HORARIA: "America/Mexico_City", FORMATO_HORA: "24h", FORMATO_FECHA: "iso", SEPARADOR: "es-MX", DECIMALES_PRECIO: false, PRIMER_DIA_SEMANA: "lunes", UMBRAL_INACTIVIDAD_MINUTOS: 30 };
+// Ronda 27 (05/09) — versionamiento del sistema (ver LEEME). VERSION_FE
+// se sobrescribe (no se acumula) en cada ronda que modifique este
+// archivo. VERSION_BE y VERSION_BDD arrancan igual a VERSION_FE como
+// respaldo (para el modo DEMO sin API_URL, y antes de la primera
+// respuesta real del servidor) y se sobrescriben con el dato real en
+// hidratarConfigDesdeSheet() — VERSION_BE viene de out.versionBE
+// (constante del propio Code.gs), VERSION_BDD viene de la clave
+// "VersionBDD" en la hoja Config de este cliente.
+const VERSION_FE = "1.0.0";
+let VERSION_BE = VERSION_FE, VERSION_BDD = VERSION_FE;
 const CURRENCIES = {
   MXN:{symbol:'$',nombre:'Peso mexicano'}, USD:{symbol:'$',nombre:'Dólar estadounidense'},
   COP:{symbol:'$',nombre:'Peso colombiano'}, EUR:{symbol:'€',nombre:'Euro'},
@@ -1249,6 +1286,20 @@ function hidratarConfigDesdeSheet(){
   // (verificado en el backend, ver setConfig), pero cualquier usuario lo
   // LEE igual, porque la duracion de sesion aplica parejo a todos.
   if(mapa.UmbralInactividadMinutos && Number(mapa.UmbralInactividadMinutos) > 0) CONFIG.UMBRAL_INACTIVIDAD_MINUTOS = Number(mapa.UmbralInactividadMinutos);
+  // Ronda 27 (05/09) — versionamiento del sistema. VersionBDD es de
+  // solo lectura para el usuario (nunca se manda de vuelta con
+  // setConfig, no aparece en Configuracion) — se mantiene manualmente
+  // por Sergio directo en el Sheet de cada cliente el dia que le toque
+  // la estructura del BDD.
+  if(mapa.VersionBDD) VERSION_BDD = mapa.VersionBDD;
+  if(DATA.versionBE) VERSION_BE = DATA.versionBE;
+  actualizarVersionUI();
+}
+function actualizarVersionUI(){
+  const feEl = document.getElementById('verFE'), beEl = document.getElementById('verBE'), bddEl = document.getElementById('verBDD');
+  if(feEl) feEl.textContent = 'v' + VERSION_FE;
+  if(beEl) beEl.textContent = 'v' + VERSION_BE;
+  if(bddEl) bddEl.textContent = 'v' + VERSION_BDD;
 }
 
 /* Mapa entre las claves del JSON del backend y los nombres de hoja que
@@ -1562,6 +1613,7 @@ function setTab(tab){
   ocultarChartTooltip();
   document.getElementById('sidebar').classList.remove('open');
   document.getElementById('sidebarOverlay').classList.remove('open');
+  document.getElementById('hamburgerBtn').classList.remove('hidden');
   // Bug nuevo (no relacionado a esta sesion) — .main no tiene scroll propio,
   // usa el scroll normal de la pagina, y reemplazar su HTML al cambiar de
   // pestaña no mueve el scroll solo (comportamiento estandar del navegador).
@@ -1653,10 +1705,24 @@ if(CONFIG.API_URL){
 document.getElementById('hamburgerBtn').addEventListener('click', ()=>{
   const sb = document.getElementById('sidebar'); const ov = document.getElementById('sidebarOverlay');
   sb.classList.toggle('open'); ov.classList.toggle('open');
+  // Ronda 27 (05/09) — ver comentario de .hamburger.hidden en el CSS:
+  // este boton se oculta mientras el sidebar esta abierto para no tapar
+  // el icono de marca del sidebar.
+  document.getElementById('hamburgerBtn').classList.toggle('hidden', sb.classList.contains('open'));
 });
 document.getElementById('sidebarOverlay').addEventListener('click', ()=>{
   document.getElementById('sidebar').classList.remove('open');
   document.getElementById('sidebarOverlay').classList.remove('open');
+  document.getElementById('hamburgerBtn').classList.remove('hidden');
+});
+// Ronda 27 (05/09) — tag "Versión" del header: click-to-toggle (no
+// hover, para que funcione igual en escritorio y en movil).
+document.getElementById('versionTag').addEventListener('click', (e)=>{
+  e.stopPropagation();
+  document.getElementById('versionPopover').classList.toggle('open');
+});
+document.addEventListener('click', ()=>{
+  document.getElementById('versionPopover').classList.remove('open');
 });
 document.getElementById('modalOverlay').addEventListener('click', e=>{ if(e.target.id==='modalOverlay') closeModal(); });
 document.getElementById('pickerOverlay').addEventListener('click', e=>{ if(e.target.id==='pickerOverlay') closePicker(); });

@@ -452,6 +452,14 @@
   .pend-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);font-size:13px;gap:10px;}
   .pend-row.clickable{cursor:pointer;}
   .pend-row.clickable:hover{background:#12203099;}
+  /* Ronda 29 — con un nombre de tratamiento/paciente largo, el bloque de
+     monto (y su boton "Abonar", cuando lo hay) se estaba comprimiendo junto
+     con el texto y el monto terminaba partido en 2 lineas ("$1,800" / "MXN").
+     Ahora ese bloque nunca se achica ni se envuelve; el texto de la
+     izquierda es el que absorbe el espacio faltante, envolviendose el solo. */
+  .pend-row > span:first-child{min-width:0;}
+  .pend-row b{white-space:nowrap;}
+  .pend-row > span:last-child{flex-shrink:0;}
   /* #62/#63 — alto minimo fijo (5 filas) para que la ventana de detalle no
      "brinque" de tamaño entre categorias con pocos y muchos registros. */
   .detail-block-fixed{min-height:220px;}
@@ -3088,12 +3096,25 @@ async function guardarPagoNuevo(selPac, selTrat, total, pagado, inicioTrat){
 function openAbonoModal(pagoId, onDone, volverInit){
   const pago = DATA.pagos.find(p=>p.ID===pagoId); if(!pago) return;
   if(volverInit) pushModalState(volverInit);
+  // Ronda 29 — esta ventana ahora muestra el nombre ACTUAL del paciente
+  // (buscado en vivo en DATA.pacientes por Paciente_ID), no el que quedo
+  // guardado en el propio registro de pago al crearse. Es la misma regla
+  // documentada en el manual (Pacientes -> Editar un paciente ->
+  // Importante): los pagos ya existentes conservan el nombre viejo tal
+  // como estaba escrito, eso sigue intacto en la tabla de Pagos y en el
+  // detalle de "Ingresos por categoria" (donde SI importa el nombre
+  // historico); pero aqui, en el formulario para registrar un abono, se
+  // preferio el nombre de hoy para que coincida con lo que el usuario
+  // acaba de ver en la lista de "Pendientes por cobrar" (que si busca en
+  // vivo) y no genere la confusion de "¿por que dice otro nombre?".
+  const pacienteActual = DATA.pacientes.find(pc=>pc.ID===pago.Paciente_ID);
+  const nombreMostrado = pacienteActual ? pacienteActual.Nombre : pago.Paciente;
   // Ciclo 1 / Ronda 6 (#12) — 3 renglones: paciente+tratamiento, las 2
   // fechas juntas, y el saldo aparte al final (mas facil de leer que
   // todo mezclado en 2 renglones).
   openModal(`
     <h3>Registrar abono</h3>
-    <p class="subtle" style="margin-bottom:2px;">${pago.Paciente} · ${pago.Tratamiento}</p>
+    <p class="subtle" style="margin-bottom:2px;">${nombreMostrado} · ${pago.Tratamiento}</p>
     <p class="subtle" style="margin-bottom:2px;">Inicio tratamiento: ${formatearFecha(pago.Inicio_Tratamiento)}</p>
     <p class="subtle" style="margin-bottom:2px;">Último pago: ${formatearFecha(pago.Ultimo_Pago)}</p>
     <p class="subtle" style="margin-bottom:14px;">Saldo actual: ${fmtMoney(pago.Saldo)}</p>
@@ -5149,23 +5170,48 @@ function showPendientesModal(){
         const pacId = btn.dataset.abonarPac;
         const pagosAbiertos = DATA.pagos.filter(p=>p.Paciente_ID===pacId && Number(p.Saldo)>0);
         const refreshPend = ()=>{ const list=document.getElementById('pendList'); if(list){ list.innerHTML = draw(document.getElementById('pendSearch').value); initListaPendientes(); } };
+        // Con un solo pago abierto se va directo al abono (sin pasar por
+        // "Elige el pago a abonar"): openAbonoModal ya guarda su propio
+        // regreso, no hace falta empujar un nivel aparte aqui.
         if(pagosAbiertos.length===1){
           openAbonoModal(pagosAbiertos[0].ID, refreshPend, initListaPendientes);
         } else {
           pushModalState(initListaPendientes);
-          openModal(`<h3>Elige el pago a abonar</h3>${pagosAbiertos.map(p=>`<div class="pend-row"><span>${p.Tratamiento} <span class="subtle">· Inicio: ${formatearFecha(p.Inicio_Tratamiento)}</span></span><span style="display:flex;align-items:center;gap:10px;"><b style="color:var(--amber);">${fmtMoney(p.Saldo)}</b><div class="btn sm" data-pick-pago="${p.ID}">Abonar</div></span></div>`).join('')}<div class="modal-actions"><div class="btn block" onclick="volverModal()">Cerrar</div></div>`);
-          initElegirPago(pagosAbiertos, refreshPend);
+          dibujarElegirPago(pacId, refreshPend);
         }
       });
     });
     const searchEl = document.getElementById('pendSearch');
-    if(searchEl){ searchEl.addEventListener('input', e=>{ document.getElementById('pendList').innerHTML = draw(e.target.value); initListaPendientes(); }); }
+    // Ronda 29 — bug pre-existente: esto usaba addEventListener, y como
+    // initListaPendientes() se vuelve a llamar dentro de su propio
+    // "input" (para reconectar los botones de la lista redibujada),
+    // cada tecla le agregaba OTRO listener mas al buscador sin quitar el
+    // anterior — crecimiento exponencial (1 tecla -> 2 listeners activos,
+    // 2 -> 4, 3 -> 8...) que en pocos caracteres saturaba y congelaba la
+    // pestaña. Con "oninput =" (asignacion, no addEventListener) cada
+    // llamada REEMPLAZA el manejador anterior en vez de apilarlo — mismo
+    // patron que ya usan bien attachSortHeaders/attachPaginadorEvents.
+    if(searchEl){ searchEl.oninput = e=>{ document.getElementById('pendList').innerHTML = draw(e.target.value); initListaPendientes(); }; }
   }
-  /* Reconecta los botones de "Elige el pago a abonar". */
-  function initElegirPago(pagosAbiertos, refreshPend){
+  /* Ronda 29 — antes "Elige el pago a abonar" se armaba UNA vez (con los
+     saldos de ese momento) y, al volver de registrar un abono, solo se
+     reconectaban los botones sobre esa misma foto vieja — nunca se volvia a
+     dibujar, por eso los saldos se quedaban atrasados hasta cerrar todo y
+     volver a entrar. Ahora esta funcion vuelve a leer DATA.pagos y a
+     dibujar la lista desde cero cada vez que se entra o se regresa a este
+     nivel (mismo patron que ya usaba correctamente "Ya existe un pago
+     pendiente" en Pagos). Como consecuencia natural, si un abono deja un
+     tratamiento en $0 de saldo, ese renglon ya no aparece la proxima vez
+     que se dibuja; y si ya no queda ningun pago abierto para el paciente,
+     regresa directo a la lista de Pendientes (ese paciente tambien
+     desaparece de ahi solo, por el mismo refreshPend). */
+  function dibujarElegirPago(pacId, refreshPend){
+    const pagosAbiertos = DATA.pagos.filter(p=>p.Paciente_ID===pacId && Number(p.Saldo)>0);
+    if(!pagosAbiertos.length){ volverModal(); refreshPend(); return; }
+    openModal(`<h3>Elige el pago a abonar</h3>${pagosAbiertos.map(p=>`<div class="pend-row"><span>${p.Tratamiento} <span class="subtle">· Inicio: ${formatearFecha(p.Inicio_Tratamiento)}</span></span><span style="display:flex;align-items:center;gap:10px;"><b style="color:var(--amber);">${fmtMoney(p.Saldo)}</b><div class="btn sm" data-pick-pago="${p.ID}">Abonar</div></span></div>`).join('')}<div class="modal-actions"><div class="btn block" onclick="volverModal()">Cerrar</div></div>`);
     document.querySelectorAll('[data-pick-pago]').forEach(b2=>{
       b2.addEventListener('click', ()=>{
-        openAbonoModal(b2.dataset.pickPago, refreshPend, ()=>initElegirPago(pagosAbiertos, refreshPend));
+        openAbonoModal(b2.dataset.pickPago, refreshPend, ()=>dibujarElegirPago(pacId, refreshPend));
       });
     });
   }

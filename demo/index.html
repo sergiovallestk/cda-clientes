@@ -570,6 +570,15 @@
     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3c-3 0-5 2-5 5 0 4 1.5 6 1.5 9 0 1.5 1 2 1.5 2s1.2-.7 1.3-2c.2-1.8.5-3 1.7-3s1.5 1.2 1.7 3c.1 1.3.8 2 1.3 2s1.5-.5 1.5-2c0-3 1.5-5 1.5-9 0-3-2-5-5-5z"/></svg>
     <div class="brand-text"><span class="brand-sigla">CDA</span><span class="brand-full">Control Dental App</span></div>
   </div>
+  <!-- Ronda 29 — acceso al manual de usuario: enlace externo (target="_blank"),
+       NO usa data-tab a proposito para que no dispare setTab() ni le agregue
+       la clase "active" (no es una pestaña del sistema, es un link fijo).
+       Se coloca justo debajo de la marca, antes de las pestañas de trabajo,
+       para que quede visible de inmediato sin competir con la navegacion
+       funcional. -->
+  <a class="nav-item" id="navManual" href="https://cda.resuelve360.com/manual-de-usuario/" target="_blank" rel="noopener" style="margin-bottom:8px;border-bottom:1px solid var(--border);padding-bottom:19px;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>Manual de usuario
+  </a>
   <div class="nav-item active" data-tab="dashboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Dashboard</div>
   <div class="nav-item" data-tab="pacientes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/></svg>Pacientes</div>
   <div class="nav-item" data-tab="finanzas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>Finanzas</div>
@@ -619,7 +628,7 @@
 Chart.defaults.color = '#8FA1AE';
 Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
 
-const CONFIG = { API_URL: "https://script.google.com/macros/s/AKfycbzEsdVjsl8QXMcuyZi8RmEqSoZ_JMCnku2lNYjggh7CCpFz_zGXYzmtTk-jKZzuMR7P/exec", CLIENT_ID: "DEMO", CURRENCY: "MXN", DIAS_SIN_VISITA: 60, PHONE_COUNTRY: "MX", ZONA_HORARIA: "America/Mexico_City", FORMATO_HORA: "24h", FORMATO_FECHA: "iso", SEPARADOR: "es-MX", DECIMALES_PRECIO: false, PRIMER_DIA_SEMANA: "lunes", UMBRAL_INACTIVIDAD_MINUTOS: 30 };
+const CONFIG = { API_URL: "https://script.google.com/macros/s/AKfycbwh4tgwASbBrzjtQypPcJBtYE5P7UzuH2-kApPUqGid_V8pTcmL0h7TFatEhBzJzLIm/exec", CLIENT_ID: "DEMO", CURRENCY: "MXN", DIAS_SIN_VISITA: 60, PHONE_COUNTRY: "MX", ZONA_HORARIA: "America/Mexico_City", FORMATO_HORA: "24h", FORMATO_FECHA: "iso", SEPARADOR: "es-MX", DECIMALES_PRECIO: false, PRIMER_DIA_SEMANA: "lunes", UMBRAL_INACTIVIDAD_MINUTOS: 30 };
 // Ronda 27 (05/09) — versionamiento del sistema (ver LEEME). VERSION_FE
 // se sobrescribe (no se acumula) en cada ronda que modifique este
 // archivo. VERSION_BE y VERSION_BDD arrancan igual a VERSION_FE como
@@ -1510,6 +1519,28 @@ function formatearHora(horaHHMM){
    (que guarda numeros puros, no texto con formato) queda bien sin
    importar el idioma/region que tenga configurado ese Sheet. */
 function separadorDecimal(){ return CONFIG.SEPARADOR==='es-ES' ? ',' : '.'; }
+/* Ronda 29 — fix de buscadores (Pagos/Gastos): antes se comparaba la busqueda
+   contra el valor crudo interno (fecha ISO, numero de JS sin formato), nunca
+   contra lo que el usuario realmente ve en pantalla — por eso escribir "sep"
+   no encontraba nada aunque la columna se viera con el formato dmy-texto,
+   y escribir "1,400" no encontraba "$1,400" si internamente se comparaba
+   contra "1400" a secas. Estas 2 funciones arman una version "buscable" de
+   fecha y monto ya en el formato de presentacion, para usarlas en el blob
+   de busqueda de fillPagosTable/fillGastosTable en vez del valor crudo. */
+function separadorMiles(){ return CONFIG.SEPARADOR==='es-ES' ? '.' : ','; }
+function montoBuscable(n){
+  const opciones = CONFIG.DECIMALES_PRECIO ? {minimumFractionDigits:2,maximumFractionDigits:2,useGrouping:true} : {maximumFractionDigits:0,useGrouping:true};
+  const formateado = Number(n).toLocaleString(CONFIG.SEPARADOR||'es-MX', opciones);
+  // Se quita solo el separador de MILES (nunca el decimal): asi "1400" y
+  // "1,400" encuentran el mismo resultado sin que un monto chico como $14.00
+  // se confunda con uno grande como $1,400.00 al quitarle ambos separadores
+  // por igual.
+  return formateado.split(separadorMiles()).join('');
+}
+/* La busqueda que escribe el usuario tambien puede traer el separador de
+   miles (si copio el monto tal como lo ve, ej. "1,400") — se le quita igual
+   antes de comparar, para que sea equivalente buscar "1400" o "1,400". */
+function prepararQueryFiltro(query){ return (query||'').split(separadorMiles()).join(''); }
 function parsearMonto(str){
   if(str===undefined || str===null || str==='') return 0;
   const limpio = String(str).trim().replace(separadorDecimal(), '.');
@@ -2879,7 +2910,7 @@ function renderFinanzasHTML(){
     <div class="coll-header" onclick="toggleCollapse(this)"><svg class="coll-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg><b>Pagos</b></div>
     <div class="coll-body">
       <div class="toolbar">
-        <input class="search" id="pagoSearch" placeholder="Buscar por fecha, paciente, tratamiento, monto..." value="${SEARCH_STATE.pagos}">
+        <input class="search" id="pagoSearch" placeholder="Buscar por paciente, tratamiento, categoría, fecha o monto..." value="${SEARCH_STATE.pagos}">
         <div class="btn primary sm" id="btnAddPago">+ Registrar pago</div>
       </div>
       <div class="table-card" id="pagTableBlock">
@@ -2907,8 +2938,8 @@ function fillPagosTable(filter){
   const tbody = document.getElementById('pagosTbody'); if(!tbody) return;
   const f = filter||'';
   let filtrados = [...DATA.pagos].sort((a,b)=>b.Ultimo_Pago.localeCompare(a.Ultimo_Pago)).filter(p=>{
-    const blob = [p.Inicio_Tratamiento,p.Ultimo_Pago,p.Paciente,p.Tratamiento,p.Categoria,p.Monto_Total,p.Monto_Pagado,p.Saldo].join(' ');
-    return matches(blob, f);
+    const blob = [p.Paciente,p.Tratamiento,p.Categoria,formatearFecha(p.Inicio_Tratamiento),formatearFecha(p.Ultimo_Pago),montoBuscable(p.Monto_Total),montoBuscable(p.Monto_Pagado),montoBuscable(p.Saldo)].join(' ');
+    return matches(blob, prepararQueryFiltro(f));
   });
   filtrados = ordenar('pagos', filtrados, (p,key)=> key==='Monto_Total'||key==='Monto_Pagado'||key==='Saldo' ? Number(p[key]) : p[key]);
   const { pageItems: rows, total, totalPaginas } = paginar('pagos', filtrados);
@@ -2941,7 +2972,7 @@ function fillPagosTable(filter){
 function fillGastosTable(filter){
   const tbody = document.getElementById('gastosTbody'); if(!tbody) return;
   const f = filter||'';
-  let filtrados = [...DATA.gastos].sort((a,b)=>b.Fecha.localeCompare(a.Fecha)).filter(g=>{ const blob = [g.Fecha,g.Concepto,g.Categoria,g.Monto].join(' '); return matches(blob, f); });
+  let filtrados = [...DATA.gastos].sort((a,b)=>b.Fecha.localeCompare(a.Fecha)).filter(g=>{ const blob = [formatearFecha(g.Fecha),g.Concepto,g.Categoria,montoBuscable(g.Monto)].join(' '); return matches(blob, prepararQueryFiltro(f)); });
   filtrados = ordenar('gastos', filtrados, (g,key)=> key==='Monto' ? Number(g[key]) : g[key]);
   const { pageItems: rows, total, totalPaginas } = paginar('gastos', filtrados);
   // Ciclo 2 (Grupo 2) — cada fila es clickeable, igual que Pacientes,

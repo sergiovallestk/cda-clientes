@@ -271,6 +271,13 @@ esa semana.</em></p>
 <p>Muestra el total de dinero pendiente de cobro en todo el consultorio, cuántos pacientes
 tienen saldo pendiente, y los 3 mayores saldos individuales. Dar clic sobre la tarjeta abre
 el detalle completo y permite registrar abonos a cada uno de los registros mostrados.</p>
+<p><em>Sobre el nombre del paciente que se muestra aquí: tanto en el detalle de esta tarjeta
+como en la ventana para registrar un abono, siempre se muestra el nombre <strong>actual</strong>
+del paciente (el que tiene hoy en su ficha), sin importar si ese nombre se editó después de
+haberse creado el pago. Esto es distinto a como se ve en la tabla de Pagos y en el detalle de
+Ingresos por categoría, donde se muestra el nombre <strong>tal como estaba escrito</strong> en
+el momento en que se creó cada registro (ver <a href="#pacientes">Pacientes &rarr; Editar un
+paciente &rarr; Importante</a>).</em></p>
 <figure class="shot">
   <img src="img/01-pendiente-cobrar.png" alt="Tarjeta &amp;quot;Pendiente por cobrar&amp;quot;.">
   <figcaption>Tarjeta &quot;Pendiente por cobrar&quot;.</figcaption>
@@ -354,7 +361,10 @@ asignados y estado (Activo/Inactivo).</p>
 </figure>
 <p><strong>Importante:</strong> cambiar el nombre de un paciente no modifica los registros
 de Pagos o Citas ya existentes; esos registros conservan el nombre tal como estaba escrito
-en el momento en que se crearon.</p>
+en el momento en que se crearon. La única excepción es la tarjeta de Dashboard
+<a href="#dashboard">Pendiente por cobrar</a> (y la ventana para registrar un abono que se
+abre desde ahí): esas 2 pantallas sí muestran siempre el nombre actual del paciente, para que
+coincida con lo que se ve al buscarlo en el resto del sistema.</p>
 <h4>Tratamientos asignados a un paciente</h4>
 <p>Es una referencia rápida de qué tratamientos tiene vigentes el paciente actualmente. No es
 un historial ni afecta ningún cálculo financiero, pero sí tiene un efecto funcional

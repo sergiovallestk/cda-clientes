@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Manual de usuario — Control Dental App</title>
+<style>
+:root{
+  --teal:#1a9c7a; --teal-bright:#2FD8B0; --ink:#16232f; --ink-soft:#4a5b68;
+  --line:#e3e8ea; --bg:#ffffff; --bg-soft:#f6f9f9; --pending:#f2b84b;
+}
+*{box-sizing:border-box;}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:'Segoe UI',system-ui,-apple-system,Roboto,Arial,sans-serif;
+  line-height:1.55; font-size:15.5px;
+}
+.wrap{max-width:840px;margin:0 auto;padding:0 24px 80px;}
+header.top{
+  border-bottom:3px solid var(--teal-bright); padding:28px 24px 18px; margin-bottom:8px;
+}
+header.top .wrap-inner{max-width:840px;margin:0 auto;}
+header.top h1{margin:0;font-size:26px;letter-spacing:.2px;}
+header.top h1 .accent{color:var(--teal);}
+header.top p{margin:6px 0 0;color:var(--ink-soft);font-size:14px;}
+h2{
+  color:var(--ink); font-size:21px; border-bottom:2px solid var(--line);
+  padding-bottom:8px; margin-top:0;
+}
+.seccion{counter-reset:paso; padding:34px 0;border-bottom:1px solid var(--line);}
+.seccion h3{counter-increment:paso;font-size:16px;color:var(--teal);margin:26px 0 8px;}
+.seccion h3::before{content:counter(paso, upper-roman) ". ";}
+.seccion h4{font-size:14.5px;color:var(--ink);margin:18px 0 6px;border-left:3px solid var(--teal-bright);padding-left:8px;}
+p{margin:10px 0;}
+ol,ul{margin:8px 0;padding-left:24px;}
+li{margin:4px 0;}
+a{color:var(--teal);}
+.seccion:last-child{border-bottom:none;}
+#indice.seccion{padding-top:10px;}
+.backtop{margin-top:22px;font-size:13.5px;}
+.backtop a{text-decoration:none;color:var(--ink-soft);border:1px solid var(--line);border-radius:6px;padding:5px 10px;}
+.backtop a:hover{color:var(--teal);border-color:var(--teal);}
+.tabla-simple{border-collapse:collapse;margin:12px 0;font-size:14px;}
+.tabla-simple th,.tabla-simple td{border:1px solid var(--line);padding:6px 14px;text-align:left;}
+.tabla-simple th{background:var(--bg-soft);color:var(--ink);}
+figure.shot{margin:14px 0;text-align:center;}
+figure.shot img{max-width:100%;border:1px solid var(--line);border-radius:8px;}
+figure.shot figcaption{font-size:12.5px;color:var(--ink-soft);margin-top:6px;}
+.shot-placeholder{
+  border:2px dashed #c9d3d6; border-radius:8px; background:var(--bg-soft);
+  padding:30px 14px; color:var(--ink-soft); font-size:13px;
+}
+.shot-icon{font-size:22px;display:block;margin-bottom:6px;opacity:.5;}
+.shot-file{font-family:Consolas,Menlo,monospace;font-size:12.5px;color:var(--pending);}
+.shots-row{display:flex;gap:16px;flex-wrap:wrap;}
+.shots-row figure{flex:1;min-width:180px;}
+nav.indice-nav ol{list-style:none;padding:0;margin:0;counter-reset:idx;}
+nav.indice-nav li{
+  counter-increment:idx; padding:9px 0; border-bottom:1px solid var(--line);
+  font-size:15px;
+}
+nav.indice-nav li::before{content:counter(idx) ". ";color:var(--teal);font-weight:600;}
+nav.indice-nav a{text-decoration:none;color:var(--ink);}
+nav.indice-nav a:hover{color:var(--teal);}
+footer.pie{max-width:840px;margin:0 auto;padding:24px;color:var(--ink-soft);font-size:12.5px;text-align:center;}
+strong{color:var(--ink);}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap-inner">
+    <h1>Control Dental <span class="accent">App</span> — Manual de usuario</h1>
+    <p>Guía de uso del sistema y reglas de interpretación de los datos.</p>
+  </div>
+</header>
+<div class="wrap">
+<section id="indice" class="seccion">
+  <h2>Índice</h2>
+  <nav class="indice-nav"><ol>
+  <li><a href="#intro">Acerca de este manual</a></li>
+<li><a href="#acceso">Acceso al sistema</a></li>
+<li><a href="#navegacion">Navegación general</a></li>
+<li><a href="#dashboard">Dashboard</a></li>
+<li><a href="#pacientes">Pacientes</a></li>
+<li><a href="#finanzas">Finanzas</a></li>
+<li><a href="#tratamientos">Tratamientos</a></li>
+<li><a href="#agenda">Agenda</a></li>
+<li><a href="#sincronizar">Sincronizar</a></li>
+<li><a href="#configuracion">Configuración</a></li>
+<li><a href="#mi-cuenta">Mi cuenta</a></li>
+
+  </ol></nav>
+</section>
+<section id="intro" class="seccion">
+<h2>Acerca de este manual</h2>
+
+<p>Este manual describe el uso de <strong>Control Dental App (CDA)</strong>: qué hace cada
+sección del menú, qué significa cada dato que se muestra en pantalla, y las reglas de
+negocio que determinan cómo se calculan e interpretan los reportes financieros.</p>
+<p>Las imágenes de este documento corresponden a capturas reales del sistema en uso.</p>
+<p class="backtop"><a href="#indice">&uarr; Volver al inicio</a></p>
+
+</section>
+<section id="acceso" class="seccion">
+<h2>Acceso al sistema</h2>
+
+<h3>Iniciar sesión</h3>
+<ol>
+  <li>Abrir la dirección web de Control Dental App en el navegador (aquella que fue proporcionada por
+  quien le entregó el sistema).</li>
+  <li>Escribir el usuario y la contraseña asignados.</li>
+  <li>Dar clic en <strong>Ingresar</strong>.</li>
+</ol>
+<figure class="shot">
+  <img src="img/00-login.png" alt="Pantalla de inicio de sesión.">
+  <figcaption>Pantalla de inicio de sesión.</figcaption>
+</figure>
+<p>Si la contraseña fue asignada por un administrador como contraseña temporal, el sistema
+solicita cambiarla antes de continuar. Ver <a href="#mi-cuenta">Mi cuenta &rarr; Cambiar mi
+contraseña</a>.</p>
+
+<h3>Cierre de sesión por inactividad</h3>
+<p>Por seguridad, el sistema cierra la sesión automáticamente después de un periodo sin
+actividad (clics, tecleos o toques; el desplazamiento de la pantalla no cuenta como
+actividad). Antes de cerrarla, se muestra un aviso con la opción de continuar conectado.</p>
+<figure class="shot">
+  <img src="img/00-aviso-inactividad.png" alt="Aviso de cierre de sesión por inactividad.">
+  <figcaption>Aviso de cierre de sesión por inactividad.</figcaption>
+</figure>
+<p>Adicionalmente, existe un tiempo máximo de sesión: pasado ese límite, el sistema pide
+iniciar sesión de nuevo aunque haya actividad constante, esto está implementado como una
+medida de seguridad en el manejo de su información.</p>
+
+<h3>Versión del sistema</h3>
+<p>En la parte superior derecha de la pantalla aparece la etiqueta "Versión". Al dar clic
+sobre ella se despliega la versión actual de los 3 componentes del sistema:</p>
+<ul>
+  <li><strong>Interfaz</strong>: la vista de la aplicación que ve en su dispositivo en este
+  momento.</li>
+  <li><strong>Servidor</strong>: el motor que procesa la información.</li>
+  <li><strong>Base de datos</strong>: la estructura donde se guarda la información del
+  consultorio.</li>
+</ul>
+<figure class="shot">
+  <img src="img/00-tooltip-version.png" alt="Etiqueta &amp;quot;Versión&amp;quot; con el detalle de los 3 componentes.">
+  <figcaption>Etiqueta &quot;Versión&quot; con el detalle de los 3 componentes.</figcaption>
+</figure>
+<p>Esta información es útil principalmente para soporte técnico: al reportar un problema, es
+recomendable indicar los 3 números que se muestran ahí.</p>
+<p class="backtop"><a href="#indice">&uarr; Volver al inicio</a></p>
+
+</section>
+<section id="navegacion" class="seccion">
+<h2>Navegación general</h2>
+
+<p>El sistema se organiza en un menú lateral con 8 secciones: Dashboard, Pacientes,
+Finanzas, Tratamientos, Agenda, Sincronizar, Configuración y Mi cuenta. Cada una se explica
+a detalle en su propio apartado de este manual.</p>
+
+<h3>En computadora</h3>
+<p>El menú permanece siempre visible del lado izquierdo de la pantalla.</p>
+
+<h3>En celular o tablet</h3>
+<p>El menú se colapsa para aprovechar el espacio de la pantalla. Para abrirlo:</p>
+<ol>
+  <li>Dar clic o toque en el ícono de tres líneas horizontales, ubicado en la esquina
+  superior izquierda.</li>
+  <li>Elegir la sección deseada de la lista que aparece.</li>
+  <li>Mientras el menú está abierto, ese mismo ícono cambia por una "X" y se recorre al
+  borde del menú, dar clic o toque ahí lo cierra. También se cierra solo al elegir una
+  sección, o dando toque fuera del menú.</li>
+</ol>
+<div class="shots-row">
+<figure class="shot">
+  <img src="img/00-menu-cerrado-movil.png" alt="Menú colapsado (vista de celular).">
+  <figcaption>Menú colapsado (vista de celular).</figcaption>
+</figure>
+<figure class="shot">
+  <img src="img/00-menu-abierto-movil.png" alt="Menú desplegado (vista de celular).">
+  <figcaption>Menú desplegado (vista de celular).</figcaption>
+</figure>
+</div>
+<p class="backtop"><a href="#indice">&uarr; Volver al inicio</a></p>
+
+</section>
+<section id="dashboard" class="seccion">
+<h2>Dashboard</h2>
+
+<p>Es la pantalla de inicio del sistema. Reúne, en un solo lugar, un resumen del día y de los
+indicadores más consultados con frecuencia, para no tener que entrar a cada sección por
+separado.</p>
+<figure class="shot">
+  <img src="img/01-dashboard-general.png" alt="Vista general del Dashboard.">
+  <figcaption>Vista general del Dashboard.</figcaption>
+</figure>
+
+<h3>Citas de hoy</h3>
+<p>Muestra las citas restantes del día en curso. Si ya no quedan citas por atender hoy,
+muestra en su lugar las próximas citas agendadas a futuro. En la parte inferior de la
+tarjeta se muestra, de un vistazo, el total de citas agendadas para la semana en curso (sin
+contar las canceladas). Dar clic en <strong>Ver agenda</strong> para ir directamente a la
+sección Agenda.</p>
+<figure class="shot">
+  <img src="img/01-citas-de-hoy.png" alt="Tarjeta &amp;quot;Citas de hoy&amp;quot;.">
+  <figcaption>Tarjeta &quot;Citas de hoy&quot;.</figcaption>
+</figure>
+
+<h3>Pacientes</h3>
+<p>Muestra el total de pacientes Activos e Inactivos del consultorio. Dar clic en
+<strong>Ver pacientes</strong> para ir a la sección Pacientes.</p>
+<figure class="shot">
+  <img src="img/01-pacientes-resumen.png" alt="Tarjeta &amp;quot;Pacientes&amp;quot;.">
+  <figcaption>Tarjeta &quot;Pacientes&quot;.</figcaption>
+</figure>
+<h4>Pacientes que no han vuelto</h4>
+<p>Dentro de esta misma tarjeta se listan los pacientes <strong>Activos</strong> cuya última
+visita registrada supera el umbral de días configurado en Configuración (60 días por
+defecto, modificable únicamente por el Administrador). Los pacientes marcados como
+Inactivos nunca aparecen aquí (porque no se espera que vuelvan). Una vez que los pacientes
+se vuelven a activar, entran a esta función del sistema.</p>
+<p>La "última visita" que se usa para este cálculo es la fecha de la cita más reciente que
+no esté cancelada (con fecha de hoy o anterior). Si el paciente no tiene ninguna cita
+registrada en el sistema, se usa la fecha de última visita capturada en su ficha.</p>
+<p><em>Ejemplo: si un paciente Activo tuvo su última cita hace 65 días y el umbral
+configurado es de 60 días, aparecerá en esta lista. Si se marca como Inactivo, deja de
+aparecer, aunque el número de días sin visitarlo siga creciendo.</em></p>
+<figure class="shot">
+  <img src="img/01-pacientes-no-vuelto.png" alt="Tarjeta &amp;quot;Pacientes que no han vuelto&amp;quot;.">
+  <figcaption>Tarjeta &quot;Pacientes que no han vuelto&quot;.</figcaption>
+</figure>
+
+<h3>Tratamientos más rentables (por categoría, mes en curso)</h3>
+<p>Muestra, mediante una gráfica de dona, qué categorías de tratamiento generaron más
+ingresos durante el mes en curso, considerando únicamente los pagos con abono registrado
+ese mes. Esta métrica mide <strong>dinero generado</strong>, no cuántas veces se solicitó un
+tratamiento.</p>
+<figure class="shot">
+  <img src="img/01-tratamientos-rentables.png" alt="Tarjeta &amp;quot;Tratamientos más rentables&amp;quot;.">
+  <figcaption>Tarjeta &quot;Tratamientos más rentables&quot;.</figcaption>
+</figure>
+<h4>Tratamientos más solicitados</h4>
+<p>Debajo de la gráfica de rentabilidad, dentro de la misma tarjeta, se muestra una segunda
+gráfica con los tratamientos individuales con mayor número de citas registradas este mes
+(sin contar canceladas). Esta métrica mide <strong>frecuencia de solicitud</strong>, no
+dinero generado, y complementa a la de rentabilidad: puede haber un tratamiento muy
+solicitado que, por su precio, no llegue a figurar entre los de mayor rentabilidad por
+categoría; y al revés, una categoría puede ser muy rentable gracias a unos pocos
+tratamientos de alto costo, aunque no sean los más solicitados en cantidad.</p>
+<p><em>Al pasar el mouse sobre cualquiera de las 2 gráficas (o mantener presionado en
+pantalla táctil) se muestra el dato exacto de esa categoría o tratamiento.</em></p>
+<figure class="shot">
+  <img src="img/01-tratamientos-solicitados.png" alt="Tarjeta &amp;quot;Tratamientos más solicitados&amp;quot;.">
+  <figcaption>Tarjeta &quot;Tratamientos más solicitados&quot;.</figcaption>
+</figure>
+
+<h3>Resumen de flujo de caja</h3>
+<p>Muestra un adelanto de los <strong>ingresos</strong> del mes en curso (no incluye
+gastos), agrupados semana con semana dentro del mes (ver
+<a href="#finanzas">Aspectos a considerar</a>, en Finanzas). Dar clic en
+<strong>Ver finanzas</strong> para ver el detalle completo.</p>
+<p><em>Está prevista una actualización futura para incorporar también los gastos en esta
+misma vista.</em></p>
+<p><em>Al pasar el mouse sobre cualquier punto de la gráfica se muestra el monto exacto de
+esa semana.</em></p>
+<figure class="shot">
+  <img src="img/01-flujo-caja-resumen.png" alt="Tarjeta &amp;quot;Resumen de flujo de caja&amp;quot;.">
+  <figcaption>Tarjeta &quot;Resumen de flujo de caja&quot;.</figcaption>
+</figure>
+
+<h3>Pendiente por cobrar</h3>
+<p>Muestra el total de dinero pendiente de cobro en todo el consultorio, cuántos pacientes
+tienen saldo pendiente, y los 3 mayores saldos individuales. Dar clic sobre la tarjeta abre
+el detalle completo y permite registrar abonos a cada uno de los registros mostrados.</p>
+<figure class="shot">
+  <img src="img/01-pendiente-cobrar.png" alt="Tarjeta &amp;quot;Pendiente por cobrar&amp;quot;.">
+  <figcaption>Tarjeta &quot;Pendiente por cobrar&quot;.</figcaption>
+</figure>
+
+<h3>Pacientes nuevos vs. recurrentes</h3>
+<p>Compara, semana con semana dentro del mes en curso, cuántos pacientes tuvieron su primera
+cita registrada contra cuántos ya habían visitado antes. Esto permite saber de una manera
+rápida si el consultorio realmente está creciendo con una cartera nueva de pacientes o si
+solamente los ingresos proceden de pacientes que ya tienen cierta antigüedad.</p>
+<p>Un paciente cuenta como <strong>nuevo</strong> únicamente en la semana de su
+primerísima cita registrada en todo el sistema, y solo si esa primera cita cae dentro del
+mes en curso. Cualquier otra cita, de ese mismo paciente o de cualquier otro, cuenta como
+<strong>recurrente</strong>.</p>
+<p><em>Ejemplo: si hoy es septiembre y un paciente (Juan) tiene su primerísima cita
+registrada en el sistema el 5 de septiembre, esa semana cuenta como "nuevo" para Juan —
+y solo esa semana. Si Juan regresa el 20 de septiembre para otra cita, esa segunda cita
+ya cuenta como "recurrente" (no es su primera vez, aunque sea apenas su segunda visita
+en la vida). Y si otra paciente (María) tuvo su primera cita hace 2 años y este mes
+viene 3 veces, las 3 citas de María cuentan como "recurrente", porque su primera vez no
+fue este mes.</em></p>
+<p><strong>Excepción:</strong> si al dar de alta al paciente se marcó la casilla "Ya era mi
+paciente antes de usar el sistema" (ver <a href="#pacientes">Pacientes &rarr; Dar de alta un
+paciente</a>), ese paciente nunca cuenta como nuevo en esta gráfica, ni siquiera en su
+primera cita registrada; porque ya era paciente del consultorio desde antes, solo que
+apenas está entrando al sistema.</p>
+<p><em>Al pasar el mouse sobre cualquier barra se muestra el número exacto de pacientes
+nuevos y recurrentes de esa semana.</em></p>
+<figure class="shot">
+  <img src="img/01-pacientes-nuevos-vs-recurrentes.png" alt="Gráfica &amp;quot;Pacientes nuevos vs. recurrentes&amp;quot;.">
+  <figcaption>Gráfica &quot;Pacientes nuevos vs. recurrentes&quot;.</figcaption>
+</figure>
+<p class="backtop"><a href="#indice">&uarr; Volver al inicio</a></p>
+
+</section>
+<section id="pacientes" class="seccion">
+<h2>Pacientes</h2>
+
+<p>Concentra la ficha de cada paciente del consultorio: datos de contacto, tratamientos
+asignados y estado (Activo/Inactivo).</p>
+<figure class="shot">
+  <img src="img/02-lista-general.png" alt="Listado general de Pacientes.">
+  <figcaption>Listado general de Pacientes.</figcaption>
+</figure>
+
+<h3>Buscar un paciente</h3>
+<ol>
+  <li>Escribir en el buscador de la parte superior de la tabla.</li>
+  <li>El sistema filtra la lista conforme se escribe, por Paciente o Tratamiento.</li>
+</ol>
+<figure class="shot">
+  <img src="img/02-buscador.png" alt="Buscador de la sección Pacientes.">
+  <figcaption>Buscador de la sección Pacientes.</figcaption>
+</figure>
+
+<h3>Dar de alta un paciente</h3>
+<ol>
+  <li>Dar clic en <strong>+ Nuevo paciente</strong>.</li>
+  <li>Llenar los campos obligatorios (Nombre completo y Teléfono).</li>
+  <li>Llenar (si lo necesita) los campos de última visita y tratamientos, y marcar la
+  casilla "Ya era mi paciente antes de usar el sistema" si el paciente ya visitaba el
+  consultorio desde antes de usar CDA (afecta cómo se cuenta en
+  <a href="#dashboard">Pacientes nuevos vs. recurrentes</a>, en el Dashboard).</li>
+  <li>Dar clic en <strong>Guardar</strong>.</li>
+</ol>
+<figure class="shot">
+  <img src="img/02-nuevo-paciente-modal.png" alt="Formulario &amp;quot;Nuevo paciente&amp;quot;.">
+  <figcaption>Formulario &quot;Nuevo paciente&quot;.</figcaption>
+</figure>
+
+<h3>Editar un paciente</h3>
+<ol>
+  <li>Dar clic sobre algún registro en la lista. Aparecerá una ventana emergente con la ficha
+  del paciente. Dar clic en <strong>Editar</strong>.</li>
+  <li>Modificar el campo deseado (Nombre completo, Teléfono, Tratamientos).</li>
+  <li>Dar clic en <strong>Guardar</strong>.</li>
+</ol>
+<figure class="shot">
+  <img src="img/02-editar-paciente.png" alt="Vista de edición de un paciente.">
+  <figcaption>Vista de edición de un paciente.</figcaption>
+</figure>
+<p><strong>Importante:</strong> cambiar el nombre de un paciente no modifica los registros
+de Pagos o Citas ya existentes; esos registros conservan el nombre tal como estaba escrito
+en el momento en que se crearon.</p>
+<h4>Tratamientos asignados a un paciente</h4>
+<p>Es una referencia rápida de qué tratamientos tiene vigentes el paciente actualmente. No es
+un historial ni afecta ningún cálculo financiero, pero sí tiene un efecto funcional
+importante: es la lista que determina qué tratamientos siguen apareciendo como opción para
+<strong>ese paciente en particular</strong> al registrar un pago o agendar una cita nueva,
+incluso si ese tratamiento ya se marcó como Inactivo en el catálogo general (ver
+<a href="#tratamientos">Tratamientos &rarr; Desactivar un tratamiento</a>). Quitar un
+tratamiento de esta lista no elimina ni modifica ningún pago ya registrado para ese
+tratamiento, pero sí deja de ofrecerlo como opción futura para este paciente si además está
+Inactivo en el catálogo.</p>
+<figure class="shot">
+  <img src="img/02-ficha-tratamientos.png" alt="Tratamientos asignados en la ficha de un paciente.">
+  <figcaption>Tratamientos asignados en la ficha de un paciente.</figcaption>
+</figure>
+<p>El historial completo de lo que un paciente ha pagado (incluyendo tratamientos que ya no
+aparecen en su ficha) se consulta en <a href="#finanzas">Finanzas</a>.</p>
+
+<h3>Saldo pendiente de un paciente</h3>
+<p>Desde la ficha del paciente se puede consultar su saldo pendiente, si lo tiene. El
+historial completo de sus pagos se consulta en <a href="#finanzas">Finanzas</a>.</p>
+<figure class="shot">
+  <img src="img/02-ficha-saldo.png" alt="Saldo pendiente dentro de la ficha de un paciente.">
+  <figcaption>Saldo pendiente dentro de la ficha de un paciente.</figcaption>
+</figure>
+
+<h3>Marcar un paciente como Inactivo</h3>
+<p>Los pacientes nunca se eliminan del sistema (la forma de darlos de baja es marcarlos como
+Inactivos), esto con el propósito de conservar su historial completo y poder reactivarlos si
+regresan más adelante.</p>
+<ol>
+  <li>Dar clic sobre el registro deseado en la lista, aparecerá una ventana emergente con la
+  ficha del paciente.</li>
+  <li>Dar clic en el botón <strong>Marcar como inactivo</strong>.</li>
+</ol>
+<figure class="shot">
+  <img src="img/02-marcar-inactivo.png" alt="Acción para marcar un paciente como Inactivo.">
+  <figcaption>Acción para marcar un paciente como Inactivo.</figcaption>
+</figure>
+<p>Un paciente Inactivo deja de contarse en indicadores como "Pacientes que no han vuelto"
+(Dashboard), pero conserva todo su historial de pagos y citas.</p>
+<p class="backtop"><a href="#indice">&uarr; Volver al inicio</a></p>
+
+</section>
+<section id="finanzas" class="seccion">
+<h2>Finanzas</h2>
+
+<p>Concentra los indicadores financieros del consultorio: ingresos, gastos, saldos
+pendientes y su comportamiento a lo largo del tiempo.</p>
+<figure class="shot">
+  <img src="img/03-finanzas-general.png" alt="Vista general de Finanzas.">
+  <figcaption>Vista general de Finanzas.</figcaption>
+</figure>
+
+<h3>Aspectos a considerar</h3>
+<p>Antes de interpretar cualquier gráfica de esta sección, es importante tener presentes
+estas 2 reglas de fondo:</p>
+
+<h4>Qué fecha usa cada gráfica</h4>
+<p>Todas las gráficas financieras (Flujo de caja, Ingresos por categoría, Ingresos vs.
+Gastos) agrupan un pago según la fecha de su <strong>abono más reciente</strong>, nunca
+según la fecha en que se inició el tratamiento. Esas son dos fechas distintas dentro del
+mismo registro de pago:</p>
+<ul>
+  <li><strong>Inicio del tratamiento</strong>: cuándo comenzó a aplicarse, editable al
+  registrar el pago (por defecto, el día de hoy).</li>
+  <li><strong>Último abono</strong>: cuándo entró dinero realmente. Se actualiza cada vez que
+  se registra un abono nuevo sobre ese pago.</li>
+</ul>
+<p><em>Ejemplo: si un tratamiento se inició el 3 de marzo pero el paciente terminó de pagarlo
+el 20 de junio, ese ingreso aparece reflejado en junio en las gráficas financieras, no en
+marzo.</em></p>
+<p><strong>Un punto importante:</strong> si un mismo pago recibe abonos en meses distintos
+(por ejemplo, uno en marzo y otro en junio), el monto completo se agrupa en el mes del abono
+<strong>más reciente</strong> (junio); no se reparte proporcionalmente entre los meses en
+los que realmente se fue abonando. <em>Está prevista una actualización futura para que cada
+abono se vea reflejado en el mes en que se hizo.</em></p>
+
+<h4>Cómo se dividen las semanas dentro de un mes</h4>
+<p>Para todo lo que este sistema agrupa "por semana" (el flujo de caja, las citas de la
+semana, pacientes nuevos vs. recurrentes), el mes se divide siempre en <strong>5 bloques
+fijos de 7 días</strong>, sin importar qué día de la semana caiga cada fecha en el
+calendario real:</p>
+<table class="tabla-simple">
+  <tr><th>Bloque</th><th>Días del mes</th></tr>
+  <tr><td>S1</td><td>1 al 7</td></tr>
+  <tr><td>S2</td><td>8 al 14</td></tr>
+  <tr><td>S3</td><td>15 al 21</td></tr>
+  <tr><td>S4</td><td>22 al 28</td></tr>
+  <tr><td>S5</td><td>29 en adelante (hasta el fin del mes)</td></tr>
+</table>
+<p>Esto es intencional: una semana de calendario real (lunes a domingo) casi siempre cruza
+de un mes a otro, y eso mezclaría ingresos de 2 meses distintos dentro de la misma "semana".
+El sistema prioriza que cada mes se pueda leer de forma exacta y comparable contra otros
+meses, por encima de que el bloque "semana" coincida con el calendario real.</p>
+<p><em>Ejemplo: el día 21 y el día 22 son consecutivos en el calendario, pero caen en
+bloques distintos (S3 y S4) porque pertenecen a "semanas" de conteo diferentes dentro del
+mes.</em></p>
+
+<h3>Flujo de caja</h3>
+<p>Muestra los <strong>ingresos</strong> del mes en curso (no incluye gastos), agrupados en
+los 5 bloques (S1-S5) descritos arriba.</p>
+<p><em>Está prevista una actualización futura para incorporar también los gastos en esta
+gráfica.</em></p>
+<p><em>Al pasar el mouse sobre cualquier punto se muestra el monto exacto de ese bloque de
+días.</em></p>
+<figure class="shot">
+  <img src="img/03-flujo-caja-grafica.png" alt="Gráfica &amp;quot;Flujo de caja&amp;quot;.">
+  <figcaption>Gráfica &quot;Flujo de caja&quot;.</figcaption>
+</figure>
+
+<h3>Ingresos vs. Gastos — últimos 6 meses</h3>
+<p>Compara, mes contra mes, el total de ingresos contra el total de gastos de los últimos 6
+meses (incluyendo el mes en curso).</p>
+<p><em>Al pasar el mouse sobre cualquier barra se muestra el monto exacto de ingresos o
+gastos de ese mes.</em></p>
+<figure class="shot">
+  <img src="img/03-ingresos-vs-gastos.png" alt="Gráfica &amp;quot;Ingresos vs. Gastos — últimos 6 meses&amp;quot;.">
+  <figcaption>Gráfica &quot;Ingresos vs. Gastos — últimos 6 meses&quot;.</figcaption>
+</figure>
+
+<h3>Ingresos por categoría — últimos 6 meses</h3>
+<p>Muestra qué proporción de los ingresos totales de los últimos 6 meses corresponde a cada
+categoría de tratamiento.</p>
+<p><strong>Importante:</strong> cada pago guarda su propia categoría al momento de crearse.
+Si más adelante se cambia la categoría de un tratamiento en el catálogo, los pagos ya
+registrados de ese tratamiento <strong>no</strong> cambian de categoría en esta gráfica;
+solo los pagos que se registren después del cambio usan la categoría nueva.</p>
+<p><em>Ejemplo: si un tratamiento estaba categorizado como "Estética" y se cambia a
+"Restaurativa", los pagos ya cobrados antes de ese cambio se siguen contando como
+"Estética" en esta gráfica; solo los pagos nuevos de ese tratamiento se cuentan como
+"Restaurativa".</em></p>
+<p>Esta gráfica solo suma las 3 categorías con más ingreso acumulado; el resto se agrupan
+para no saturar la vista. <em>Al pasar el mouse sobre cualquier barra se muestra el monto
+exacto de esa categoría en ese mes, y dar clic (o toque, en pantalla táctil) sobre un mes
+específico abre el desglose completo de ese mes, incluyendo las categorías que no aparecen
+entre las 3 principales.</em></p>
+<figure class="shot">
+  <img src="img/03-ingresos-por-categoria.png" alt="Gráfica &amp;quot;Ingresos por categoría — últimos 6 meses&amp;quot;.">
+  <figcaption>Gráfica &quot;Ingresos por categoría — últimos 6 meses&quot;.</figcaption>
+</figure>
+
+<h3>Gastos por categoría — últimos 6 meses</h3>
+<p>Mismo principio que la gráfica de ingresos por categoría, aplicado a los gastos del
+consultorio: solo suma las 3 categorías con más gasto acumulado. <em>Al pasar el mouse sobre
+cualquier barra se muestra el monto exacto de esa categoría en ese mes, y dar clic (o toque)
+sobre un mes específico abre el desglose completo, incluyendo las categorías que no
+aparecen entre las 3 principales.</em></p>
+<figure class="shot">
+  <img src="img/03-gastos-por-categoria.png" alt="Gráfica &amp;quot;Gastos por categoría — últimos 6 meses&amp;quot;.">
+  <figcaption>Gráfica &quot;Gastos por categoría — últimos 6 meses&quot;.</figcaption>
+</figure>
+
+<h3>Pagos</h3>
+<p>En esta tabla se muestran todos los pagos de sus pacientes que se han registrado en el
+sistema a lo largo del tiempo, permitiendo llevar un control preciso en la información.</p>
+<figure class="shot">
+  <img src="img/03-pagos-general.png" alt="Tabla de Pagos.">
+  <figcaption>Tabla de Pagos.</figcaption>
+</figure>
+<h4>Buscar un pago</h4>
+<ol>
+  <li>Escribir en el buscador de la parte superior de la tabla.</li>
+  <li>El sistema filtra la lista por Paciente, tratamiento, categoría, fecha o monto.</li>
+</ol>
+<p><em>Sobre "fecha" y "monto" en este buscador: el registro tiene 2 columnas de fecha
+(Inicio de tratamiento y Último pago) y 3 columnas de dinero (Total, Pagado y Saldo) — el
+buscador revisa las 5 al mismo tiempo, sin importar en cuál de ellas esté el dato que se
+busca. La búsqueda encuentra el resultado sin importar el formato de fecha ni el separador
+de miles configurados en el sistema.</em></p>
+<h4>Registrar un pago</h4>
+<ol>
+  <li>Dar clic en <strong>Registrar pago</strong>.</li>
+  <li>Llenar los campos obligatorios (Paciente y Tratamiento).</li>
+  <li>Llenar (si lo necesita) la fecha de inicio del tratamiento y el monto pagado. Esto está
+  pensado así por si alguna vez tiene que registrar la información primero pero aún no ha
+  recibido el pago correspondiente. Dentro del sistema podrá ingresar el monto cuando lo
+  necesite como un abono.</li>
+  <li>Dar clic en <strong>Guardar</strong>.</li>
+</ol>
+<figure class="shot">
+  <img src="img/03-registrar-pago.png" alt="Formulario para registrar un pago.">
+  <figcaption>Formulario para registrar un pago.</figcaption>
+</figure>
+<p><strong>Importante, leer antes de guardar:</strong> una vez guardado, un pago no se puede
+editar ni eliminar, salvo que su monto abonado sea exactamente $0 (es decir, que todavía no
+se le haya registrado ningún abono). En cuanto tiene cualquier abono, el registro es
+permanente. Por lo que de ahí en adelante solo se podrán registrar abonos adicionales sobre
+el saldo pendiente.</p>
+<p>Si ya existe un pago pendiente para ese mismo paciente y tratamiento, el sistema pregunta
+si se desea abonar a uno de los existentes en vez de crear un registro nuevo. Puede haber
+más de uno abierto a la vez; por ejemplo, si se registraron 2 rondas del mismo tratamiento
+por separado (una limpieza dental de hace 6 meses que quedó con saldo, y una limpieza nueva
+que se factura hoy); en ese caso el sistema deja elegir a cuál de los existentes abonar, o
+crear uno nuevo si de verdad se trata de un servicio distinto.</p>
+<h4>Registrar abonos</h4>
+<p>Dentro de la misma tabla, cada pago con saldo pendiente muestra el botón
+<strong>Abonar</strong>. Al darle clic se abre un formulario con el saldo actual, donde se
+captura el monto del abono. El "Último pago" y el saldo del registro se actualizan de
+inmediato.</p>
+<p>Cada pago también muestra un botón <strong>Eliminar</strong>, visible únicamente cuando
+el monto abonado es $0 (todavía no se le ha registrado ningún abono). En cuanto recibe su
+primer abono, ese botón desaparece y el registro solo puede seguir recibiendo abonos.</p>
+
+<h3>Gastos fijos</h3>
+<p>En esta tabla se listan todos los gastos registrados en el sistema a lo largo del tiempo,
+permitiendo llevar un control preciso en la información.</p>
+<figure class="shot">
+  <img src="img/03-gastos-general.png" alt="Tabla de Gastos fijos.">
+  <figcaption>Tabla de Gastos fijos.</figcaption>
+</figure>
+<h4>Buscar un gasto</h4>
+<ol>
+  <li>Escribir en el buscador de la parte superior de la tabla.</li>
+  <li>El sistema filtra la lista por Fecha, concepto, categoría o monto.</li>
+</ol>
+<p><em>La búsqueda encuentra el resultado sin importar el formato de fecha ni el separador
+de miles configurados en el sistema.</em></p>
+<h4>Registrar un gasto</h4>
+<ol>
+  <li>Dar clic en <strong>Registrar gasto</strong>.</li>
+  <li>Llenar los campos obligatorios (Concepto y Monto).</li>
+  <li>Cambiar la categoría de acuerdo al gasto que se está ingresando en el sistema.</li>
+  <li>Dar clic en <strong>Guardar</strong>.</li>
+</ol>
+<figure class="shot">
+  <img src="img/03-registrar-gasto.png" alt="Formulario para registrar un gasto.">
+  <figcaption>Formulario para registrar un gasto.</figcaption>
+</figure>
+<p>Un gasto nunca se elimina, pero a diferencia de un pago, sí se puede editar en cualquier
+momento (concepto, categoría y monto). La edición se hace seleccionando el registro a
+modificar y cambiando los datos que necesite.</p>
+<h4>Categorías de gasto</h4>
+<p>Al igual que en Tratamientos, las categorías de gasto se crean, renombran o eliminan
+directamente desde el selector de categoría del formulario de gasto. A diferencia de un
+tratamiento (donde la categoría vive en el catálogo y cada pago guarda su propia copia), en
+un gasto la categoría es un campo directo del propio registro; cambiarla es simplemente
+editar ese gasto, como se editaría el concepto o el monto.</p>
+<ul>
+  <li>Renombrar una categoría no actualiza el nombre en los gastos que ya la tenían
+  asignada, cada uno conserva el texto que tenía en su momento.</li>
+  <li>Una categoría solo se puede eliminar si ningún gasto la tiene asignada
+  actualmente.</li>
+</ul>
+<p class="backtop"><a href="#indice">&uarr; Volver al inicio</a></p>
+
+</section>
+<section id="tratamientos" class="seccion">
+<h2>Tratamientos</h2>
+
+<p>En esta tabla se muestra la lista de los tratamientos que ofrece el consultorio y que
+puede asignar a los pacientes para sus citas y el registro de sus pagos.</p>
+<figure class="shot">
+  <img src="img/04-catalogo-general.png" alt="Catálogo de Tratamientos.">
+  <figcaption>Catálogo de Tratamientos.</figcaption>
+</figure>
+
+<h3>Buscar un tratamiento</h3>
+<ol>
+  <li>Escribir en el buscador de la parte superior de la tabla.</li>
+  <li>El sistema filtra la lista por Tratamiento, categoría o precio.</li>
+</ol>
+
+<h3>Dar de alta un tratamiento</h3>
+<ol>
+  <li>Dar clic en <strong>Nuevo tratamiento</strong>.</li>
+  <li>Llenar los campos obligatorios (Nombre y Precio).</li>
+  <li>Cambiar la categoría y la duración de acuerdo al tratamiento que se está ingresando en
+  el sistema.</li>
+  <li>Dar clic en <strong>Guardar</strong>.</li>
+</ol>
+<figure class="shot">
+  <img src="img/04-nuevo-tratamiento.png" alt="Formulario &amp;quot;Nuevo tratamiento&amp;quot;.">
+  <figcaption>Formulario &quot;Nuevo tratamiento&quot;.</figcaption>
+</figure>
+
+<h3>Editar un tratamiento</h3>
+<p>Se pueden editar los mismos 4 campos (Nombre, Categoría, Precio, Duración) en cualquier
+momento, sin riesgo de alterar información histórica: los pagos y citas que ya se crearon
+conservan su propia copia guardada del precio, la categoría y la duración que tenían al
+momento de registrarse. Solo la nueva información que se registre en el sistema a partir del
+cambio usa los valores actualizados.</p>
+<figure class="shot">
+  <img src="img/04-editar-tratamiento.png" alt="Formulario &amp;quot;Editar tratamiento&amp;quot;.">
+  <figcaption>Formulario &quot;Editar tratamiento&quot;.</figcaption>
+</figure>
+
+<h3>Desactivar un tratamiento</h3>
+<p>Los tratamientos nunca se eliminan del catálogo, se marcan como Inactivos para conservar
+la integridad de la información.</p>
+<p>Un tratamiento Inactivo deja de aparecer en el catálogo general al elegir un tratamiento
+para un paciente o cita <strong>nueva</strong>. Sin embargo, si un paciente ya lo tenía en su
+lista de <a href="#pacientes">Tratamientos asignados</a> antes de desactivarlo, ese
+tratamiento sigue apareciendo como opción para ese paciente en particular, y se puede seguir
+usando con normalidad para registrar pagos o agendar citas de seguimiento; es precisamente
+esa lista de la ficha del paciente la que permite esta excepción.</p>
+
+<h3>Categorías de tratamiento</h3>
+<p>Las categorías se crean, renombran o eliminan directamente desde el selector de categoría
+del formulario de tratamiento.</p>
+<figure class="shot">
+  <img src="img/04-categorias.png" alt="Gestión de categorías de tratamiento.">
+  <figcaption>Gestión de categorías de tratamiento.</figcaption>
+</figure>
+<ul>
+  <li>Renombrar una categoría no actualiza el nombre en los tratamientos o gastos que ya la
+  tenían asignada, cada uno conserva el texto que tenía en su momento.</li>
+  <li>Una categoría solo se puede eliminar si ningún tratamiento la tiene asignada
+  actualmente.</li>
+</ul>
+<p class="backtop"><a href="#indice">&uarr; Volver al inicio</a></p>
+
+</section>
+<section id="agenda" class="seccion">
+<h2>Agenda</h2>
+
+<p>En este menú del sistema puede administrar las citas del consultorio, con dos formas de
+visualizarlas: Lista y Calendario.</p>
+<p>La Vista Calendario, a su vez, se puede consultar por <strong>Día</strong>,
+<strong>Semana</strong> o <strong>Mes</strong>, según qué tanto detalle o panorama se
+necesite en el momento; el selector para cambiar entre estas 3 está dentro de la propia
+Vista Calendario.</p>
+<div class="shots-row">
+<figure class="shot">
+  <img src="img/05-vista-lista.png" alt="Agenda en Vista Lista.">
+  <figcaption>Agenda en Vista Lista.</figcaption>
+</figure>
+<figure class="shot">
+  <img src="img/05-vista-calendario.png" alt="Agenda en Vista Calendario (Día).">
+  <figcaption>Agenda en Vista Calendario (Día).</figcaption>
+</figure>
+</div>
+
+<h3>Agendar una cita nueva</h3>
+<ol>
+  <li>Dar clic en <strong>Nueva cita</strong>.</li>
+  <li>Seleccionar el paciente y el(los) tratamiento(s) para dicha cita.</li>
+  <li>Seleccionar la fecha y hora.</li>
+  <li>Dar clic en <strong>Agendar y crear en Google Calendar</strong>.</li>
+</ol>
+<figure class="shot">
+  <img src="img/05-nueva-cita.png" alt="Formulario &amp;quot;Nueva cita&amp;quot;.">
+  <figcaption>Formulario &quot;Nueva cita&quot;.</figcaption>
+</figure>
+<p><em>Nota: cada cita agendada desde el sistema crea también un evento correspondiente en
+el Google Calendar vinculado al consultorio.</em></p>
+
+<h4>Citas empalmadas</h4>
+<p>Si al agendar o reagendar una cita el horario coincide con otra ya existente, el sistema
+muestra un aviso, pero permite continuar de todas formas. Esto está pensado así, ya que hay
+consultorios con más de un doctor o unidad dental, en donde 2 citas al mismo tiempo son
+perfectamente válidas.</p>
+<figure class="shot">
+  <img src="img/05-citas-empalmadas.png" alt="Aviso de citas empalmadas.">
+  <figcaption>Aviso de citas empalmadas.</figcaption>
+</figure>
+<p>En la Vista Calendario, las citas empalmadas se muestran una al lado de la otra en
+columnas, para poder distinguirlas de un vistazo.</p>
+
+<h4>Importar citas desde un archivo CSV</h4>
+<p>Dentro del mismo formulario de "Nueva cita" hay una sección para importar varias citas a
+la vez desde un archivo CSV con 4 columnas, en este orden exacto: Paciente, Tratamientos,
+Fecha, Hora. Cada renglón del archivo es una cita distinta. El paciente debe existir en el
+sistema y estar activo. Si una cita tiene más de un tratamiento, se separan con punto y coma
+(;) dentro de la misma columna.</p>
+<figure class="shot">
+  <img src="img/05-importar-csv.png" alt="Sección para importar citas desde CSV.">
+  <figcaption>Sección para importar citas desde CSV.</figcaption>
+</figure>
+
+<h3>Actualizar la agenda</h3>
+<p>El botón "&#8635; Actualizar agenda" trae del servidor únicamente las citas más
+recientes, sin recargar toda la pantalla. Esto es útil si otra persona agendó o canceló algo
+desde otro dispositivo.</p>
+<figure class="shot">
+  <img src="img/05-boton-actualizar.png" alt="Botón &amp;quot;Actualizar agenda&amp;quot;.">
+  <figcaption>Botón &quot;Actualizar agenda&quot;.</figcaption>
+</figure>
+
+<h3>Cancelar una cita</h3>
+<p>Cancelar una cita nunca la elimina del sistema: queda marcada como "Cancelada" y se sigue
+mostrando en la Vista Lista con su propio distintivo visual, para conservar el detalle
+completo del día. Sin embargo, no se cuenta en indicadores de carga de trabajo real, como
+"Citas de hoy" o "Tratamientos más solicitados".</p>
+<p>En Google Calendar, en cambio, el evento sí se elimina por completo al cancelar la cita,
+para que el calendario operativo del día a día no muestre recordatorios de algo que ya no va
+a ocurrir.</p>
+<p class="backtop"><a href="#indice">&uarr; Volver al inicio</a></p>
+
+</section>
+<section id="sincronizar" class="seccion">
+<h2>Sincronizar</h2>
+
+<p>A través de esta función, puede traer la información más reciente del servidor sin
+necesidad de recargar toda la página. Esto es útil si otra persona ha realizado cambios
+desde otro dispositivo.</p>
+<figure class="shot">
+  <img src="img/07-sincronizar-general.png" alt="Sección Sincronizar.">
+  <figcaption>Sección Sincronizar.</figcaption>
+</figure>
+<ol>
+  <li>Dar clic en el elemento del menú <strong>Sincronizar</strong>.</li>
+  <li>Se mostrará una ventana emergente, dar clic en <strong>Sí</strong>.</li>
+</ol>
+<p>Si la sincronización falla, el sistema muestra una ventana con el motivo exacto del
+error, en vez de un mensaje genérico. Esta información es útil para reportarla a soporte
+técnico si el problema persiste.</p>
+<p class="backtop"><a href="#indice">&uarr; Volver al inicio</a></p>
+
+</section>
+<section id="configuracion" class="seccion">
+<h2>Configuración</h2>
+
+<p>Reúne los datos generales del consultorio, el horario de atención, el programa de
+referidos y (solo para el usuario Administrador) la gestión de usuarios del sistema.</p>
+<figure class="shot">
+  <img src="img/08-configuracion-general.png" alt="Vista general de Configuración.">
+  <figcaption>Vista general de Configuración.</figcaption>
+</figure>
+
+<h3>Datos y preferencias del consultorio</h3>
+<p>Incluye moneda, país (para el formato de teléfono), zona horaria, días sin visita para
+considerar a un paciente inactivo en el Dashboard, formato de hora y fecha, separador
+numérico, manejo de decimales en precios, primer día de la semana, y (solo visible para el
+Administrador) el umbral de minutos de inactividad antes del aviso de cierre de sesión (ver
+<a href="#acceso">Acceso al sistema</a>).</p>
+<figure class="shot">
+  <img src="img/08-configuracion-datos-consultorio.png" alt="Datos y preferencias del consultorio.">
+  <figcaption>Datos y preferencias del consultorio.</figcaption>
+</figure>
+
+<h3>Horario de atención</h3>
+<p>Define los turnos de atención de cada día de la semana, usados como referencia al
+agendar citas.</p>
+<figure class="shot">
+  <img src="img/08-configuracion-horario.png" alt="Configuración del horario de atención.">
+  <figcaption>Configuración del horario de atención.</figcaption>
+</figure>
+<ol>
+  <li>Dar clic en <strong>+ Agregar turno</strong> para el día deseado.</li>
+  <li>Capturar hora de inicio y hora de fin.</li>
+  <li>Dar clic en <strong>Guardar horario</strong>.</li>
+</ol>
+
+<h3>Programa de referidos</h3>
+<p>Al final de todas las opciones de Configuración, aparece un banner para acceder al
+programa de referidos. Este programa es 100% opcional y se brinda como una manera de poder
+generar un ingreso extra por la recomendación de Control Dental App.</p>
+<figure class="shot">
+  <img src="img/08-configuracion-referidos-banner.png" alt="Banner del programa de referidos.">
+  <figcaption>Banner del programa de referidos.</figcaption>
+</figure>
+<ol>
+  <li>Dar clic sobre el banner para abrir el detalle del programa.</li>
+  <li>Dar clic en <strong>Compartir</strong> para obtener un mensaje listo para enviar, con
+  el código de referido incluido.</li>
+</ol>
+<figure class="shot">
+  <img src="img/08-configuracion-referidos-modal.png" alt="Detalle del programa de referidos.">
+  <figcaption>Detalle del programa de referidos.</figcaption>
+</figure>
+<p>Cada persona referida aparece en la lista junto con su estado:</p>
+<ul>
+  <li><strong>Pendiente de pago</strong>: se registró con el código, todavía no se le ha
+  pagado ninguna comisión.</li>
+  <li><strong>Convertido</strong>: ya adquirió el sistema gracias a la referencia.</li>
+  <li><strong>Comisión pagada</strong>: la comisión correspondiente ya fue liquidada.</li>
+</ul>
+
+<h3>Gestión de usuarios (solo Administrador)</h3>
+<p>Únicamente visible para el usuario con rol de Administrador. Permite dar de alta nuevos
+usuarios del sistema (por ejemplo, para el personal del consultorio), restablecer
+contraseñas, y activar o desactivar el acceso de un usuario.</p>
+<figure class="shot">
+  <img src="img/08-configuracion-usuarios.png" alt="Gestión de usuarios (vista de Administrador).">
+  <figcaption>Gestión de usuarios (vista de Administrador).</figcaption>
+</figure>
+<ol>
+  <li>Dar clic en <strong>Agregar usuario</strong>.</li>
+  <li>Ingresar el nombre de usuario, contraseña inicial e indicar si tendrá rol de
+  Administrador.</li>
+  <li>Dar clic en <strong>Guardar</strong>.</li>
+</ol>
+<figure class="shot">
+  <img src="img/08-configuracion-nuevo-usuario.png" alt="Alta de un usuario nuevo.">
+  <figcaption>Alta de un usuario nuevo.</figcaption>
+</figure>
+<p><em>Nota: el nombre de usuario admite máximo 10 caracteres, se convierte
+automáticamente a mayúsculas, y no acepta espacios ni símbolos.</em></p>
+<h4>Restablecer contraseña</h4>
+<p>Desde la lista de usuarios, cada uno tiene la opción de restablecer su contraseña. A
+diferencia del alta (donde el Administrador captura la contraseña inicial), aquí el sistema
+genera una contraseña temporal; cópiela o compártala con la persona, se le pedirá cambiarla
+la primera vez que inicie sesión.</p>
+<figure class="shot">
+  <img src="img/08-configuracion-restablecer-password.png" alt="Restablecer contraseña de un usuario.">
+  <figcaption>Restablecer contraseña de un usuario.</figcaption>
+</figure>
+<h4>Activar o desactivar un usuario</h4>
+<p>Cada usuario tiene un interruptor para activarlo o desactivarlo sin eliminarlo; misma
+función que Pacientes y Tratamientos (Activo/Inactivo). Un usuario desactivado no puede
+iniciar sesión, pero su nombre se conserva tal cual en la columna "Usuario" de Pacientes,
+Pagos, Gastos fijos y Tratamientos, y en "Registrado por" de cada cita — nunca se borra ni
+se reemplaza.</p>
+<figure class="shot">
+  <img src="img/08-configuracion-usuario-activo.png" alt="Interruptor de activar/desactivar un usuario.">
+  <figcaption>Interruptor de activar/desactivar un usuario.</figcaption>
+</figure>
+<p class="backtop"><a href="#indice">&uarr; Volver al inicio</a></p>
+
+</section>
+<section id="mi-cuenta" class="seccion">
+<h2>Mi cuenta</h2>
+
+<p>Muestra el usuario con el que se inició sesión y su rol, y concentra las acciones sobre
+la cuenta propia.</p>
+<figure class="shot">
+  <img src="img/10-mi-cuenta-general.png" alt="Sección Mi cuenta.">
+  <figcaption>Sección Mi cuenta.</figcaption>
+</figure>
+
+<h3>Cambiar mi contraseña</h3>
+<ol>
+  <li>Dar clic en <strong>Cambiar mi contraseña</strong>.</li>
+  <li>Capturar la contraseña actual y la nueva contraseña.</li>
+  <li>Dar clic en <strong>Guardar</strong>.</li>
+</ol>
+<figure class="shot">
+  <img src="img/10-cambiar-password.png" alt="Formulario &amp;quot;Cambiar mi contraseña&amp;quot;.">
+  <figcaption>Formulario &quot;Cambiar mi contraseña&quot;.</figcaption>
+</figure>
+
+<h3>Cerrar sesión</h3>
+<ol>
+  <li>Dar clic en <strong>Cerrar sesión</strong>.</li>
+  <li>Confirmar la acción en la ventana emergente.</li>
+</ol>
+<figure class="shot">
+  <img src="img/10-cerrar-sesion.png" alt="Confirmación de cierre de sesión.">
+  <figcaption>Confirmación de cierre de sesión.</figcaption>
+</figure>
+<p class="backtop"><a href="#indice">&uarr; Volver al inicio</a></p>
+
+</section>
+
+</div>
+<footer class="pie">Control Dental App (CDA) — Manual de usuario</footer>
+</body>
+</html>
